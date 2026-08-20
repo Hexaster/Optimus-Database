@@ -1,0 +1,20 @@
+# 本地 PostgreSQL（自带 pgvector）。启动：docker compose up -d
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: cart-db
+    environment:
+      POSTGRES_DB: cart
+      POSTGRES_USER: cart
+      POSTGRES_PASSWORD: ${PGPASSWORD:-change_me_local_only}
+    ports:
+      - "5432:5432"
+    volumes:
+      - cart-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cart -d cart"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  cart-pgdata:

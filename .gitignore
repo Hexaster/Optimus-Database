@@ -1,2 +1,25 @@
+# 密钥：绝对不要提交
+.env
+*.pem
+*.key
+id_rsa*
+
+# 环境
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+
+# 数据：原始数据与中间产物不入库，靠 core.source_registry 追溯
+data/raw/*
+data/interim/*
+data/processed/*
+!data/**/.gitkeep
+
+# 系统
+.DS_Store
+
 .claude/
 CLAUDE.md
