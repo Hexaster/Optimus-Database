@@ -1,0 +1,166 @@
+car:
+  table: car
+  description: CAR 骨架核心实体表。一个经归一化后的 CAR backbone 对应一条记录；Binder 作为 A 实体独立管理，后续通过 ABC 组合关联。
+  fields:
+    car_id:
+      type: uuid
+      key: primary
+      description: 平台内部唯一 CAR backbone ID。
+      nullable: false
+    name:
+      type: string
+      description: CAR backbone 的名称或代号。
+      nullable: true
+    modules:
+      type: json
+      description: 按 CAR 中实际顺序保存的模块列表；每个模块记录模块类型、来源分子、序列与长度。Binder 识别域作为 A 实体独立管理，不参与 B 实体的 backbone 去重。
+      item_schema:
+        module_type:
+          type: string
+          description: CAR 模块类型。
+          nullable: false
+          allowed_values:
+          - linker
+          - hinge
+          - transmembrane_region
+          - costimulatory_domain
+          - CD3zeta
+          - tag
+          - safety_switch
+        source_molecule:
+          type: string
+          nullable: true
+          description: 该模块来源分子。
+        sequence:
+          type: string
+          nullable: true
+          description: 该模块的氨基酸序列。
+        length:
+          type: integer
+          nullable: true
+          description: 该模块长度，以氨基酸残基数表示。
+          unit: aa
+          check: length >= 0
+      nullable: false
+    version:
+      type: string
+      nullable: false
+      description: 该 CAR backbone 记录的版本。
+      default: '1.0'
+    entry_date:
+      type: date
+      nullable: false
+      description: 该记录的录入日期。
+      default: current_date
+car_evidence:
+  table: car_evidence
+  description: CAR 证据表。保存特定来源、特定实验条件下对 CAR backbone 性能与行为的观察结果。
+  fields:
+    evidence_id:
+      type: uuid
+      key: primary
+      description: 平台内部唯一 CAR 证据记录 ID。
+      nullable: false
+    car_id:
+      type: uuid
+      key: foreign
+      references: car.car_id
+      description: 该证据对应的 CAR backbone ID。
+      nullable: false
+      index: true
+    source_type:
+      type: string
+      nullable: false
+      description: 证据来源类型。
+      allowed_values:
+      - public_database
+      - literature
+      - patent
+      - internal_data
+      index: true
+    source_id:
+      type: string
+      nullable: false
+      description: 外部来源 ID，例如 DOI、专利号、数据库登录号或内部批次号。
+      index: true
+    citation:
+      type: string
+      nullable: true
+      description: 该证据对应的引用信息。
+    evidence_level:
+      type: string
+      nullable: false
+      description: 证据等级；具体分级值由统一证据分级规范定义。
+    experimental_conditions:
+      type: json
+      nullable: true
+      description: 产生该证据时的实验条件。
+    applicable_scenario:
+      type: string
+      nullable: true
+      description: 该证据或结果适用的场景。
+    contrary_evidence:
+      type: boolean
+      nullable: false
+      description: 该记录是否属于与主要结论相反的证据。
+      default: false
+    activation_speed:
+      type: string
+      nullable: true
+      description: CAR 激活速度。
+    metabolic_state:
+      type: string
+      nullable: true
+      description: CAR-T 细胞的代谢状态，例如糖酵解或氧化代谢。
+      allowed_values:
+      - glycolytic
+      - oxidative
+    expansion_capacity:
+      type: string
+      nullable: true
+      description: CAR-T 细胞的扩增能力。
+    memory_phenotype:
+      type: string
+      nullable: true
+      description: CAR-T 细胞的记忆表型。
+    persistence:
+      type: string
+      nullable: true
+      description: CAR-T 细胞的持久性。
+    exhaustion_risk:
+      type: string
+      nullable: true
+      description: CAR-T 细胞的耗竭风险。
+    tonic_signaling_tendency:
+      type: string
+      nullable: true
+      description: CAR 的 tonic signaling 倾向。
+    geometric_length:
+      type: number
+      nullable: true
+      description: CAR 相关模块或构型的几何长度信息。
+      check: geometric_length >= 0
+    epitope_distance_effect:
+      type: string
+      nullable: true
+      description: 构型对表位距离相关效果的影响。
+    immune_synapse_effect:
+      type: string
+      nullable: true
+      description: 构型对免疫突触形成或性质的影响。
+    tonic_signaling_effect:
+      type: string
+      nullable: true
+      description: 构型对 tonic signaling 的影响。
+    compatible_modules:
+      type: json
+      nullable: true
+      description: 已观察或报告为可兼容的模块组合。
+    incompatible_modules:
+      type: json
+      nullable: true
+      description: 已观察或报告为不兼容的模块组合。
+    assembly_rules:
+      type: json
+      nullable: true
+      description: CAR 模块装配规则或约束。

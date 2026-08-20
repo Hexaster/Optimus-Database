@@ -1,0 +1,894 @@
+# =========================
+# Mapping: SAbDab2 -> Schema_A (Binder)
+# =========================
+# 本文件回答一件事：SAbDab2 summary CSV 的字段如何變成 Schema_A 字段。
+# 不描述如何獲取數據（見 SourceRegistry/sabdab.yaml），
+# 不描述目標庫結構、類型、約束（見 Schema/Schema_A.yaml）。
+#
+# 字段清單來源（實測，非推測）：
+#   GET https://sabdab.opig.stats.ox.ac.uk/api/download/all-summary
+#   Content-Disposition: sabdab_summary_all.csv
+#   Last-Modified: 2026-08-06
+#   API version: 2.0.10 (/api/openapi.json)
+#   實測 45 欄 × 21,914 列（配對 H/L）
+#   另兩個下載端點 all-single-domain-summary（4,664 列）與
+#   all-sd-h-summary（4,508 列）欄位結構完全相同（同 45 欄）。
+#
+# 重要：SAbDab2 的 summary 與舊版 SAbDab 不同，
+#   當前 45 欄中「不存在」affinity / delta_g / affinity_method /
+#   temperature / pmid / scfv / engineered 這些舊欄位，
+#   也「不存在」任何氨基酸序列欄位。
+#   => Schema_A 的 kd/kon/koff 無法由 summary 直接獲得。
+#   但 vh_sequence/vl_sequence 可由本地已下載的 mmCIF 結構檔取得，
+#   見 Part 1b（第二個數據源：structures route，實測於
+#   data/raw/sabdab/search_structures_selected_2026-08-18/）。
+#
+# 補充實測（2026-08-19）：本地 data/raw/sabdab/ 下除 summary CSV 外，
+#   還有針對 GCC/GUCY2C（本項目首個具體靶點）的 5 個 mmCIF 結構檔
+#   （PDB 8GHO、8GHP），是 target_filtered scope 的實際下載樣本。
+#   逐檔核對後發現序列、引用（DOI/PubMed）、UniProt accession 均可從
+#   mmCIF 取得，比原先評估的「summary-only」覆蓋面更廣。詳見 Part 1b。
+
+mapping_id: sabdab2_to_binder
+source_name: SAbDab2
+route_id: all_summary
+target_schema: Schema_A
+source_format: csv_row
+record_grain: 一條 SAbDab2 antibody instance（= 某 PDB 條目中的一組 H/L 配對或單域鏈）
+
+status: draft
+last_verified: 2026-08-19
+
+
+# =========================================================
+# Part 1 — Source 字段全清單（45 欄）
+# =========================================================
+# 逐欄記錄「這一欄去了 Schema 的哪裡」。
+# target: null 表示 Schema_A 目前沒有對應字段。
+# fill 為實測非空率（21,914 列）。
+
+source_field_inventory:
+
+  # ---- 識別類 ----
+  - source: INSTANCE
+    fill: 100.0%
+    example: pdb_000010bt-A-E
+    description: SAbDab2 實例 ID，格式 <PDB>-<Hchain>-<Lchain>；每列唯一。
+    target: binder_evidence.source_id
+
+  - source: PDB
+    fill: 100.0%
+    example: pdb_000010bt
+    description: 擴展格式 PDB ID（11,458 個唯一條目）。
+    target: [binder.structure_template, binder.complex_structure]
+    note: 參與 derived 規則，非原樣搬運。
+
+  - source: SABDAB_ID
+    fill: 100.0%
+    example: sabdab2_H0000L0013
+    description: SAbDab2 對「同一抗體」（H/L 序列配對）分配的實體 ID；6,780 個唯一值對應 21,914 個實例。
+    target: binder（entity_key，用於實體歸一化，不落入具體字段）
+    note: 這是本 source 最重要的欄位——它本身就是上游做過的實體歸一化結果。
+
+  - source: HEAVY_ID
+    fill: 99.6%
+    example: H0001
+    description: SAbDab2 重鏈序列實體 ID（6,470 唯一）。
+    target: null
+    reason: Schema_A 無鏈級實體 ID 字段。建議保留於 provenance/raw 層供去重與追溯。
+
+  - source: LIGHT_ID
+    fill: 79.2%
+    example: L0001
+    description: SAbDab2 輕鏈序列實體 ID（4,870 唯一）。
+    target: null
+    reason: 同上。
+
+  - source: Hchain
+    fill: 99.6%
+    example: H / H1 / 1D
+    description: 重鏈 auth_asym_id（SAbDab 版；單鏈含多個可變域時會拆分編號）。
+    target: binder.structure_template
+    note: 參與 derived 規則。
+
+  - source: Lchain
+    fill: 79.2%
+    example: L / 1C
+    description: 輕鏈 auth_asym_id。空值 = 單域抗體（VHH/VNAR/SD-H/SD-L）。
+    target: binder.structure_template
+    note: 參與 derived 規則；同時是判定單域 binder 的依據。
+
+  - source: model
+    fill: 100.0%
+    example: '0'
+    description: PDB model 編號；全庫恆為 0。
+    target: null
+    reason: 常量欄位，無信息量。
+
+  # ---- 抗原類 ----
+  - source: antigen_chain
+    fill: 89.3%
+    example: 1A|2D
+    description: 抗原鏈 ID，多鏈以 | 分隔。空值 = unbound 結構。
+    target: binder.complex_structure
+    note: 參與 derived 規則；非空即代表存在複合物結構。
+
+  - source: antigen_type
+    fill: 89.3%
+    example: PROTEIN / PEPTIDE / DNA|HAPTEN
+    description: 抗原類型，多值以 | 分隔。枚舉見 OpenAPI AntigenType：PROTEIN, PEPTIDE, DNA, RNA, NUCLEOTIDE, PEPTIDE_NUCLEIC_ACID, SUGAR, HAPTEN, ION, CHEMICAL_ELEMENT, WATER, UNKNOWN, OTHER。
+    target: binder.target_antigen
+    note: 作為過濾條件參與 derived 規則（僅 PROTEIN/PEPTIDE 視為有效靶抗原）。
+
+  - source: antigen_name
+    fill: 89.3%
+    example: HIV-1 gp120|CITRIC ACID
+    description: 抗原名稱，取自 PDB entity 名，多值以 | 分隔；6,185 唯一值，未歸一化。
+    target: binder.target_antigen
+    open_question: |
+      antigen_name 是 PDB 自由文本，需歸一化到統一靶點詞表（GCC/GUCY2C、CDH17 等）
+      才能填入 target_antigen（該字段 index: true）。歸一化詞表尚未定義。
+      在詞表確定前，此映射的 method 應視為未定；不得由 LLM 直接猜測靶點名。
+
+  - source: antigen_species
+    fill: 76.3%
+    example: homo sapiens
+    description: 抗原來源物種（858 唯一）。
+    target: binder_evidence.species_reactivity
+    note: 部分覆蓋——只反映「該結構中結合的抗原屬於哪個物種」，不等同完整跨種反應性譜。
+
+  - source: agtaxid
+    fill: 76.3%
+    example: '9606'
+    description: 抗原物種 NCBI taxid。
+    target: binder_evidence.species_reactivity
+    note: 與 antigen_species 一併寫入 json，taxid 為機器可用的歸一化鍵。
+
+  - source: agexpression_system
+    fill: 72.3%
+    example: homo sapiens / spodoptera frugiperda
+    description: 抗原表達系統。
+    target: binder_evidence.experimental_conditions
+
+  - source: agexpression_system_taxid
+    fill: 72.3%
+    description: 抗原表達系統 taxid。
+    target: binder_evidence.experimental_conditions
+
+  # ---- 條目描述類 ----
+  - source: short_header
+    fill: 100.0%
+    example: IMMUNE SYSTEM / ALLERGEN
+    description: PDB 分類頭（458 唯一）。
+    target: null
+    reason: 結構分類標籤，Schema_A 無對應字段，對 binder 選型無直接作用。
+
+  - source: compound
+    fill: 100.0%
+    example: Crystal structure of Fab X in complex with antigen Y
+    description: PDB 結構標題（11,095 唯一）。
+    target: binder_evidence.citation
+    note: 參與 citation derived 規則。
+    open_question: |
+      compound 是「結構標題」而非「抗體名稱」，不應直接填入 binder.name。
+      binder.name 的取值規則見下方 unmapped_schema_fields。
+
+  - source: date
+    fill: 100.0%
+    example: 1984/07/09
+    description: PDB 條目原始沉積日期（3,906 唯一），格式 YYYY/MM/DD。
+    target: binder_evidence.citation
+    note: 參與 citation derived 規則。注意這是 PDB 沉積日，不是 SAbDab 收錄日。
+
+  - source: SABDABdepo_date
+    fill: 100.0%
+    example: '20260605'
+    description: SAbDab2 收錄該實例的日期，格式 YYYYMMDD；當前快照僅 7 個唯一值（該庫為週更）。
+    target: null
+    reason: source 側版本元數據。應寫入 provenance/採集批次，不入 Schema_A。
+
+  - source: SABDABupdate_date
+    fill: 100.0%
+    example: '20260708'
+    description: SAbDab2 最後更新該實例的日期，格式 YYYYMMDD（8 唯一）。
+    target: null
+    reason: 同上；建議用作增量更新（update_strategy: incremental）的水位線字段。
+
+  - source: authors
+    fill: 100.0%
+    example: Aagaard, J.B.,Gandini, R.,Spillner, E.
+    description: PDB 條目作者列表（5,282 唯一）。
+    target: binder_evidence.citation
+    note: 參與 citation derived 規則。
+
+  # ---- 物種與表達系統 ----
+  - source: organism
+    fill: 99.7%
+    description: PDB 條目層級的來源物種（101 唯一）。
+    target: null
+    reason: 條目層級的粗粒度值，已被 heavy_species/light_species 取代，避免重複入庫。
+
+  - source: organism_taxid
+    fill: 99.7%
+    target: null
+    reason: 同上。
+
+  - source: expression_system
+    fill: 89.8%
+    description: PDB 條目層級表達系統（133 唯一）。
+    target: null
+    reason: 已被 heavy/light_expression_system 取代。
+
+  - source: expression_system_taxid
+    fill: 89.8%
+    target: null
+    reason: 同上。
+
+  - source: heavy_species
+    fill: 99.3%
+    example: homo sapiens / mus musculus
+    description: 重鏈來源物種（87 唯一）。
+    target: binder.germline_origin
+    note: 參與 derived 規則；見下方 open_question。
+
+  - source: light_species
+    fill: 79.0%
+    description: 輕鏈來源物種（61 唯一）。
+    target: binder.germline_origin
+    note: 同上。
+
+  - source: heavy_taxid
+    fill: 99.3%
+    description: 重鏈物種 taxid。
+    target: binder.germline_origin
+    note: 作為 germline_origin 的機器可用歸一化鍵。
+
+  - source: light_taxid
+    fill: 78.9%
+    target: binder.germline_origin
+    note: 同上。
+
+  - source: heavy_expression_system
+    fill: 89.3%
+    target: binder_evidence.experimental_conditions
+
+  - source: light_expression_system
+    fill: 69.1%
+    target: binder_evidence.experimental_conditions
+
+  - source: heavy_expression_system_taxid
+    fill: 89.3%
+    target: binder_evidence.experimental_conditions
+
+  - source: light_expression_system_taxid
+    fill: 69.1%
+    target: binder_evidence.experimental_conditions
+
+  # ---- 結構質量 ----
+  - source: method
+    fill: 100.0%
+    example: X-RAY_DIFFRACTION / ELECTRON_MICROSCOPY
+    description: |
+      結構解析方法（6 唯一）。OpenAPI PDBDeterminationMethod 枚舉：
+      X-ray diffraction, electron microscopy, electron crystallography, solution NMR,
+      solid-state NMR, neutron diffraction, fiber diffraction, powder diffraction,
+      solution scattering, EPR, fluorescence transfer, infrared spectroscopy, theoretical model。
+    target: binder_evidence.experimental_conditions
+    warning: |
+      切勿映射到 binder_evidence.measurement_method。
+      該 Schema 字段的 allowed_values 為 [SPR, BLI]，指「親和力測量方法」；
+      SAbDab 的 method 是「結構解析方法」，語義完全不同。
+
+  - source: resolution
+    fill: 99.8%
+    example: '1.8'
+    description: 結構分辨率（Å）。
+    target: binder_evidence.experimental_conditions
+    note: 同時建議作為證據質量過濾閾值（SAbDab2 API 亦提供 resolution_cutoff 參數）。
+
+  - source: r_free
+    fill: 56.7%
+    target: binder_evidence.experimental_conditions
+
+  - source: r_factor
+    fill: 57.9%
+    target: binder_evidence.experimental_conditions
+
+  # ---- 抗體形式與構建體 ----
+  - source: type
+    fill: 100.0%
+    example: FAB / FV / SD-H / VNAR
+    description: |
+      抗體形式（6 唯一）。OpenAPI AntibodyType 枚舉：
+      FV, FAB, FAB+FC, FV*, SD-H, SD-L, VNAR。
+    target: null
+    schema_gap: true
+    reason: |
+      Schema_A 無「binder 形式」字段。這是實質性缺口：
+      A（結合域）究竟是 scFv 還是 VHH，直接決定 B（CAR 結構）的可組合性，
+      目前只能靠 scfv_sequence / vh_sequence / vl_sequence 是否為空間接推斷。
+      建議 Schema_A.binder 增加 binder_format 字段。
+
+  - source: chainsharing_construct
+    fill: 8.1%
+    example: DIABODY / CODV / DVD / SCFV
+    description: |
+      該抗體與其他抗體共用物理鏈時的構建體類型。
+      OpenAPI ConstructType 枚舉：SCFV, DIABODY, CODV, DVD, SCDB, FULLAB, OTHER。
+    target: null
+    schema_gap: true
+    reason: Schema_A 無多特異性/構建體拓撲字段。同樣建議補充。
+
+  - source: chainsharing_construct_partners
+    fill: 0.7%
+    example: pdb_00001lmk-A1-C2
+    description: 共用鏈的夥伴實例 ID。
+    target: null
+    schema_gap: true
+
+  - source: non_chainsharing_construct
+    fill: 0.2%
+    example: FULLAB
+    description: 不共用鏈的構建體類型（如完整抗體的兩臂）。
+    target: null
+    schema_gap: true
+
+  - source: non_chainsharing_construct_partners
+    fill: 0.2%
+    target: null
+    schema_gap: true
+
+  # ---- 基因與亞類 ----
+  - source: heavy_subclass
+    fill: 33.1%
+    example: IGHV1 (Homsap)
+    description: 重鏈 V 基因亞群（IMGT 判定，37 唯一）。括號內為物種代碼。
+    target: binder.vdj_genes
+    note: 僅 V 基因亞群層級，無 D/J 基因、無等位基因；填入 vdj_genes json 時須標明粒度。
+
+  - source: light_subclass
+    fill: 32.2%
+    example: IGKV1 (Homsap)
+    description: 輕鏈 V 基因亞群（59 唯一）。
+    target: binder.vdj_genes
+    note: 同上。
+
+  - source: light_ctype
+    fill: 79.2%
+    example: K / L
+    description: 輕鏈恆定區型別，κ 或 λ。
+    target: null
+    schema_gap: true
+    reason: Schema_A 無輕鏈型別字段。次要缺口，但對 scFv 設計有用。
+
+
+# =========================================================
+# Part 2 — Schema_A 中無 SAbDab2 來源的字段
+# =========================================================
+# 說明「Schema 要這個值，但這個 source 給不了」，避免下游誤以為已覆蓋。
+
+unmapped_schema_fields:
+
+  binder:
+    - field: name
+      status: open_question
+      note: |
+        SAbDab2 summary 不提供抗體名稱。compound 是結構標題，SABDAB_ID 是內部 ID。
+        待決：name 用 SABDAB_ID，還是留 null 等 Thera-SAbDab / 文獻源回填？
+
+    - field: scfv_sequence
+      status: not_available_in_this_route
+      note: summary 無任何序列欄位。
+
+    - field: vh_sequence
+      status: not_available_in_this_route
+      note: |
+        須改由 GET /api/download/all-structures 下載結構檔後自行抽取序列，
+        或用 POST /api/sequence-similarity-search 反查。
+        => SourceRegistry/sabdab.yaml 需要第二條 route（structures），
+           且該 route 需獨立的 mapping。
+
+    - field: vl_sequence
+      status: not_available_in_this_route
+      note: 同 vh_sequence。
+
+    - field: linker
+      status: not_available
+      note: 需從結構或原始文獻抽取。
+
+    - field: numbering_scheme
+      status: not_available_in_this_route
+      note: |
+        summary 本身未編號。SAbDab2 內部用 ANARCII 分類、V 基因用 IMGT。
+        若我方自行對結構序列編號，此值由我方 pipeline 決定而非由 source 決定，
+        不應在本 mapping 寫死為 constant IMGT。
+
+    - field: fr_cdr_regions
+      status: not_available_in_this_route
+      note: |
+        SAbDab2 有 CDR 檢索能力（/api/sequence-similarity-search 的 region 參數支援
+        CDRH1/H2/H3、CDRL1/L2/L3、Framework），但 summary 不輸出區域序列。
+
+    - field: cdr_lengths
+      status: not_available_in_this_route
+
+    - field: somatic_mutations
+      status: not_available
+
+    - field: glycosylation_sites
+      status: not_available
+
+    - field: free_cysteines
+      status: not_available
+
+    - field: humanization_level
+      status: not_available
+      note: heavy_species = human 只能說明來源物種，不等於人源化程度，不得替代。
+
+    - field: version
+      status: platform_managed
+
+    - field: entry_date
+      status: platform_managed
+      note: 不要用 SABDABdepo_date 填此欄——那是 source 收錄日，不是我方錄入日。
+
+  binder_evidence:
+    - field: evidence_level
+      status: open_question
+      blocking: true
+      note: |
+        CLAUDE.md 權重(1)的證據階梯為：臨床 0.8 > 小鼠 0.6 > 細胞 0.5 > 同行評議文獻 0.4 > 專利 0.3。
+        「公開結構數據庫的晶體/冷凍電鏡結構」不落在任何一檔內。
+        此值在證據分級規範補齊之前不得填寫，也不得由本 mapping 自行取值。
+
+    - field: kd
+      status: not_available
+      note: |
+        當前 SAbDab2 summary（v2.0.10，45 欄）不含 affinity / delta_g /
+        affinity_method / temperature 欄位。親和力須另尋來源（文獻、專利、TABS）。
+
+    - field: kon
+      status: not_available
+    - field: koff
+      status: not_available
+    - field: measurement_method
+      status: not_available
+      note: 見 source `method` 的 warning，勿誤映射。
+    - field: measurement_conditions
+      status: not_available
+
+    - field: epitope
+      status: not_available_in_this_route
+      note: |
+        antigen_chain/antigen_name 只說明「結合了哪條抗原鏈」，不是表位。
+        表位需從結構檔計算接觸殘基後 derived，屬 structures route。
+
+    - field: binding_site
+      status: not_available_in_this_route
+      note: 同 epitope。
+
+    - field: cross_reactivity_protein
+      status: not_available
+    - field: cross_reactivity_cell
+      status: not_available
+    - field: tm
+      status: not_available
+    - field: viscosity
+      status: not_available
+    - field: aggregation_tendency
+      status: not_available
+    - field: solubility
+      status: not_available
+    - field: hydrophobicity
+      status: not_available
+    - field: charge
+      status: not_available
+    - field: immunogenicity_ada_risk
+      status: not_available
+    - field: applicable_scenario
+      status: open_question
+      note: 待證據規範定義取值域後再決定是否填常量。
+
+
+# =========================================================
+# Part 3 — 可執行映射（依 Mapping/template.yaml 結構）
+# =========================================================
+# 僅包含已確定的映射。標記為 open_question 的字段刻意留空，
+# 未決事項不寫入可執行部分。
+
+targets:
+
+  - table: binder
+    record_per_source: one
+    entity_key: [SABDAB_ID]
+    parent: null
+    fields:
+
+      - target: target_antigen
+        source: antigen_name
+        method: derived
+        rule: |
+          僅取 antigen_type 中對應為 PROTEIN 或 PEPTIDE 的抗原分量；
+          再經統一靶點詞表歸一化。詞表未定前此規則不可執行。
+        required: false
+        status: blocked_on_open_question
+        note: 見 Part 1 antigen_name 的 open_question。
+
+      - target: vdj_genes
+        source: [heavy_subclass, light_subclass]
+        method: derived
+        rule: |
+          輸出 {"scheme":"IMGT","granularity":"V_subgroup",
+                "heavy_v_subgroup":<heavy_subclass 括號前部分>,
+                "light_v_subgroup":<light_subclass 括號前部分>}。
+          僅 V 基因亞群，無 D/J，須在 json 中顯式標明 granularity。
+          兩欄填充率僅約 33%，缺值記 null，原因 data_absent。
+        required: false
+
+      - target: germline_origin
+        source: [heavy_species, light_species, heavy_taxid, light_taxid]
+        method: derived
+        rule: |
+          輸出 {"heavy_species":…,"heavy_taxid":…,"light_species":…,"light_taxid":…}。
+        required: false
+        open_question: |
+          germline_origin 在 Schema_A 中類型為 string 而非 json，
+          且「胚系來源」嚴格說指胚系基因而非來源物種。
+          待決：本欄應存物種，還是應改由 heavy_subclass 的 IMGT 基因填、
+          或 Schema_A 該欄改為 json。
+
+      - target: structure_template
+        source: [PDB, Hchain, Lchain]
+        method: derived
+        rule: 拼接為 "<PDB>:H=<Hchain>,L=<Lchain>"；Lchain 為空時省略 L 部分（單域抗體）。
+        required: false
+
+      - target: complex_structure
+        source: [PDB, antigen_chain]
+        method: derived
+        rule: |
+          僅在 antigen_chain 非空時填值，拼接為 "<PDB>:Ag=<antigen_chain>"；
+          antigen_chain 為空（約 10.7%）表示 unbound 結構，記 null，原因 data_absent。
+        required: false
+
+  - table: binder_evidence
+    record_per_source: one
+    entity_key: [INSTANCE]
+    parent: binder
+    fields:
+
+      - target: source_type
+        method: constant
+        value: public_database
+        required: true
+
+      - target: source_id
+        source: INSTANCE
+        method: direct
+        required: true
+
+      - target: contrary_evidence
+        method: constant
+        value: false
+        required: true
+
+      - target: citation
+        source: [authors, compound, date, PDB]
+        method: derived
+        rule: 拼接為 "<authors>. <compound>. PDB <PDB> (<date>)."
+        required: false
+        note: SAbDab2 summary 無 PMID/DOI，引用只能由結構元數據拼出，可追溯性弱於文獻源。
+
+      - target: experimental_conditions
+        source:
+          - method
+          - resolution
+          - r_free
+          - r_factor
+          - heavy_expression_system
+          - light_expression_system
+          - heavy_expression_system_taxid
+          - light_expression_system_taxid
+          - agexpression_system
+          - agexpression_system_taxid
+        method: derived
+        rule: |
+          輸出 {"structure_determination_method":method,
+                "resolution_angstrom":resolution,
+                "r_free":r_free,"r_factor":r_factor,
+                "expression_system":{"heavy":…,"light":…,"antigen":…}}。
+          各分量缺值分別記 null，原因 data_absent。
+        required: false
+
+      - target: species_reactivity
+        source: [antigen_species, agtaxid]
+        method: derived
+        rule: |
+          輸出 {"observed_in_structure":[{"species":antigen_species,"taxid":agtaxid}]}。
+          僅代表該結構所結合抗原的物種，不構成完整跨種反應性譜，
+          key 名須保留 observed_in_structure 以免下游誤讀。
+        required: false
+
+
+# =========================================================
+# Part 4 — 對 SourceRegistry/sabdab.yaml 的修正建議
+# =========================================================
+# 本 mapping 的實測結果與現有 registry 不一致之處，供 registry 維護者處理。
+
+registry_discrepancies:
+  - item: identity.source_record_keys
+    registry_value: []
+    observed: |
+      建議 [INSTANCE]（實例級唯一），實體歸一化鍵另用 SABDAB_ID。
+  - item: validation.required_source_fields
+    registry_value: [pdb, Hchain, Lchain]
+    observed: |
+      實際欄名為大寫 PDB，非 pdb；且 Lchain 有 20.8% 為空（單域抗體），
+      不應列為 required，否則會誤判所有 VHH/VNAR 為 extraction_failed。
+      建議改為 [INSTANCE, PDB, SABDAB_ID]。
+  - item: retrieval.routes
+    registry_value: 單一空 route，formats [csv, mmcif]
+    observed: |
+      實際需要兩條獨立 route：
+        route_id: all_summary
+          method: rest_api（實為固定 GET，無分頁、無認證）
+          endpoint: https://sabdab.opig.stats.ox.ac.uk/api/download/all-summary
+          format: csv
+        route_id: all_structures
+          endpoint: https://sabdab.opig.stats.ox.ac.uk/api/download/all-structures
+          format: mmcif
+      序列類字段全部依賴第二條 route，本 mapping 只覆蓋第一條。
+      另有 all-single-domain-summary / all-sd-h-summary 兩個端點，
+      欄位結構與 all-summary 相同，是否併入待決。
+  - item: access.authentication / license
+    registry_value: 空
+    observed: |
+      無需認證；OpenAPI info.license 聲明 CC BY 4.0，商用可行但需署名。
+  - item: versioning
+    registry_value: mode null
+    observed: |
+      建議 mode: rolling，version_source 用 SABDABupdate_date（週更），
+      並用該欄作增量更新水位線。
+
+
+# =========================================================
+# Addendum（2026-08-19）— mmCIF 結構檔實測
+# =========================================================
+# 觸發：用戶指出 data/raw/sabdab/ 下除 summary CSV 外還有本地已下載的
+# mmCIF 結構檔，要求核對是否有更多可填字段。
+#
+# 樣本：data/raw/sabdab/search_structures_selected_2026-08-18/
+#   pdb_00008gho_sabdab.cif        （完整沉積結構，含 citation/entity_src_gen/struct_ref）
+#   pdb_00008gho_A_B_abag.cif      （單一 Ab-Ag 鏈三元組，僅座標，供介面計算）
+#   pdb_00008gho_H_L_abag.cif      （同上，另一組 H/L 配對）
+#   pdb_00008ghp_sabdab.cif
+#   pdb_00008ghp_H_L_abag.cif
+# 對應 summary 中的 PDB 8GHO、8GHP —— 均為 anti-GUCY2C 抗體結構，
+# 正是 target_filtered scope 下針對本項目首個具體靶點 GCC/GUCY2C 的樣本。
+#
+# 這是本地既有下載，不代表 SourceRegistry/sabdab.yaml 的 retrieval.routes
+# 已經配置好對應抓取邏輯——registry 目前仍只有一個空 route，需補全
+# （見下方 registry_discrepancies 追加項）。
+
+part_1b_structures_route:
+
+  route_id: structures  # 建議名稱；registry 尚未定義
+  source_format: mmcif_record
+  record_grain: 一個 mmCIF 結構檔案（`<pdb>_sabdab.cif` 或 `<pdb>_<chains>_abag.cif`）
+
+  file_variants:
+    - variant: "<pdb>_sabdab.cif"
+      description: |
+        完整沉積結構的精簡 mmCIF：保留 entity/entity_poly/entity_poly_seq/
+        entity_src_gen/struct_ref/citation/exptl/refine/pdbx_struct_assembly，
+        但不含原始 RCSB mmCIF 才有的 _struct_conn（二硫鍵/糖基化連接）與
+        _pdbx_entity_branch（聚糖分支）類別——實測 8GHP 雖有一個
+        entity.type=branched（聚糖），但該類別本身在此檔中缺失，
+        故無法從此變體取得確切糖基化位點。
+      categories_present: |
+        _atom_site, _audit_author, _cell, _citation, _citation_author,
+        _diffrn, _diffrn_detector, _diffrn_radiation,
+        _diffrn_radiation_wavelength, _diffrn_source, _entity, _entity_poly,
+        _entity_poly_seq, _entity_src_gen, _entry, _exptl, _exptl_crystal,
+        _pdbx_struct_assembly, _pdbx_struct_assembly_gen,
+        _pdbx_struct_oper_list, _refine, _refine_hist, _reflns,
+        _reflns_shell, _struct, _struct_asym, _struct_keywords, _struct_ref,
+        _symmetry
+      categories_absent: |
+        無 _struct_conn、_pdbx_entity_branch、_pdbx_branch_scheme，
+        亦無任何以 "sabdab"/"cdr"/"epitope"/"paratope"/"imgt"/"kabat"/
+        "chothia"/"numbering" 命名的自定義類別（已用 grep -i 逐檔核實）。
+        即：CDR 邊界、抗體編號、表位/結合位點皆非本路由的直接字段，
+        必須由我方 pipeline 對序列/結構另行計算。
+
+    - variant: "<pdb>_<chain1>_<chain2>_abag.cif"
+      description: |
+        從完整結構中抽出的單一 Ab（VH+VL 或僅 VH）與 Ag 鏈三元組，
+        鏈號重新編號為 A/B/C，僅含座標與實驗方法元數據，
+        不含 citation/entity_src_gen/struct_ref。
+        每個結構若含多個 Ab-Ag 配對（如 8GHO 有 A,B 與 H,L 兩組），
+        會拆成多個 _abag.cif 檔，每個對應 summary 中的一個 INSTANCE。
+      categories_present: |
+        _atom_site, _audit_author, _cell, _diffrn, _diffrn_detector,
+        _diffrn_radiation, _diffrn_source, _entity, _entity_poly,
+        _entity_poly_seq, _entry, _exptl, _exptl_crystal, _refine, _reflns,
+        _struct, _struct_asym, _struct_keywords, _symmetry
+      purpose: |
+        乾淨的雙分子座標檔（無晶體堆積干擾的其他拷貝），
+        是計算 epitope/binding_site/paratope 接觸殘基的合適輸入，
+        但接觸計算本身仍需我方 pipeline 執行，非直接可讀字段。
+
+  field_inventory:
+
+    - source: entity_poly.pdbx_seq_one_letter_code
+      keyed_by: entity_poly.entity_id + entity_poly.pdbx_strand_id
+      example: |
+        entity 1, strand A,H → EVQLVESGG...WGQGTLVTVSS（VH，8GHO）
+        entity 2, strand B,L → SGDIQLTQSP...GQGTKLEIK（VL，8GHO）
+        entity 1, strand A   → STGSQVSQNC...GRGPQGGGGS（GUCY2C 胞外域全長，8GHP）
+      description: |
+        完整胺基酸單字母序列，一 entity 一序列。
+        角色（重鏈/輕鏈/抗原）不在 cif 本身標註，須用
+        entity_poly.pdbx_strand_id 的鏈字母去對照 summary 的
+        Hchain / Lchain / antigen_chain 欄位才能判定。
+      target: [binder.vh_sequence, binder.vl_sequence]
+      note: |
+        抗原序列（如 8GHP 的 GUCY2C 胞外域全長序列）本身不落在 Schema_A，
+        但可作為 target_antigen 之外的補充生物學material，若未來
+        Schema_B/C 或靶點知識圖譜需要抗原序列，此路由可覆蓋。
+
+    - source: entity_poly_seq
+      description: |
+        逐殘基展開（entity_id, num, mon_id 三聯體的三字母碼），
+        與 pdbx_seq_one_letter_code 信息等價但顆粒度更細，
+        可用於與 atom_site 的 label_seq_id 對齊做殘基級標註。
+      target: null
+      reason: Schema_A 序列字段用單字母字符串即可，不需逐殘基表。
+
+    - source: struct_ref
+      example: |
+        8GHP: id=1, entity_id=1, db_name=UNP, db_code=GUC2C_HUMAN,
+              pdbx_db_accession=P25092
+        （VH/VL 的 struct_ref db_name 為 PDB 自引用，非 UniProt——
+         說明工程化抗體序列本身沒有天然 UniProt 條目，符合預期）
+      description: 該 entity 對應的外部序列資料庫交叉引用，蛋白抗原常見 UniProt。
+      target: binder.target_antigen
+      note: |
+        這是 antigen_name 自由文本問題的部分解法：UniProt accession
+        （如 GUCY2C = P25092）是乾淨的機器可讀鍵，可作為統一靶點詞表的
+        候選錨點之一。但覆蓋率有限——只有蛋白類且 PDB 沉積時已關聯 UniProt
+        的抗原才有此欄，肽段/非天然抗原仍需詞表兜底。
+        target_antigen 的最終取值規則仍是 open_question（見 Part 2），
+        此處僅補充一個更可靠的候選信號，不改變「未決」狀態。
+
+    - source: citation（journal_abbrev / title / year / pdbx_database_id_DOI / pdbx_database_id_PubMed）
+      example: |
+        title: "Molecular insights into recognition of GUCY2C by T-cell
+                engaging bispecific antibody anti-GUCY2CxCD3."
+        journal_abbrev: Sci Rep, year: 2023
+        DOI: 10.1038/s41598-023-40467-0, PubMed: 37591971
+      description: 結構論文的完整引用信息，含 DOI 與 PubMed ID。
+      target: binder_evidence.citation
+      note: |
+        比 Part 3 原先由 summary 的 authors/compound/date/PDB 拼出的
+        citation 更完整可靠——此路由能給出真實 DOI 與 PMID，
+        應優先於 summary-only 的拼接規則。若兩路由同時攝入同一 INSTANCE，
+        以 structures route 的 citation 覆蓋 summary route 的版本。
+
+    - source: entity_src_gen（gene_src_species / pdbx_gene_src_scientific_name /
+               pdbx_gene_src_ncbi_taxonomy_id / pdbx_host_org_scientific_name /
+               pdbx_host_org_ncbi_taxonomy_id）
+      description: |
+        entity 粒度的來源物種與表達宿主，字段比 summary 的
+        heavy/light_expression_system 更細（區分 gene_src 與 host_org），
+        但實測兩個結構中這些子字段幾乎全為 "?"（未填），
+        僅 scientific_name 與 taxonomy_id 有值。
+      target: binder_evidence.experimental_conditions
+      note: 與 summary 對應欄位語義重疊，非新增能力，僅粒度略細；不視為新覆蓋。
+
+    - source: pdbx_struct_assembly.oligomeric_details / oligomeric_count
+      example: "8GHP: oligomeric_details=trimeric, oligomeric_count=3"
+      description: 生物學組裝體的寡聚狀態。
+      target: null
+      reason: |
+        這是抗原（GUCY2C 胞外域三聚化）的生物學屬性，不是 binder 屬性，
+        Schema_A 無對應位置。若靶點知識圖譜/Schema_B 未來需要抗原寡聚化
+        信息（可能影響 CAR 結合價設計），可再評估，此處僅記錄存在此信號。
+
+    - source: entity.type = branched（聚糖）
+      description: |
+        entity 表中出現 type=branched 僅代表「結構中存在共價連接的聚糖」，
+        不含聚糖組成或連接位點——後者需要 _pdbx_entity_branch /
+        _struct_conn 類別，而這兩個類別在 sabdab.cif 精簡變體中缺失。
+      target: binder.glycosylation_sites
+      status: partial_signal_only
+      note: |
+        不建議僅憑此 entity 存在就填 glycosylation_sites——那只能給出
+        「有/無聚糖」的布林信號，填不出位點。若需要真實位點，
+        須改抓未精簡的原始 RCSB mmCIF（含 _struct_conn），
+        非本 route 覆蓋範圍。
+
+    - source: atom_site（配合 abag.cif 變體）
+      description: |
+        完整原子座標。Ab-Ag 介面（epitope/binding_site/paratope）
+        可用鏈間原子距離計算（如 CA/CB 或重原子 <4.5–5Å 閾值）得出接觸殘基，
+        _abag.cif 因僅含單一 Ab-Ag 對、無晶體堆積干擾，是理想輸入。
+      target: [binder_evidence.epitope, binder_evidence.binding_site]
+      status: computable_not_direct
+      note: |
+        這不是「讀一個字段」，而是需要我方幾何計算 pipeline
+        （method: derived，rule 需引用具體距離閾值與殘基編號方案）。
+        在該計算模組落地前，epitope/binding_site 對本 route 的狀態
+        仍是 not_available（見 Part 2），此處記錄的是「可行路徑」，
+        不代表當前可直接映射。
+
+
+# =========================================================
+# Part 3 附加映射 — structures route（vh/vl 序列、citation 覆蓋）
+# =========================================================
+
+part_1b_targets:
+
+  - table: binder
+    record_per_source: one
+    entity_key: [SABDAB_ID]  # 與 summary route 共用同一實體鍵，序列補全同一 binder 記錄
+    parent: null
+    fields:
+
+      - target: vh_sequence
+        source: entity_poly.pdbx_seq_one_letter_code
+        method: derived
+        rule: |
+          取 entity_poly.pdbx_strand_id 包含該 SABDAB_ID 對應 Hchain
+          （來自 summary route）的那一行 pdbx_seq_one_letter_code。
+        required: false
+
+      - target: vl_sequence
+        source: entity_poly.pdbx_seq_one_letter_code
+        method: derived
+        rule: |
+          同上，改用 Lchain 匹配；Lchain 為空（單域抗體）時本欄不填，
+          記 null，原因 data_absent，不視為 extraction_failed。
+        required: false
+
+  - table: binder_evidence
+    record_per_source: one
+    entity_key: [INSTANCE]
+    parent: binder
+    fields:
+
+      - target: citation
+        source: [citation.journal_abbrev, citation.title, citation.year,
+                 citation.pdbx_database_id_DOI, citation.pdbx_database_id_PubMed]
+        method: derived
+        rule: |
+          拼接為 "<title>. <journal_abbrev> (<year>). DOI:<DOI>. PMID:<PubMed>."
+          當同一 INSTANCE 在 summary route 與 structures route 都有 citation
+          映射時，以本欄（有真實 DOI/PMID）覆蓋 Part 3 summary route
+          由 authors/compound/date 拼接出的版本。
+        required: false
+        supersedes: sabdab2_to_binder.targets[table=binder_evidence].fields[target=citation]
+
+
+# =========================================================
+# 對 SourceRegistry/sabdab.yaml 的追加修正建議
+# =========================================================
+
+registry_discrepancies_addendum:
+  - item: retrieval.routes（structures）
+    observed: |
+      需新增第二條 route（route_id 建議 structures）：
+        method: web_download 或 rest_api（視官方是否有批次結構下載端點而定，
+                本地樣本來源於 SAbDab2 網站的 "search → selected structures"
+                下載，尚未確認是否有對應的 /api/download/all-structures
+                之外的、按 target_filtered 篩選結果批次下載的端點）
+        formats: [mmcif]
+      該 route 需要 chain-role 交叉引用：mmCIF 本身不標註某條鏈是
+      重鏈/輕鏈/抗原，必須拿 summary route 已抓到的 Hchain/Lchain/
+      antigen_chain 做外部對照，因此 structures route 的 mapping
+      在邏輯上依賴 summary route 先跑過，不是獨立可執行的 route。
+  - item: scope.config_file
+    observed: |
+      本地樣本（8GHO/8GHP）確認 scope.mode: target_filtered 已實際套用於
+      GCC/GUCY2C，config_file（queries/... 尚未在 registry 填寫路徑）
+      應指向產出這批下載的查詢條件，便於之後對 CDH17 重跑同一流程。

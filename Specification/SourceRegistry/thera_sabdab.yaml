@@ -1,0 +1,85 @@
+# 模板1 · 数据源登记（通用，适用于任何数据源）
+# 用途：登记「怎么拿数据 + 能为 A/B/C 三库填哪些字段」。字段清单必须取样验证真实存在。
+# 说明：本模板对所有数据源通用——文献/专利/Binder结构库/制造工艺库/CAR库 均用同一份填。
+source_name: Thera-SAbDab          # 数据源名称
+domain: binder_db                  # literature / patent / binder_db / manufacturing_db / car_db / other
+
+# 官方來源入口
+source_url: https://opig.stats.ox.ac.uk/webapps/sabdab-sabpred/therasabdab/search/
+
+入口_API:
+  endpoint: https://opig.stats.ox.ac.uk/webapps/sabdab-sabpred/static/downloads/TheraSAbDab_SeqStruc_OnlineDownload.csv
+  method: bulk_download             # rest_api / bulk_download / bigquery_sql / web_download / file_dump
+  authentication: none              # none / api_key / service_account / login
+  credential_env:                   # 环境变量名（如需凭证）
+
+文件格式: [csv, xlsx]               # json / xml / pdf / csv / fasta / bigquery_table ...
+
+版本或快照:
+  mode: snapshot                    # rolling / release / snapshot
+  version_source: HTTP Last-Modified 响应头；另见表头栏名内嵌的资料截止日 "Highest_Clin_Trial (Feb '25)"
+  snapshot_date: 2025-03-18         # 实测 Last-Modified: Tue, 18 Mar 2025 14:35:02 GMT
+
+更新频率:
+  upstream: 已停更约 17 个月。官方页面宣称持续收录 WHO INN 名单（最新提及 PL132），但静态档自 2025-03-18 未变
+  project_check: 每月（低频；主要监看 Last-Modified 是否变动）
+
+取样验证:                           # 证明字段清单真实存在
+  verified: true                    # true / false
+  verification_sample: |
+    实测 1,133 条 × 24 栏，档案存于
+    data/raw/therasabdab/TheraSAbDab_SeqStruc_OnlineDownload_2026-08-20.csv
+    表头（24 栏）：
+      Therapeutic, Format, CH1 Isotype, VD LC, Highest_Clin_Trial (Feb '25), Est. Status,
+      HeavySequence, LightSequence, HeavySequence(ifbispec), LightSequence(ifbispec),
+      100% SI Structure, 99% SI Structure, 95-98% SI Structure, Year Proposed, Year Recommended,
+      Target, Companies, Conditions Approved, Conditions Active, Conditions Discontinued,
+      Development Tech, Notes, Genetics (Bispecifics delimited with semicolon),
+      Alternative Therapeutic Names
+    本项目靶点命中（存于 data/raw/therasabdab/therasabdab_GCC_CDH17_subset.csv）：
+      Cabotamig    | Target=CDH17;CD3E | Est. Status=Active
+      Indusatumab  | Target=GUCY2C     | Est. Status=Discontinued
+    单条实例（Abagovomab）：Format=Whole mAb, CH1 Isotype=G1, VD LC=Kappa,
+      HeavySequence=QVKLQESGAELARPGASVKLSCKASGYTFTNYWMQ...（完整 VH 氨基酸序列，实测非空）
+  verified_at: 2026-08-20
+
+# 该源能为下列三库填的字段（从各库要求字段里挑；不列=填不了）
+# 库字段总数：Binder 47 / CAR 25 / 制造工艺 33
+可填字段_Binder:
+  - binder.name                     # Therapeutic（INN）；另有 Alternative Therapeutic Names 可做归一化别名
+  - binder.vh_sequence              # HeavySequence（双特异另有 HeavySequence(ifbispec)）
+  - binder.vl_sequence              # LightSequence（双特异另有 LightSequence(ifbispec)）
+  - binder.target_antigen           # Target；多靶点以 ";" 分隔，需拆分
+  - binder.germline_origin          # Development Tech（Human / Humanized / Chimeric / Murine），仅粗粒度
+  - binder.structure_template       # 100% SI / 99% SI / 95-98% SI Structure（PDB code，按相似度分档）
+  - binder_evidence.source_id       # Therapeutic（本档内唯一）
+  - binder_evidence.applicable_scenario      # Conditions Approved / Active / Discontinued
+  - binder_evidence.experimental_conditions  # Highest_Clin_Trial + Est. Status（临床阶段，需 derived）
+可填字段_CAR: []
+可填字段_制造工艺: []
+
+notes: >
+  【本源在 A 库中的定位】Thera-SAbDab 是目前唯一「一次拿到 INN 名称 + 完整 VH/VL 序列 + 靶点 +
+  临床阶段」的免费源，且对本项目两个靶点均有命中（CDH17 的 Cabotamig、GUCY2C 的 Indusatumab）。
+  它正好补上 SAbDab2 缺的 binder.name 与序列，两源应以 Target + 序列做实体归一化后互补。
+
+  【重大修正：更新频率】旧登记写的 upstream: weekly 与实测不符。
+  静态档 Last-Modified 为 2025-03-18，且栏名本身写死 "Highest_Clin_Trial (Feb '25)"，
+  即临床阶段资料截止于 2025 年 2 月。=> 临床阶段字段已过时约 18 个月，不能当作当前状态使用；
+  Est. Status / Highest_Clin_Trial 须以 ClinicalTrials.gov 或文献复核后方可入库。
+  基于此已将 版本或快照.mode 由 rolling 改为 snapshot。
+
+  【format 注意】Format 栏区分 Whole mAb / scFv / VHH / bispecific 等。
+  本项目只要 scFv / VHH 可直接用作 A，Whole mAb 需先判断能否 scFv 化，不能直接当 binder 用。
+  双特异抗体的第二组序列在 HeavySequence(ifbispec) / LightSequence(ifbispec)，
+  单条记录会展开成两个 binder 实体，非 one-to-one。
+
+  【缺口】本源无 kd / kon / koff / Tm / 聚集倾向等任何定量测量值，
+  也无 linker、numbering_scheme、fr_cdr_regions、cdr_lengths。
+  binder_evidence.evidence_level 同 SAbDab2，待证据分级规范定案。
+
+  【授权】页面只给引用要求（Raybould et al. 2020, NAR 48(D1)），未见明确 license 声明。
+  商用前需向 OPIG 确认——待决。
+
+  【另一个下载档】同目录另有 TheraSAbDab_INNwithnoSeq.csv / .xlsx，
+  收录「有 INN 但无公开序列」的治疗性抗体，可用于查缺，不能填序列字段。

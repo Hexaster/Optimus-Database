@@ -1,0 +1,127 @@
+# 模板1 · 数据源登记（通用，适用于任何数据源）
+# 用途：登记「怎么拿数据 + 能为 A/B/C 三库填哪些字段」。字段清单必须取样验证真实存在。
+# 说明：本模板对所有数据源通用——文献/专利/Binder结构库/制造工艺库/CAR库 均用同一份填。
+source_name: Europe PMC            # 数据源名称
+domain: literature                 # literature / patent / binder_db / manufacturing_db / car_db / other
+                                   # 登记为 literature，但本轮是作为「制造工艺补充源」验证的。见 notes
+
+# 官方來源入口
+source_url: https://europepmc.org/
+
+入口_API:
+  endpoint: https://www.ebi.ac.uk/europepmc/webservices/rest/search
+  method: rest_api                  # rest_api / bulk_download / bigquery_sql / web_download / file_dump
+  authentication: none              # none / api_key / service_account / login
+  credential_env:                   # 环境变量名（如需凭证）
+
+文件格式: [json, xml]               # 全文另有 XML（/fullTextXML）与 PDF 两种形态
+
+版本或快照:
+  mode: rolling                     # rolling / release / snapshot
+  version_source: 响应体的 "version" 字段（实测 6.9）；单篇另有 firstIndexDate / dateOfRevision
+  snapshot_date: 2026-08-20         # 本次检索日
+
+更新频率:
+  upstream: 每日
+  project_check: 每周（用 cursorMark 做增量）
+
+取样验证:                           # 证明字段清单真实存在
+  verified: true                    # true / false
+  verification_sample: |
+    2026-08-20 实测两次检索：
+    (1) 泛查 query='"CAR-T" AND "manufacturing"' → hitCount 11,000
+        首条：PMID 42587743 / doi 10.3390/cells15151333
+        "Mass Spectrometry in Allogeneic CAR-T Cell Manufacturing:
+         From Cellular Starting Materials to Multi-Attribute Quality Control."
+    (2) 本项目靶点 query='("GUCY2C" OR "CDH17") AND ("CAR-T" OR "chimeric antigen receptor")'
+        resultType=core，pageSize=25 → hitCount 315
+        （存 data/raw/europe_pmc/epmc_GUCY2C_CDH17_CAR_2026-08-20.json，184,285 bytes）
+        实测返回的记录字段（core，48 个键）：
+          id, source, pmid, pmcid, doi, title, authorString, authorList, affiliation,
+          abstractText, journalInfo, pubYear, pubTypeList, keywordList, meshHeadingList,
+          chemicalList, grantsList, fullTextIdList, fullTextUrlList, fullTextReceivedDate,
+          isOpenAccess, inEPMC, inPMC, hasPDF, hasReferences, hasTextMinedTerms, hasSuppl,
+          hasData, hasDbCrossReferences, hasEvaluations, hasLabsLinks, hasTMAccessionNumbers,
+          license, citedByCount, firstPublicationDate, firstIndexDate, dateOfCreation,
+          dateOfRevision, dateOfCompletion, electronicPublicationDate, pageInfo, language,
+          publicationStatus, pubModel, subsetList, tmAccessionTypeList, authMan, epmcAuthMan,
+          nihAuthMan, hasBook
+        前 5 条命中（直接切中本项目靶点）：
+          MED 39315411  CD8α Structural Domains Enhance GUCY2C CAR-T Cell Efficacy.       OA=Y inEPMC=Y
+          MED 41928253  Cadherin 17 and digestive cancers: from diagnostic to therapeutic
+                        opportunities.                                                     OA=Y inEPMC=Y
+          MED 41810338  Advances and challenges of CAR T cell therapy in digestive system
+                        malignancies.                                                      OA=Y inEPMC=Y
+          MED 42241671  Guanylyl Cyclase 2C-Targeted CAR T-Cell Therapy in Patients With
+                        Metastatic ...                                                     OA=N inEPMC=N
+          MED 41924255  IFNγ-induced antigen loss in CAR-T cell therapy.                   OA=Y inEPMC=Y
+  verified_at: 2026-08-20
+
+# 该源能为下列三库填的字段（从各库要求字段里挑；不列=填不了）
+# 库字段总数：Binder 47 / CAR 25 / 制造工艺 33
+可填字段_Binder:
+  # API 本身只给文献元数据；下列字段全部来自全文抽取，非 API 直出
+  - binder_evidence.source_id                # pmid / pmcid / doi
+  - binder_evidence.citation                 # authorString + title + journalInfo + pubYear
+可填字段_CAR: []                    # 全文里有 CAR 构型信息，本轮未验证，留待 CAR 源登记时另验
+可填字段_制造工艺:
+  # 同上：API 只定位文献，值靠全文抽取
+  - manufacturing_evidence.source_id         # pmid / pmcid / doi
+  - manufacturing_evidence.citation
+  - manufacturing.moi                        # ← EMA/FDA 都拿不到，指望本源
+  - manufacturing.culture_duration           # ← 同上
+  - manufacturing_evidence.vcn               # ← 同上
+  - manufacturing_evidence.mycoplasma        # ← 同上
+  - manufacturing.t_cell_source
+  - manufacturing.activation_method
+  - manufacturing.vector_type
+  - manufacturing.transduction_transfection_conditions
+  - manufacturing.culture_system
+  - manufacturing.cytokine_combination
+  - manufacturing.cryopreservation_conditions
+  - manufacturing_evidence.cell_viability
+  - manufacturing_evidence.transduction_efficiency
+  - manufacturing_evidence.cd3_positive_ratio
+  - manufacturing_evidence.memory_phenotype
+  - manufacturing_evidence.exhaustion_phenotype
+  - manufacturing_evidence.killing_activity
+  - manufacturing_evidence.cytokine_release
+  - manufacturing_evidence.experimental_conditions
+
+注意_可填字段的性质: |
+  上面两组 可填字段 都不是 API 直出字段，而是「本源能定位到载有该值的全文」。
+  API 返回的 48 个键里没有任何一个是工艺参数。
+  这与 EMA EPAR 属同一类情况（文档源），但比 EMA 更松：
+  EMA 是 7 份固定 PDF，Europe PMC 是 315 篇待筛文献，抽取工作量高一个量级。
+  => 这批字段在跑通全文抽取之前，都应视为「预期覆盖」而非「已验证覆盖」。
+
+notes: >
+  【本源在 C 库中的不可替代性】这是本轮实测得到的一条硬结论：
+  manufacturing.moi、manufacturing.culture_duration、manufacturing_evidence.vcn、
+  manufacturing_evidence.mycoplasma 这四个字段，
+  EMA EPAR（Carvykti 146 页全文 0 命中）与 FDA SBRA（被 (b)(4) 涂黑）都给不了。
+  监管文档拿不到的定量工艺参数，只能靠同行评议文献。
+  => Europe PMC 不是「锦上添花的文献源」，而是 C 库定量字段的唯一来源。
+
+  【靶点侧的好消息】315 篇 GUCY2C/CDH17 × CAR 的命中里，
+  首条就是 "CD8α Structural Domains Enhance GUCY2C CAR-T Cell Efficacy"——
+  正好是 B 库（CAR 结构：CD8α 铰链/跨膜）与本项目靶点的交叉，
+  说明这两个靶点的 CAR-T 文献确实存在且可检索，不是空集。
+
+  【全文可得性】core 结果里 isOpenAccess / inEPMC / hasPDF / fullTextUrlList 四个字段
+  直接告诉我们哪些能拿全文。实测前 5 条有 4 条 inEPMC=Y。
+  全文 XML 走 /europepmc/webservices/rest/{source}/{id}/fullTextXML。
+  非 OA 的（如 42241671）只能拿到摘要，工艺参数多半在正文与补充材料里，拿不到。
+  => 检索策略应先按 isOpenAccess 分流：OA 的走全文抽取，非 OA 的只入摘要级证据。
+
+  【翻页】用 cursorMark（响应给 nextCursorMark / nextPageUrl），不要用 offset。
+  resultType 分 lite / core 两档，lite 只给基本字段，抽取用途必须用 core。
+
+  【授权】记录级授权各不相同，core 结果里带 license 字段，逐篇判断。
+  本项目非商用，但仍应按 license 字段区分「可全文入库」与「只可存引用」。
+
+  【与 PubMed / OpenAlex 的关系】CLAUDE.md 另点名了 PubMed 与 OpenAlex。
+  Europe PMC 已镜像 PubMed（source=MED 即 PubMed 记录，实测 5 条全是 MED），
+  且额外提供全文与 OA 标记，功能上覆盖 PubMed。
+  => 建议 PubMed 不单独接入，避免重复。OpenAlex 的价值在引用网络与机构消歧，
+  与本源不重叠，另行评估。

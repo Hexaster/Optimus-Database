@@ -1,0 +1,19 @@
+# 模板2 · 实例（通用，适用于任何数据源）
+# 用途：从该源取一条真实记录，填它实际能为 A/B/C 填的字段，证明覆盖能力。
+source_name:
+example:
+  id:                       # DOI / PMID / 专利号 / 库内 ID
+  title:
+  url:
+  format:                   # 原始形态：json / xml / pdf / csv / fasta ...
+raw_snippet: |              # 关键原文/原始字段片段（证明字段真实存在）
+
+# 这条实例实际填到的字段（字段名: 抽到的值）
+filled_Binder: {}
+filled_CAR: {}
+filled_制造工艺: {}
+
+# 这条实例没能填、但值得注意的字段（说明缺口）
+empty_notable: []
+
+notes:

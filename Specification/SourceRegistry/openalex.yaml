@@ -1,0 +1,49 @@
+source_id: openalex
+source_name: OpenAlex
+domain: Literature
+source_url: https://openalex.org/
+
+access:
+  access_type: public
+  license: CC0 1.0
+  commercial_use: true
+  authentication:
+    type: none
+    credential_env: null
+
+retrieval:
+  routes:
+    - route_id: works_api
+      method: rest_api
+      endpoint: https://api.openalex.org/works
+      formats: [json]
+      query_config: null
+      pagination:
+        method: cursor
+        page_size: 100
+      rate_limit:
+        requests_per_second: 100
+
+scope:
+  mode: query_filtered
+  config_file: queries/openalex_literature.yaml
+
+identity:
+  source_record_keys: [id]
+
+versioning:
+  mode: rolling
+  version_source: null
+
+processing:
+  parser: openalex_parser
+  mapping_file: mappings/openalex_to_literature.yaml
+  target_schema: literature
+
+update:
+  upstream_frequency: continuous
+  project_check_frequency: weekly
+  update_strategy: rerun_query
+
+validation:
+  required_source_fields: [id]

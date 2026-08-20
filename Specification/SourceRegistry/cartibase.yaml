@@ -1,0 +1,49 @@
+source_id: cartibase
+source_name: CARTiBASE
+domain: CAR
+source_url: https://cartibase.org/
+
+access:
+  access_type: public
+  license: CC BY-NC-ND 4.0
+  commercial_use: false
+  authentication:
+    type: none
+    credential_env: null
+
+retrieval:
+  routes:
+    - route_id: sequence_search_and_export
+      method: web_download
+      endpoint: https://cartibase.org/
+      formats: [fasta]
+      query_config: null
+      pagination:
+        method: null
+        page_size: null
+      rate_limit:
+        requests_per_second: null
+
+scope:
+  mode: target_filtered
+  config_file: queries/cartibase_car.yaml
+
+identity:
+  source_record_keys: [entry_label]
+
+versioning:
+  mode: release
+  version_source: https://cartibase.org/
+
+processing:
+  parser: cartibase_parser
+  mapping_file: mappings/cartibase_to_car.yaml
+  target_schema: car
+
+update:
+  upstream_frequency: monthly
+  project_check_frequency: weekly
+  update_strategy: rerun_query
+
+validation:
+  required_source_fields: [entry_label]

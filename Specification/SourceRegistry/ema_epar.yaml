@@ -1,0 +1,122 @@
+# 模板1 · 数据源登记（通用，适用于任何数据源）
+# 用途：登记「怎么拿数据 + 能为 A/B/C 三库填哪些字段」。字段清单必须取样验证真实存在。
+# 说明：本模板对所有数据源通用——文献/专利/Binder结构库/制造工艺库/CAR库 均用同一份填。
+source_name: EMA EPAR              # 数据源名称（European Public Assessment Report）
+domain: manufacturing_db           # literature / patent / binder_db / manufacturing_db / car_db / other
+                                   # 注意：不是结构化数据库，是「文档源」。见 notes
+
+# 官方來源入口
+source_url: https://www.ema.europa.eu/en/medicines
+
+入口_API:
+  endpoint: https://www.ema.europa.eu/en/documents/report/documents-output-epar_documents_json-report_en.json
+  method: bulk_download             # rest_api / bulk_download / bigquery_sql / web_download / file_dump
+  authentication: none              # none / api_key / service_account / login
+  credential_env:                   # 环境变量名（如需凭证）
+
+文件格式: [json, pdf]               # json = 文档清单；pdf = 文档本体（真正的工艺内容在 PDF 里）
+
+版本或快照:
+  mode: rolling                     # rolling / release / snapshot
+  version_source: JSON 的 meta.timestamp；每条记录另有 first_published_date / last_updated_date
+  snapshot_date: 2026-08-20         # 实测 meta.timestamp = "2026-08-20T05:50:32Z"
+
+更新频率:
+  upstream: 高频。meta.timestamp 精确到秒，实测为当日报表，官方按日/多次重生成
+  project_check: 每周（比对 last_updated_date 做增量）
+
+取样验证:                           # 证明字段清单真实存在
+  verified: true                    # true / false
+  verification_sample: |
+    2026-08-20 实测，样本存于 data/raw/ema_epar/：
+    (1) 清单层（JSON，29,101,766 bytes，meta.total_records = 20,121）
+        每条记录 12 个键，实测：
+          id, name, type, medicine_name, ema_product_number, status,
+          consultation_date, first_published_date, last_updated_date,
+          reference_number, document_url, translations
+        筛出 7 个已批准 CAR-T 产品共 91 条文档记录
+        （存 epar_documents_CART_subset_2026-08-20.json）：
+          Kymriah EMEA/H/C/004090、Yescarta EMEA/H/C/004480、Tecartus EMEA/H/C/005102、
+          Abecma EMEA/H/C/004662、Breyanzi EMEA/H/C/004731、Carvykti EMEA/H/C/005095、
+          Aucatzyl EMEA/H/C/005907
+        type 分布：variation-report 19、procedural-steps-after 12、scientific-conclusion 11、
+          orphan-maintenance-report 8、all-authorised-presentations 7、product-information 7、
+          assessment-report 7、overview 7、orphan-maintenance-report-post 6、rmp 5、rmp-summary 2
+        => 每个 CAR-T 产品都有且只有 1 份 assessment-report，那是工艺内容的载体。
+    (2) 文档层（PDF）：下载 Carvykti EPAR public assessment report
+        （carvykti-epar-public-assessment-report_en.pdf，5,574,046 bytes，146 页）
+        全文检索确认下列工艺内容真实存在（括号内为命中次数）：
+          "2.4.3.2. Manufacture of the product and process controls"（章节标题）
+          leukapheresis — "autologous PBMCs are obtained from the patients by leukapheresis"
+          lentiviral(2+)、transduction — "engineered ex vivo by lentiviral transduction"
+          工序链 — "apheresis thaw and T cell enrichment, T cell activation,
+                    T cell transduction and expansion, T cell ..."
+          cryopreserv(21)、cell viability(7)、potency(7)
+          CD4(1) — "percent CD4+ cells, percent CD8+ cells, CD4/CD8 ratio, transduction efficiency, CAR..."
+          IL-2(5) — "Kit and human IL-2. The pre-activated T cells were transduced with the
+                     second/third generation ..."
+          sterility(1)、endotoxin(1) — "routine release at least for identity, sterility and endotoxin"
+          "Release specifications cover tests for safety, potency, identity, genomic integrity, quantity..."
+        阴性确认（这些在本 PDF 内找不到）：vector copy number / VCN(0)、MOI(0)、
+          multiplicity of infection(0)、mycoplasma(0)、"days of culture"(0)
+        重要：全文 "(b) (4)" 命中 0 次 —— EMA 不做美式 CBI 涂黑。
+  verified_at: 2026-08-20
+
+# 该源能为下列三库填的字段（从各库要求字段里挑；不列=填不了）
+# 库字段总数：Binder 47 / CAR 25 / 制造工艺 33
+可填字段_Binder: []
+可填字段_CAR: []                    # EPAR 内有 CAR 构型描述（如 CD8α SP、VHH1/VHH2），
+                                   # 但本轮只验证工艺侧，B 库覆盖面留待 CAR 源登记时另验
+可填字段_制造工艺:
+  - manufacturing.t_cell_source              # "autologous PBMCs obtained by leukapheresis"
+  - manufacturing.cd4_cd8_ratio              # "percent CD4+ cells, percent CD8+ cells, CD4/CD8 ratio"
+  - manufacturing.activation_method          # "T cell activation"；"pre-activated T cells"、activation kit
+  - manufacturing.reagents                   # activation kit、human IL-2 等
+  - manufacturing.vector_type                # "lentiviral vector (LVV)"，含 second/third generation 之别
+  - manufacturing.transduction_transfection_conditions  # 工序描述层级，非定量参数
+  - manufacturing.culture_system             # "T cell transduction and expansion"
+  - manufacturing.cytokine_combination       # human IL-2（其余细胞因子按产品而异）
+  - manufacturing.cryopreservation_conditions # 21 处命中，含冻存袋与冻存地点
+  - manufacturing.formulation                # "final cryopreserved medicinal product"
+  - manufacturing.corresponding_car_product  # medicine_name + EPAR 内的 CAR 构型描述
+  - manufacturing_evidence.source_id         # ema_product_number + document_url
+  - manufacturing_evidence.citation          # name + ema_product_number + first_published_date
+  - manufacturing_evidence.cell_viability    # 7 处命中
+  - manufacturing_evidence.transduction_efficiency  # 与 CD4/CD8 同句列出
+  - manufacturing_evidence.sterility         # 列为常规放行项
+  - manufacturing_evidence.endotoxin         # 列为常规放行项
+  - manufacturing_evidence.experimental_conditions
+
+notes: >
+  【本源的性质：文档源，不是结构化库】必须讲清楚，否则下游会误估工作量。
+  JSON 端点只给「文档清单」——20,121 条记录、12 个键，全是文档层级的元数据
+  （产品名、EPAR 编号、文档类型、发布日、PDF 网址），一个工艺字段都填不了。
+  上面 可填字段_制造工艺 的每一条，都要靠人或 LLM 从 assessment-report PDF
+  （Carvykti 那份 146 页）里抽取。
+  => 接入本源 = 两段式：先用 JSON 定位 PDF，再做全文抽取。
+  按 CLAUDE.md 的证据可追溯要求，每个抽出的值都要记 document_url + 页码 + 原文片段。
+
+  【EMA 优于 FDA 的关键理由（本轮实测对比，建议以 EMA 为 C 库主源）】
+  同一个产品 Carvykti，两边文档差距很大：
+  EMA EPAR assessment report 146 页，"(b) (4)" 命中 0 次，工艺章节完整；
+  FDA SBRA（见 fda_cber_cgt.yaml）23 页，"(b) (4)" 命中 123 次，定量参数几乎全被涂黑。
+  => C 库应以 EMA EPAR 为主源，FDA 仅作补充与交叉验证。
+
+  【即便是 EMA 也填不了的字段（勿高估覆盖）】
+  实测 Carvykti EPAR 全文找不到 vector copy number / VCN、MOI、
+  multiplicity of infection、mycoplasma、具体培养天数。
+  => manufacturing.moi、manufacturing.culture_duration、
+  manufacturing_evidence.vcn、manufacturing_evidence.mycoplasma
+  这四个字段本源填不了，必须另找文献源（Europe PMC）。
+  manufacturing_evidence.cd3_positive_ratio 也未列入：
+  PDF 里 CD3+ 的 4 次命中都在 PK（药代）语境，不是产品放行的 CD3+ 比例，不得挪用。
+
+  【只需要 7 份 PDF】筛选条件很简单：medicine_name 属于 7 个 CAR-T 产品
+  且 type == "assessment-report"。变更类文档（variation-report 19 份）里也可能有工艺变更信息，
+  是否纳入待定——建议第一轮只做 7 份 assessment-report，跑通再说。
+
+  【坑】该 JSON 用 HTTP/2 下载会中途断流（实测 curl 报
+  "HTTP/2 stream 1 was not closed cleanly: INTERNAL_ERROR"，档案截断成 12.9 MB 且 JSON 解析失败）。
+  必须强制 HTTP/1.1（curl --http1.1）才能拿到完整的 29.1 MB。
+
+  【授权】EMA 版权与有限复制声明，需署名，第三方内容除外。本项目非商用，无障碍。

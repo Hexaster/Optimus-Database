@@ -1,0 +1,35 @@
+# 模板1 · 数据源登记（通用，适用于任何数据源）
+# 用途：登记「怎么拿数据 + 能为 A/B/C 三库填哪些字段」。字段清单必须取样验证真实存在。
+# 说明：本模板对所有数据源通用——文献/专利/Binder结构库/制造工艺库/CAR库 均用同一份填。
+source_name:                # 数据源名称
+domain:                     # literature / patent / binder_db / manufacturing_db / car_db / other
+
+入口_API:
+  endpoint:
+  method:                   # rest_api / bulk_download / bigquery_sql / web_download / file_dump
+  authentication:           # none / api_key / service_account / login
+  credential_env:           # 环境变量名（如需凭证）
+
+文件格式: []                # json / xml / pdf / csv / fasta / bigquery_table ...
+
+版本或快照:
+  mode:                     # rolling / release / snapshot
+  version_source:           # 从哪看版本/快照日期
+  snapshot_date:
+
+更新频率:
+  upstream:                 # 上游更新频率
+  project_check:            # 我方复查频率
+
+取样验证:                   # 证明字段清单真实存在
+  verified:                 # true / false
+  verification_sample:      # 一条真实记录 ID / query
+  verified_at:
+
+# 该源能为下列三库填的字段（从各库要求字段里挑；不列=填不了）
+# 库字段总数：Binder 47 / CAR 25 / 制造工艺 33
+可填字段_Binder: []
+可填字段_CAR: []
+可填字段_制造工艺: []
+
+notes:

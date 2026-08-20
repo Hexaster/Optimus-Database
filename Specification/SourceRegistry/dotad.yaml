@@ -1,0 +1,103 @@
+# 模板1 · 数据源登记（通用，适用于任何数据源）
+# 用途：登记「怎么拿数据 + 能为 A/B/C 三库填哪些字段」。字段清单必须取样验证真实存在。
+# 说明：本模板对所有数据源通用——文献/专利/Binder结构库/制造工艺库/CAR库 均用同一份填。
+source_name: DOTAD 2.0             # 数据源名称
+domain: binder_db                  # literature / patent / binder_db / manufacturing_db / car_db / other
+
+# 官方來源入口
+source_url: https://i.uestc.edu.cn/DOTAD2.0/
+
+入口_API:
+  endpoint: https://i.uestc.edu.cn/DOTAD2.0/assets/data/{file_name}   # 下载中心：/DOTAD2.0/Download.html
+  method: bulk_download             # rest_api / bulk_download / bigquery_sql / web_download / file_dump
+  authentication: none              # none / api_key / service_account / login
+  credential_env:                   # 环境变量名（如需凭证）
+
+文件格式: [xlsx, zip]               # json / xml / pdf / csv / fasta / bigquery_table ...
+
+版本或快照:
+  mode: release                     # rolling / release / snapshot
+  version_source: 档名内嵌版本号（*_v2.0.xlsx）；另见 dotad_data_dictionary_v2.0.xlsx 的 "Change Log" 分页
+  snapshot_date: 2026-06            # metadata/sequences 与 experimental 标 2026-06；literature 与 dictionary 标 2026-03
+
+更新频率:
+  upstream: 不定期发版（1.0 = 2024-09，2.0 = 2026-03～2026-06），无固定周期
+  project_check: 每月（监看 Download.html 是否出现新版本号）
+
+取样验证:                           # 证明字段清单真实存在
+  verified: true                    # true / false
+  verification_sample: |
+    2026-08-20 实测下载 4 个 v2.0 工作簿，存于 data/raw/dotad/v2.0/：
+      dotad_antibody_metadata_sequences_v2.0.xlsx
+        [metadata]  4,100 列 × 16 栏：antibody_id, antibody_name, Format, hc_subtype, lc_subtype,
+                    Highest_Clin_Trial, est_status_asof_feb2025, Target, Species,
+                    Clinical indication, PDB, PDB_reference, ADAs_rate, ADAs_reference,
+                    production_host, tag
+        [sequences] 9,845 列 × 8 栏：antibody_id, antibody_name, VH, VL,
+                    hc_protein_sequence, lc_protein_sequence, hc_dna_sequence, lc_dna_sequence
+      dotad_experimental_developability_v2.0.xlsx
+        6 分页（average ×3 / tidy format ×3），最宽 55 栏，含
+        tm1_nanodsf, tm2_nanodsf, tonset_nanodsf, hic_rt, sec_%monomer, smac_rt, hac_rt,
+        acsins_dLmax_pH7.4 / pH6.0, polyreactivity_prscore_cho / ova, titer, purity_%lc+hc
+      dotad_literature_developability_collection_v2.0.xlsx
+        30 分页（每分页 = 一篇文献的抽取结果），含 Adams et al.（10,970 列，fit_KD_median [M]）、
+        Jain et al.(2024)（Octet KD）、marks et al.（%ADA response）、Hebditch et al.（预测值）
+      dotad_data_dictionary_v2.0.xlsx
+        10 分页，其中 [Field Dictionary] 461 列 × 17 栏，逐字段给出
+        field_name / description / data_type / unit / lower_bound / upper_bound /
+        missing_value_rule / example_values
+  verified_at: 2026-08-20
+
+# 该源能为下列三库填的字段（从各库要求字段里挑；不列=填不了）
+# 库字段总数：Binder 47 / CAR 25 / 制造工艺 33
+可填字段_Binder:
+  - binder.name                     # metadata.antibody_name（1.0 时代叫 INN）
+  - binder.vh_sequence              # sequences.VH（另有 hc_protein_sequence 全长重链）
+  - binder.vl_sequence              # sequences.VL（另有 lc_protein_sequence 全长轻链）
+  - binder.target_antigen           # metadata.Target
+  - binder.germline_origin          # metadata.Species，仅粗粒度
+  - binder.structure_template       # metadata.PDB
+  - binder_evidence.source_id       # metadata.antibody_id
+  - binder_evidence.citation        # metadata.PDB_reference / ADAs_reference / literature 分页的 PMID+address
+  - binder_evidence.immunogenicity_ada_risk  # metadata.ADAs_rate；literature 的 marks et al. %ADA response
+  - binder_evidence.tm              # experimental 的 tm1/tm2/tm3_nanodsf、tonset_nanodsf；多篇文献的 Tm
+  - binder_evidence.hydrophobicity  # experimental 的 hic_rt / smac_rt / hac_rt（保留时间，非无量纲疏水指数）
+  - binder_evidence.aggregation_tendency     # sec_%monomer、acsins_dLmax（自缔合）
+  - binder_evidence.kd              # literature 的 Adams et al. fit_KD_median [M]、Jain et al.(2024) Octet KD
+  - binder_evidence.applicable_scenario      # metadata.Clinical indication
+  - binder_evidence.experimental_conditions  # 分页名 + 指标名 + pH/温度等条件
+可填字段_CAR: []
+可填字段_制造工艺: []
+
+notes: >
+  【本轮最大变更：1.0 → 2.0】现有 Specification/Mapping/dotad_to_binder.yaml 是照
+  data/raw/dotad/ 下的 1.0 版五档结构（metadata.xlsx / sequence.xlsx / clinical_trials.xlsx /
+  experimental.xlsx / tools_integration.xlsx）写的，该结构已被 2.0 取代：
+  栏名改了（INN → antibody_name、ID → antibody_id、HC Class/LC Type → hc_subtype/lc_subtype）；
+  档案合并了（metadata + sequence 合并为一个工作簿的两个分页）；
+  clinical_trials.xlsx 取消，Clinical indication 并入 metadata；
+  新增 production_host、tag、hc/lc_dna_sequence 四栏；
+  规模变了（metadata 963 → 4,100；sequences 12,939 → 9,845）。
+  => dotad_to_binder.yaml 需按 2.0 重写，否则 parser 会全表对不上栏名。此为待办，不在本次登记范围内。
+
+  【新增能力：kd】1.0 时代本源填不了 binder_evidence.kd。
+  2.0 的 literature 工作簿新增 Adams et al.（10,970 列，fit_KD_median/mean/min/max [M]）与
+  Jain et al.(2024)（Octet KD (M)），使 kd 首次可由本源获得。
+  注意单位是 M，Schema_A 的 kd 单位是 nM，映射时必须换算（×1e9）并记录 unit_from。
+
+  【data_dictionary 值得直接用】dotad_data_dictionary_v2.0.xlsx 的 [Field Dictionary] 分页
+  已逐字段给出 unit / lower_bound / upper_bound / missing_value_rule / example_values，
+  可直接用作我方 QC 的边界检查规则，不必自己再推一遍。
+  [Assay Endpoint Dictionary] 分页还给了 Harmonized_Endpoint / Comparable_Flag / Risk_Direction，
+  对「不同文献的同一指标能否合并」已有现成判断，建议照用。
+
+  【实体归一化难点】literature 工作簿 30 个分页各自的指标栏名完全不同
+  （HIC / HIC.16 / HIC.pred.15 / hic_rt 可能指同一类指标但测法与单位不同），
+  不得仅凭栏名相近就合并；须走 Assay Endpoint Dictionary 的 Harmonized_Endpoint。
+
+  【授权】Download.html 与首页均未见 license 声明；DOTAD 1.0 论文发表于
+  Frontiers in Bioinformatics (2023)。本项目为非商用（2026-08-20 业务侧确认），
+  学术/非商用使用无障碍，不构成阻塞项。
+
+  【衍生资源】另有 dotad_affinity_benchmark_v2.0.zip 与 DOTAD2_benchmark_package_v1.1.zip
+  （含 VH/VL、endpoint labels、split schemes），属模型评测用，不进 A 库实体表。

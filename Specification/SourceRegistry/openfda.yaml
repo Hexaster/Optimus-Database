@@ -1,0 +1,68 @@
+# 模板1 · 数据源登记（通用，适用于任何数据源）
+# 用途：登记「怎么拿数据 + 能为 A/B/C 三库填哪些字段」。字段清单必须取样验证真实存在。
+# 说明：本模板对所有数据源通用——文献/专利/Binder结构库/制造工艺库/CAR库 均用同一份填。
+source_name: openFDA Drugs@FDA     # 数据源名称
+domain: other                      # literature / patent / binder_db / manufacturing_db / car_db / other
+                                   # 本轮实测后由 manufacturing_db 降级为 other。理由见 notes
+
+# 官方來源入口
+source_url: https://open.fda.gov/apis/drug/drugsfda/
+
+入口_API:
+  endpoint: https://api.fda.gov/drug/drugsfda.json
+  method: rest_api                  # rest_api / bulk_download / bigquery_sql / web_download / file_dump
+  authentication: api_key           # none / api_key / service_account / login（无 key 也可用，但限速更严）
+  credential_env: OPENFDA_API_KEY
+
+文件格式: [json]                    # json / xml / pdf / csv / fasta / bigquery_table ...
+
+版本或快照:
+  mode: rolling                     # rolling / release / snapshot
+  version_source: 各 endpoint 的 meta.last_updated
+  snapshot_date:
+
+更新频率:
+  upstream: 工作日每日
+  project_check: 不再定期复查（本源对本项目无用，见 notes）
+
+取样验证:                           # 证明字段清单真实存在
+  verified: true                    # true / false（这是一次「阴性验证」——证明该源填不了）
+  verification_sample: |
+    2026-08-20 实测三次检索，全部 NOT_FOUND：
+      GET api.fda.gov/drug/drugsfda.json?search=openfda.brand_name:KYMRIAH&limit=1
+        → {"error":{"code":"NOT_FOUND","message":"No matches found!"}}
+      GET api.fda.gov/drug/drugsfda.json?search=openfda.brand_name:YESCARTA&limit=1
+        → NOT_FOUND
+      GET api.fda.gov/drug/drugsfda.json?search=products.brand_name:CARVYKTI&limit=1
+        → NOT_FOUND
+    另 search=submissions.submission_type:BLA 亦取不到 meta.results。
+  verified_at: 2026-08-20
+
+# 该源能为下列三库填的字段（从各库要求字段里挑；不列=填不了）
+# 库字段总数：Binder 47 / CAR 25 / 制造工艺 33
+可填字段_Binder: []
+可填字段_CAR: []
+可填字段_制造工艺: []               # 一个都填不了。理由见 notes
+
+notes: >
+  【本轮结论：这是一次纠错，本源对本项目无用】
+  旧登记把本源标为 domain: Manufacturing、target_schema: manufacturing，
+  并写了 mapping_file: mappings/openfda_to_manufacturing.yaml（该档从未存在）。
+  实测证明这条路走不通：Drugs@FDA 收录的是 CDER 监管的药品，
+  CAR-T 属 CBER 监管的生物制品 BLA，不在其收录范围内，
+  三个已上市 CAR-T（Kymriah / Yescarta / Carvykti）检索一律 NOT_FOUND。
+  => 可填字段_制造工艺 全空，domain 由 manufacturing_db 降为 other。
+
+  【本档为什么不删】保留一份「已验证为不可用」的登记，比删掉更有价值——
+  否则下一个人看到 CLAUDE.md 里「FDA BLA review packages」这句话，
+  很可能又绕回 openFDA 试一遍。此档就是那次试验的结论。
+
+  【正确的 FDA 入口】见 SourceRegistry/fda_cber_cgt.yaml
+  （FDA CBER Approved Cellular and Gene Therapy Products，
+  Carvykti 的 Summary Basis for Regulatory Action 等文档在那里）。
+
+  【本源唯一可能的残余用途】若日后需要非 CAR-T 的对照药品（如淋巴清除用的
+  环磷酰胺、氟达拉滨）的批准与说明书信息，Drugs@FDA 仍然适用。
+  这不属于 A/B/C 三库任何一个，故 可填字段 三项仍为空。
+
+  【授权】CC0 1.0（除非某 endpoint 或字段另有标注）。

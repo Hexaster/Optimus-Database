@@ -1,0 +1,49 @@
+source_id: google_patents
+source_name: Google Patents Public Datasets
+domain: Patent
+source_url: https://console.cloud.google.com/marketplace/product/google_patents_public_datasets/google-patents-public-data
+
+access:
+  access_type: public
+  license: CC BY 4.0
+  commercial_use: true
+  authentication:
+    type: oauth
+    credential_env: GOOGLE_APPLICATION_CREDENTIALS
+
+retrieval:
+  routes:
+    - route_id: bigquery_public_dataset
+      method: rest_api
+      endpoint: https://bigquery.googleapis.com/bigquery/v2/projects/{project_id}/queries
+      formats: [json]
+      query_config: null
+      pagination:
+        method: pageToken
+        page_size: null
+      rate_limit:
+        requests_per_second: null
+
+scope:
+  mode: query_filtered
+  config_file: queries/google_patents_patent.yaml
+
+identity:
+  source_record_keys: [publication_number]
+
+versioning:
+  mode: rolling
+  version_source: null
+
+processing:
+  parser: google_patents_parser
+  mapping_file: mappings/google_patents_to_patent.yaml
+  target_schema: patent
+
+update:
+  upstream_frequency: null
+  project_check_frequency: weekly
+  update_strategy: rerun_query
+
+validation:
+  required_source_fields: [publication_number]

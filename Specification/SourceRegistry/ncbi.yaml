@@ -1,0 +1,82 @@
+# 模板1 · 数据源登记（通用，适用于任何数据源）
+# 用途：登记「怎么拿数据 + 能为 A/B/C 三库填哪些字段」。字段清单必须取样验证真实存在。
+# 说明：本模板对所有数据源通用——文献/专利/Binder结构库/制造工艺库/CAR库 均用同一份填。
+source_name: NCBI E-utilities (Protein / Nucleotide)   # 数据源名称
+domain: other                      # literature / patent / binder_db / manufacturing_db / car_db / other
+                                   # 注意：不是 binder_db。理由见 notes
+
+# 官方來源入口
+source_url: https://www.ncbi.nlm.nih.gov/books/NBK25501/
+
+入口_API:
+  endpoint: https://eutils.ncbi.nlm.nih.gov/entrez/eutils/{esearch|esummary|efetch}.fcgi
+  method: rest_api                  # rest_api / bulk_download / bigquery_sql / web_download / file_dump
+  authentication: none              # none / api_key / service_account / login（无 key 3 req/s；有 key 10 req/s）
+  credential_env: NCBI_API_KEY      # 可选。建议申请，否则限速 3 req/s
+
+文件格式: [json, xml, genbank]      # json / xml / pdf / csv / fasta / bigquery_table ...
+                                   # efetch rettype=gp → GenPept 文本；rettype=fasta → FASTA
+
+版本或快照:
+  mode: rolling                     # rolling / release / snapshot
+  version_source: 每条记录的 ACCESSION.VERSION（如 Q12864.3）与 LOCUS 行的日期
+  snapshot_date:
+
+更新频率:
+  upstream: 持续增量（每日）
+  project_check: 按需（本源不做全量同步，只按靶点检索）
+
+取样验证:                           # 证明字段清单真实存在
+  verified: true                    # true / false
+  verification_sample: |
+    2026-08-20 实测，样本存于 data/raw/ncbi/：
+      (1) esearch db=protein term="CDH17[Gene Name] AND Homo sapiens[Organism]"
+          → count=17，首条 UID 308153624（存 esearch_protein_CDH17_human.json）
+      (2) efetch db=protein id=308153624 rettype=gp
+          → GenPept 24,252 bytes（存 efetch_protein_308153624.gp）：
+            LOCUS       CAD17_HUMAN  832 aa  linear  PRI 10-JUN-2026
+            DEFINITION  RecName: Full=Cadherin-17; AltName: Full=Intestinal
+                        peptide-associated transporter HPT-1; AltName: Full=Liver-intestine
+                        cadherin; Short=LI-cadherin; Flags: Precursor.
+            ACCESSION   Q12864      VERSION  Q12864.3
+      (3) 阴性验证（重要，见 notes）：
+            db=protein term="CDH17"                               → 2,076，实测前 5 条全为
+                                                                     cadherin-17 直系同源物（830~842 aa，RefSeq）
+            db=protein term="CDH17 AND antibody[All Fields]"      → 0
+            db=protein term="scFv AND srcdb_patent[Properties]"   → 0
+            db=protein term="GUCY2C AND srcdb_patent[Properties]" → 0
+            db=protein term="chimeric antigen receptor AND GUCY2C" → 0
+  verified_at: 2026-08-20
+
+# 该源能为下列三库填的字段（从各库要求字段里挑；不列=填不了）
+# 库字段总数：Binder 47 / CAR 25 / 制造工艺 33
+可填字段_Binder:
+  - binder.target_antigen           # 只能提供靶抗原的权威序列与命名，不能提供 binder 本身
+可填字段_CAR: []
+可填字段_制造工艺: []
+
+notes: >
+  【本轮最重要的一条结论，请业务侧确认】CLAUDE.md 把 NCBI 列在「Binder sources」里，
+  但对本项目的两个靶点实测下来，NCBI 拿不到 binder，只拿得到抗原。
+  用 CDH17 检索 db=protein 得到的 2,076 条，抽样前 5 条全是各物种的 cadherin-17 蛋白本身
+  （830~842 aa 的 RefSeq 全长抗原），不是抗 CDH17 的抗体可变区。
+  加上 antibody 限定词后归零；专利序列分区（srcdb_patent[Properties]）对 scFv、GUCY2C、
+  CDH17 一律返回 0。
+  => 因此本档 domain 登记为 other 而非 binder_db，可填字段_Binder 只保留 target_antigen 一条。
+
+  【那 NCBI 在本项目里还有什么用】三个真实用途，都不是「填 A 库的 binder 实体」：
+  (a) 靶点侧的权威参考序列——GCC/GUCY2C 与 CDH17 的人/鼠/猴序列，
+  用于跨物种反应性判断与 binder 表位比对（注意：binder_evidence.species_reactivity 的值
+  应来自实测证据，不是来自 NCBI 序列比对，勿混淆）；
+  (b) 交叉引用枢纽——GenPept 记录里带 UniProtKB accession（实测 Q12864），
+  是把 SAbDab2 / DOTAD / 文献三边的抗原名称归一化到同一个 accession 的最省事路径；
+  (c) PubMed 检索（db=pubmed）——但文献检索本项目已登记 Europe PMC，不必重复。
+
+  【替代方案（若确实需要专利来源的 binder 序列）】
+  NCBI 这条路走不通，专利序列应走 Google Patents（含 BigQuery 公开数据集）或 EPO OPS，
+  两者已在 CLAUDE.md 的 Patents 一节点名，不属本轮 binder 数据源范围，未登记。
+
+  【限速】无 API key 时 3 requests/second，有 key 10 requests/second，超限会被封 IP。
+  批量按靶点检索时必须自行限速。
+
+  【授权】NCBI 数据为美国政府公共领域资料，无使用限制。

@@ -1,0 +1,85 @@
+# =========================
+# Mapping
+# =========================
+# 只回答一件事：某個 source 的字段如何變成 Schema 字段。
+# 不描述如何獲取數據（見 SourceRegistry），
+# 不描述目標庫結構、類型、約束、表間關係（見 Schema）。
+# Schema 中未在此出現的字段 = 該 source 不填。
+
+mapping_id:
+
+# 對應 SourceRegistry 的 source_name
+source_name:
+
+# 對應 registry retrieval.routes[].route_id；
+# 該 source 只有單一 route 時可留空
+route_id:
+
+# Schema_A / Schema_B / Schema_C
+target_schema:
+
+# 進入映射時的記錄形態，例：csv_row / json_object / xml_record / parsed_document
+source_format:
+
+# 一條 source record 在業務上代表什麼，例：一條 PDB 抗體鏈配對 / 一篇文獻
+record_grain:
+
+
+# =========================
+# 目標表
+# =========================
+# 一條 source record 通常同時產生實體表與 evidence 表記錄，
+# 每個目標表寫一個 block。
+
+targets:
+
+  - table:
+
+    # one  : 一條 source record 產生一條該表記錄
+    # many : 需展開 source 中的數組字段
+    record_per_source: one
+
+    # record_per_source 為 many 時，被展開的 source 字段路徑
+    iterate_over:
+
+    # 實體歸一化鍵：用哪些 source 字段判定「這是同一個實體」。
+    # 平台內部主鍵（uuid）由此鍵生成或查得，不在 fields 中列出。
+    entity_key: []
+
+    # evidence 等子表填寫；外鍵指向同一條 source record 映射出的父表記錄，
+    # 不在 fields 中重複列出
+    parent:
+
+    fields:
+
+      - target:
+
+        # source 字段路徑；method 為 constant 時留空，
+        # method 為 llm 時填被抽取的文本字段
+        source:
+
+        # direct   : 原樣搬運（默認）
+        # constant : 該 source 的固定值，如 source_type、evidence_level
+        # derived  : 由一個或多個 source 字段計算 / 拆分 / 合併
+        # llm      : 從自由文本抽取
+        method: direct
+
+        # method 為 constant 時的取值
+        value:
+
+        # derived 的規則說明或表達式；llm 的 prompt / 抽取規則標識
+        rule:
+
+        # 枚舉對照，source_value: schema_value；
+        # 僅在取值需要歸一化時填（如 measurement_method）
+        value_map:
+
+        # 源單位；與 Schema 中該字段 unit 不一致時必填，
+        # 留空表示與 Schema 單位一致
+        unit_from:
+
+        # true：該字段缺值時整條記錄判為 extraction_failed；
+        # false（默認）：缺值記為 null，原因 data_absent
+        required: false
+
+        note:

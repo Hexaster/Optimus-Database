@@ -1,0 +1,94 @@
+source_name: Addgene
+domain: [car]
+source_url: https://www.addgene.org
+
+access:
+  access_type: restricted         # 元数据公开；序列文件需免费登录
+  license: sequence_data_public   # 序列数据可公开查看/下载
+  commercial_use: unknown         # 序列可看；实体质粒受 MTA，某质粒商用或需授权(FTO)
+  authentication:
+    type: account                 # 序列下载需免费账号
+    credential_env: ADDGENE_COOKIE
+
+retrieval:
+  routes:
+    - route_id: plasmid_page
+      method: web_download        # 主页面元数据，免登录
+      endpoint: https://www.addgene.org/{id}/
+      formats: [html]
+      query_config: null
+      pagination:
+        method: none
+        page_size: null
+      rate_limit:
+        requests_per_second: 1
+    - route_id: sequences
+      method: web_download        # GenBank/FASTA，需登录
+      endpoint: https://www.addgene.org/{id}/sequences/
+      formats: [genbank, fasta, snapgene]
+      query_config: null
+      pagination:
+        method: none
+        page_size: null
+      rate_limit:
+        requests_per_second: 1
+
+scope:
+  mode: target_filtered           # 搜 "chimeric antigen receptor" + 靶点 → 逐质粒
+  config_file: configs/addgene_ids.txt
+
+identity:
+  source_record_keys: [addgene_plasmid_id]
+
+versioning:
+  mode: rolling                   # 每质粒有 Addgene-full / Depositor-full
+  version_source: 质粒页序列版本(优先 Addgene-full 验证版)
+  snapshot_date: null
+
+storage:
+  raw_path: data/raw/addgene/
+  preserve_original: true
+
+processing:
+  parser: addgene_genbank_parser
+  mapping_file: mappings/addgene_to_car.yaml
+  target_schema: car
+
+update:
+  upstream_frequency: continuous  # 新存放随时上线
+  project_check_frequency: quarterly
+  update_strategy: rerun_query
+  last_checked_at: 2026-08-19
+
+validation:
+  required_source_fields:
+    - name
+    - purpose
+    - gene_insert_name
+    - modules
+    - vector_backbone
+    - vector_type
+    - depositor
+    - pubmed_reference
+    - sequence_genbank
+  available_fields:
+    - name
+    - purpose
+    - gene_insert_name(+alt_name)
+    - vector_backbone
+    - vector_type
+    - promoter
+    - bacterial_resistance
+    - cloning_method
+    - depositor_lab
+    - pubmed_reference
+    - sequence(GenBank_features)
+  verified: true                  # 实测 #135992
+  verification_sample: "plasmid 135992 (pSLCAR-CD19-BBz)：主页面上述元数据字段全部存在"
+  verified_at: 2026-08-19
+  record_count: "~58 (搜 'chimeric antigen receptor')"
+
+notes: >
+  更正：无公开官方 API / 每日 bulk JSON(实测 /api、/data、api.addgene.org 均 404，
+  ?format=json 返回 HTML)。主页面元数据免登录可抓；逐模块序列 GenBank 需免费登录下载。
+  实体质粒受 MTA(本项目只需序列，不需实体)。

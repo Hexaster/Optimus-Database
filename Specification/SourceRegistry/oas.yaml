@@ -1,0 +1,94 @@
+# 模板1 · 数据源登记（通用，适用于任何数据源）
+# 用途：登记「怎么拿数据 + 能为 A/B/C 三库填哪些字段」。字段清单必须取样验证真实存在。
+# 说明：本模板对所有数据源通用——文献/专利/Binder结构库/制造工艺库/CAR库 均用同一份填。
+source_name: OAS (Observed Antibody Space) — paired   # 数据源名称
+domain: binder_db                  # literature / patent / binder_db / manufacturing_db / car_db / other
+
+# 官方來源入口
+source_url: https://opig.stats.ox.ac.uk/webapps/oas/
+
+入口_API:
+  endpoint: https://opig.stats.ox.ac.uk/webapps/oas/oas_paired/   # POST 检索 → 生成 bulk_download.sh
+  method: bulk_download             # rest_api / bulk_download / bigquery_sql / web_download / file_dump
+  authentication: none              # none / api_key / service_account / login
+  credential_env:                   # 环境变量名（如需凭证）
+
+文件格式: [csv]                     # 实际为 .csv.gz（gzip 压缩的 CSV）
+
+版本或快照:
+  mode: rolling                     # rolling / release / snapshot
+  version_source: 无版本号。只能以「下载当日的 data-unit 清单」作为快照凭证
+  snapshot_date: 2026-08-20         # 本次检索日；实际未下载 data-unit（见 notes）
+
+更新频率:
+  upstream: 不定期新增研究（paired 部分实测 21 个 study / 1,220 个 data-unit）
+  project_check: 每季
+
+取样验证:                           # 证明字段清单真实存在
+  verified: true                    # true / false（取得机制与栏位清单已实测；未下载 data-unit 本体）
+  verification_sample: |
+    2026-08-20 实测取数机制（未落盘样本，原因见 notes）：
+      (1) 检索表单为 multipart/form-data，8 个 select：
+          Species / Age / BSource / BType / Vaccine / Disease / Subject / Longitudinal，
+          「不限」的取值是 "*"（填空字串会返回 0 个 study，这是个坑）
+      (2) POST 全部填 "*" → 结果页含 21 个 study、1,220 个 data-unit
+      (3) data-unit URL 形态实测：
+          https://opig.stats.ox.ac.uk/webapps/ngsdb/paired/Alsoiussi_2020/csv/SRR11528761_paired.csv.gz
+          https://opig.stats.ox.ac.uk/webapps/ngsdb/paired/Eccles_2020/csv/SRR10358523_paired.csv.gz
+          即 /webapps/ngsdb/paired/{Author_Year}/csv/{SRR_ID}_paired.csv.gz
+      (4) 结果页由前端把这批 URL 拼成 bulk_download.sh 供下载（a.download='bulk_download.sh'）
+      (5) 档案结构（来自 /webapps/oas/documentation_paired/ 的 Data Format 一节）：
+          每个 .csv.gz 第一行是该 data-unit 的 metadata，其后每行一条序列及其注释；
+          栏位为 AIRR 格式，重链栏加 _heavy 后缀、轻链栏加 _light 后缀，实测栏名包括
+          sequence_id_heavy, sequence_heavy, locus_heavy, v_call_heavy, d_call_heavy, j_call_heavy,
+          sequence_alignment_aa_heavy, fwr1_heavy, fwr1_aa_heavy, cdr1_heavy, cdr1_aa_heavy,
+          cdr2_aa_heavy, cdr3_aa_heavy, junction_aa_heavy, junction_aa_length_heavy,
+          fwr1_start_heavy, cdr1_start_heavy ...（约 100 栏/链）
+      (6) metadata 参数：Age, Disease, Vaccine, BType, Species, Author, Unique sequences,
+          BSource, Subject, Longitudinal
+  verified_at: 2026-08-20
+
+# 该源能为下列三库填的字段（从各库要求字段里挑；不列=填不了）
+# 库字段总数：Binder 47 / CAR 25 / 制造工艺 33
+可填字段_Binder:
+  - binder.vh_sequence              # sequence_alignment_aa_heavy
+  - binder.vl_sequence              # sequence_alignment_aa_light
+  - binder.fr_cdr_regions           # fwr1~4_aa / cdr1~3_aa 及其 _start/_end 位置，重轻链各一套
+  - binder.cdr_lengths              # 由 cdr*_aa 长度 derived；junction_aa_length_* 可直接用
+  - binder.vdj_genes                # v_call / d_call / j_call（重轻链各一套）
+  - binder.germline_origin          # germline_alignment_aa + metadata.Species
+  - binder.somatic_mutations        # 由 sequence_alignment_aa 与 germline_alignment_aa 比对 derived
+  - binder.numbering_scheme         # OAS 附带 ANARCI 编号栏（IMGT）
+  - binder_evidence.source_id       # {study}/{SRR_ID}/sequence_id_heavy
+  - binder_evidence.citation        # metadata.Author（第一作者 + 年份）
+  - binder_evidence.experimental_conditions  # metadata 的 Disease / Vaccine / BType / BSource / Longitudinal
+可填字段_CAR: []
+可填字段_制造工艺: []
+
+notes: >
+  【本轮进度】按指示「oas可以先跳過」，本档只登记取数机制与栏位清单，未下载任何 data-unit 落盘。
+  因此 取样验证.verified 记 true 的含义是「机制与栏名已实测确认」，
+  不是「已取得一条真实序列记录」。下一轮若要正式接入，
+  应下载 1 个最小 data-unit 存入 data/raw/oas/ 并回填本档。
+
+  【本源与其他 binder 源的根本差异，直接影响它该不该进 A 库】
+  OAS 是天然免疫组库（B 细胞测序），不是治疗性抗体库。它的记录：
+  有序列、有 CDR、有 V(D)J、有胚系——序列侧字段覆盖是所有源里最全的；
+  但没有靶点。binder.target_antigen 在 OAS 里根本不存在（metadata 只有 Disease/Vaccine），
+  也没有任何 kd / Tm / 表位 / 交叉反应性。
+  => 对「给定靶点 GCC/CDH17 找 binder」这个任务，OAS 直接检索是找不到的。
+  它的正确用途是：(a) 作为序列空间的背景分布（人源化程度、胚系偏好、CDR 长度分布的基线）；
+  (b) 作为 binder 优化/生成模型的训练语料（阶段二）。
+  这两者都不是「往 A 库里填 binder 实体」。
+  => 建议业务侧确认：OAS 到底进不进 A 库，还是只作为阶段二的模型语料另存？
+
+  【规模】paired 实测 21 study / 1,220 data-unit。
+  官方文件页写「120,000 paired sequences from 7 studies」，与实测的 21 study 对不上，
+  该说明页明显滞后于数据，不要引用它的数字。
+  unpaired 部分规模在十亿级（首页称 over one billion sequences / 80+ studies），
+  若要接入需先定抽样策略，不可能全量入库。
+
+  【坑】检索表单的 select 值必须填 "*" 才代表「不限」；填空字串会静默返回 0 个 study。
+
+  【授权】首页明示 CC-BY 4.0。引用 Olsen et al. (2021) Protein Science 与
+  Kovaltsuk et al. (2018) J. Immunol.。

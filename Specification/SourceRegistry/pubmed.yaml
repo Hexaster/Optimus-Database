@@ -1,0 +1,49 @@
+source_id: pubmed
+source_name: PubMed
+domain: Literature
+source_url: https://pubmed.ncbi.nlm.nih.gov/
+
+access:
+  access_type: public
+  license: PubMed Terms and Conditions
+  commercial_use: unknown
+  authentication:
+    type: none
+    credential_env: null
+
+retrieval:
+  routes:
+    - route_id: eutilities_api
+      method: rest_api
+      endpoint: https://eutils.ncbi.nlm.nih.gov/entrez/eutils/
+      formats: [xml, json]
+      query_config: null
+      pagination:
+        method: WebEnv_and_query_key
+        page_size: null
+      rate_limit:
+        requests_per_second: 3
+
+scope:
+  mode: query_filtered
+  config_file: queries/pubmed_literature.yaml
+
+identity:
+  source_record_keys: [PMID]
+
+versioning:
+  mode: rolling
+  version_source: null
+
+processing:
+  parser: pubmed_parser
+  mapping_file: mappings/pubmed_to_literature.yaml
+  target_schema: literature
+
+update:
+  upstream_frequency: daily
+  project_check_frequency: weekly
+  update_strategy: rerun_query
+
+validation:
+  required_source_fields: [PMID]

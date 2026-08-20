@@ -1,0 +1,34 @@
+{
+ "count": "17",
+ "retmax": "5",
+ "retstart": "0",
+ "idlist": [
+  "308153624",
+  "2328705308",
+  "2328705306",
+  "2328705304",
+  "2328705302"
+ ],
+ "translationset": [
+  {
+   "from": "Homo sapiens[Organism]",
+   "to": "\"Homo sapiens\"[Organism]"
+  }
+ ],
+ "translationstack": [
+  {
+   "term": "CDH17[Gene Name]",
+   "field": "Gene Name",
+   "count": "1777",
+   "explode": "N"
+  },
+  {
+   "term": "\"Homo sapiens\"[Organism]",
+   "field": "Organism",
+   "count": "2176970",
+   "explode": "Y"
+  },
+  "AND"
+ ],
+ "querytranslation": "CDH17[Gene Name] AND \"Homo sapiens\"[Organism]"
+}

@@ -1,0 +1,64 @@
+# 模板1 · 数据源登记（通用，适用于任何数据源）
+# 用途：登记「怎么拿数据 + 能为 A/B/C 三库填哪些字段」。字段清单必须取样验证真实存在。
+# 说明：本模板对所有数据源通用——文献/专利/Binder结构库/制造工艺库/CAR库 均用同一份填。
+source_name: TABS Therapeutic Antibody Database   # 数据源名称
+domain: binder_db                  # literature / patent / binder_db / manufacturing_db / car_db / other
+
+# 官方來源入口
+source_url: https://tabs.craic.com/
+
+入口_API:
+  endpoint: https://tabs.craic.com/users/sign_in  # 登录后经 Web 界面检索/导出；未见公开 API
+  method: web_download              # rest_api / bulk_download / bigquery_sql / web_download / file_dump
+  authentication: login             # none / api_key / service_account / login
+  credential_env: TABS_USER / TABS_PASSWORD       # 尚未申请，环境变量名为建议值
+
+文件格式: []                        # 未验证。官方宣传可导出，但未登录无法确认实际格式
+
+版本或快照:
+  mode: rolling                     # rolling / release / snapshot
+  version_source: 首页 "New Data in Tabs" 计数器（实测：过去 7 天新增 132 条，过去 30 天新增 849 条）
+  snapshot_date:
+
+更新频率:
+  upstream: 持续增量（按上述计数器折算约每日 ~28 条新记录）
+  project_check: 取得账号后再定
+
+取样验证:                           # 证明字段清单真实存在
+  verified: false                   # true / false
+  verification_sample: |
+    2026-08-20 实测：https://tabs.craic.com/ 一律 302 到 /users/sign_in，
+    未登录只能读到首页宣传文案，无法取得任何一条真实记录，因此字段清单无法验证。
+    仅能确认的公开事实（来自首页）：
+      - 收录规模：10,800+ antibodies、1,700+ antigens、2,900+ companies
+      - 关联维度：Clinical Trials、Patents、Papers、News、Regulatory Agencies
+      - 新用户有 30 天免费试用
+    另据 阶段1.1_18天方案 2.docx：年度费用 ¥33,700，且「需特别确认授权及下载权限」。
+  verified_at: 2026-08-20
+
+# 该源能为下列三库填的字段（从各库要求字段里挑；不列=填不了）
+# 库字段总数：Binder 47 / CAR 25 / 制造工艺 33
+可填字段_Binder: []                 # 未取样，一个字段都不写。不得凭宣传文案推测
+可填字段_CAR: []
+可填字段_制造工艺: []
+
+notes: >
+  【为什么 可填字段 全空】本登记严格遵守模板要求「字段清单必须取样验证真实存在」。
+  TABS 需付费账号，本轮拿不到任何一条真实记录，因此不列任何字段。
+  旧登记曾写 formats: [excel, fasta] 与 mapping_file: mappings/tabs_to_binder.yaml，
+  两者都没有取样依据（且该 mapping 档从未存在），本轮已移除——
+  避免下游误以为该源已覆盖某些字段。
+
+  【解锁路径（需业务侧决策）】
+  (1) 先申请 30 天免费试用，用试用期完成取样验证并回填本档；
+  (2) 若确认要长期用，再走 ¥33,700/年 采购；
+  (3) 无论试用或采购，都要书面确认「批量导出」与「导出数据可否进入内部数据库」——
+  商业抗体库的订阅条款常只允许人工查阅、不允许系统性抽取入库。这是采购前必须问清的一条。
+
+  【本源的潜在价值】TABS 的差异化在于把抗体关联到 Clinical Trials / Patents / Regulatory Agencies，
+  这正是 SAbDab2（无亲和力、无名称）与 Thera-SAbDab（已停更、临床阶段截止 2025-02）的两个缺口。
+  若能取得，最可能补上的是 binder.name、binder.target_antigen 与临床阶段类证据字段——
+  但这仍属推测，取样前不写入 可填字段。
+
+  【授权】本项目为非商用（2026-08-20 业务侧确认），但 TABS 是付费商业库，
+  「非商用」不等于「可免费使用」，仍需正式订阅。

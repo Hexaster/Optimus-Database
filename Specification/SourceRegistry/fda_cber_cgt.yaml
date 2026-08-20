@@ -1,0 +1,110 @@
+# 模板1 · 数据源登记（通用，适用于任何数据源）
+# 用途：登记「怎么拿数据 + 能为 A/B/C 三库填哪些字段」。字段清单必须取样验证真实存在。
+# 说明：本模板对所有数据源通用——文献/专利/Binder结构库/制造工艺库/CAR库 均用同一份填。
+source_name: FDA CBER — Approved Cellular and Gene Therapy Products   # 数据源名称
+domain: manufacturing_db           # literature / patent / binder_db / manufacturing_db / car_db / other
+                                   # 同 EMA EPAR，是「文档源」而非结构化库
+
+# 官方來源入口
+source_url: https://www.fda.gov/vaccines-blood-biologics/cellular-gene-therapy-products/approved-cellular-and-gene-therapy-products
+
+入口_API:
+  endpoint: https://www.fda.gov/vaccines-blood-biologics/cellular-gene-therapy-products/{product_slug}
+  method: web_download              # rest_api / bulk_download / bigquery_sql / web_download / file_dump
+  authentication: none              # none / api_key / service_account / login
+  credential_env:                   # 注意：必须带浏览器 User-Agent，否则 404
+
+文件格式: [html, pdf]               # html = 产品页（文档索引）；pdf = SBRA / 审评 / 说明书
+
+版本或快照:
+  mode: rolling                     # rolling / release / snapshot
+  version_source: 各文档连结前缀的日期（如 "February 28, 2022 Summary Basis for Regulatory Action"）
+  snapshot_date: 2026-08-20         # 本次抓取日
+
+更新频率:
+  upstream: 按批准/补充批准事件不定期新增（Carvykti 一个产品实测已累积 2022~2025 共 6 份批准函）
+  project_check: 每季
+
+取样验证:                           # 证明字段清单真实存在
+  verified: true                    # true / false
+  verification_sample: |
+    2026-08-20 实测，样本存于 data/raw/fda_cber/：
+    (1) 产品清单页（approved_cgt_products_2026-08-20.html，46,814 bytes）
+        实测 27 个产品 slug，其中 CAR/TCR-T 相关 6 个：
+          /cellular-gene-therapy-products/kymriah、/yescarta、/tecartus、
+          /breyanzi、/carvykti、/tecelra（TCR-T）
+        其余为脐带血、基因治疗等非 CAR-T 产品。
+    (2) 产品页（carvykti_product_page_2026-08-20.html，34,999 bytes）
+        实测该页提供的文档连结（形态一律为 /media/{id}/download?attachment）：
+          Package Insert and Medication Guide            /media/156560/download
+          2022-02-28 Summary Basis for Regulatory Action /media/156999/download   ← 工艺内容载体
+          2024-04-05 Clinical Review                     /media/178689/download
+          2024-04-05 Statistical Review                  /media/177750/download
+          批准函 ×6（2022-02-28 / 2023-02-22 / 2023-12-21 / 2024-04-05 / 2025-06-26 / 2025-10-10）
+          Approval History, Letters, Reviews             /media/157051/download
+    (3) 文档层：下载 Carvykti SBRA
+        （carvykti_SBRA_2022-02-28.pdf，425,803 bytes，23 页）
+        确认真实存在的工艺内容（括号内为命中次数）：
+          "Janssen Pharmaceuticals manufacturing facility using patient leukapheresis materials"
+          "genetically modified by a lentiviral vector (LVV) to target cells expressing BCMA"
+          cryopreserv(5) — "cryopreserved in an infusion bag"
+          cell viability(1) — "T cell viability, T cell purity, and NK ..."
+          potency(4) — "quantity, dose and potency) is performed on samples taken from
+                        the final formulated DP"
+          sterility(1)、mycoplasma(2)、endotoxin(1) — 均以放行检测项名义出现
+          章节 "b. Testing Specifications"
+        关键阴性/受限确认：
+          "(b) (4)" 命中 123 次 ← 定量参数被大面积涂黑，例如
+              "After ___ of culture"、"Sterility (b) (4) No growth"、"Endotoxin (b) (4) (b) (4)"
+          vector copy number / VCN(0)、MOI(0)、multiplicity of infection(0)、CD3+(0)、CD4(0)、CD8(0)
+  verified_at: 2026-08-20
+
+# 该源能为下列三库填的字段（从各库要求字段里挑；不列=填不了）
+# 库字段总数：Binder 47 / CAR 25 / 制造工艺 33
+可填字段_Binder: []
+可填字段_CAR: []
+可填字段_制造工艺:
+  - manufacturing.t_cell_source              # "patient leukapheresis materials"（自体）
+  - manufacturing.vector_type                # "lentiviral vector (LVV)"
+  - manufacturing.cryopreservation_conditions # "cryopreserved in an infusion bag"（定性，无温度/冻存液）
+  - manufacturing.formulation                # "final formulated DP"
+  - manufacturing.corresponding_car_product  # 产品名 + BLA 号 + 靶点
+  - manufacturing_evidence.source_id         # 产品 slug + /media/{id}
+  - manufacturing_evidence.citation          # 文档标题 + 日期（如 "Carvykti SBRA, 2022-02-28"）
+  - manufacturing_evidence.sterility         # 仅「有此检测项」，结果值被涂黑
+  - manufacturing_evidence.mycoplasma        # 同上
+  - manufacturing_evidence.endotoxin         # 同上
+  - manufacturing_evidence.experimental_conditions
+
+notes: >
+  【为什么新建这个档，而不是沿用 openfda.yaml】
+  旧登记把 FDA 侧的制造工艺挂在 openFDA Drugs@FDA（openfda.yaml）下，那是错的。
+  实测 api.fda.gov/drug/drugsfda.json 检索 KYMRIAH / YESCARTA / CARVYKTI 一律 NOT_FOUND
+  ——CAR-T 属 CBER 监管的 BLA，不在 Drugs@FDA 收录范围内。
+  FDA 侧真正的 CAR-T 审批文档在本档登记的 CBER 产品页上。openfda.yaml 已改写说明此事。
+
+  【本源的能力上限：被 (b)(4) 卡死】这是本轮最该记住的一条。
+  Carvykti SBRA 全文 23 页里 "(b) (4)"（美国 FOIA 商业机密豁免的涂黑标记）出现 123 次，
+  且恰好压在我们最需要的定量字段上：
+  "After ___ of culture" → manufacturing.culture_duration 拿不到；
+  "Sterility (b) (4) No growth" → 检测方法与限度拿不到，只知道结论；
+  "Endotoxin (b) (4) (b) (4)" → 限度值完全拿不到。
+  再加上 VCN / MOI / CD3+ / CD4 / CD8 全文 0 命中。
+  => FDA SBRA 只能给「定性工艺链」，给不了「定量工艺参数」。
+  C 库若指望 FDA 补齐 moi / culture_duration / vcn，会落空。
+
+  【定位建议】以 EMA EPAR 为 C 库主源（146 页、无涂黑），FDA CBER 作补充与交叉验证：
+  (a) 覆盖 EMA 没批准的美国产品；
+  (b) 同一产品两边对读，可发现工艺变更；
+  (c) Package Insert 与批准函提供剂量、适应症等 EMA 之外的口径。
+
+  【抓取注意】fda.gov 对无 User-Agent 的请求返回 404（实测 WebFetch 直接 404，
+  curl 带浏览器 UA 后 200）。抓取脚本必须设 UA。
+  文档 URL 是 /media/{数字}/download?attachment 这种不透明形态，
+  必须先解析产品页拿到 id 与标题的对应关系，不能猜。
+
+  【范围】清单页 27 个产品里只有 6 个与 CAR/TCR-T 相关
+  （kymriah、yescarta、tecartus、breyanzi、carvykti、tecelra），其余是脐带血与基因治疗。
+  注意 Abecma 与 Aucatzyl 未出现在实测的 slug 清单里，接入前需再确认它们的页面位置。
+
+  【授权】美国联邦政府公开资料，公共领域，无使用限制。
