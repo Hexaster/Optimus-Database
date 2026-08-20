@@ -1,0 +1,177 @@
+# =========================
+# Mapping: NCBI E-utilities -> (不产生 binder 行)
+# =========================
+# 只回答一件事：NCBI 的字段如何变成数据库字段。
+# 不描述如何获取数据（见 docs/SourceRegistry/ncbi.yaml），
+# 不描述目标库结构、类型、约束（见 sql/03_binder.sql）。
+
+mapping_id: ncbi_to_binder
+source_name: NCBI E-utilities (Protein / Nucleotide)
+route_id: eutils_protein
+target_schema: sql/03_binder.sql → binder.binder（仅作参考数据，不产生行）
+source_format: genpept_record + json
+record_grain: 一条 NCBI Protein 记录（一个蛋白登录号）
+
+status: draft
+last_verified: 2026-08-20
+
+
+# =========================================================
+# Part 0 — 本档与其他七份 mapping 的性质不同，先说清楚
+# =========================================================
+# 【重要】本映射不产生任何 binder.binder 行。
+#
+# CLAUDE.md 把 NCBI 列在「Binder sources」里，但 2026-08-20 对本项目两个靶点实测下来，
+# NCBI 拿不到 binder，只拿得到抗原：
+#
+#   db=protein term="CDH17"                                → 2,076 条，
+#       抽样前 5 条全是各物种的 cadherin-17 蛋白本体（830~842 aa，RefSeq），
+#       即【靶抗原】，不是抗 CDH17 的抗体可变区
+#   db=protein term="CDH17 AND antibody[All Fields]"        → 0
+#   db=protein term="scFv AND srcdb_patent[Properties]"     → 0
+#   db=protein term="GUCY2C AND srcdb_patent[Properties]"   → 0
+#   db=protein term="chimeric antigen receptor AND GUCY2C"  → 0
+#
+# => 本源在 A 库里的角色是「靶点侧参考数据」，不是 binder 来源。
+#    docs/SourceRegistry/ncbi.yaml 已据此把 domain 登记为 other 而非 binder_db。
+#
+# 【待业务侧确认】若确实需要专利来源的 binder 序列，NCBI 这条路走不通，
+# 应改走 Google Patents（含 BigQuery 公开数据集）或 EPO OPS。
+# 那两个源在 CLAUDE.md 的 Patents 一节已点名，但不属本轮 binder 数据源范围，未登记。
+
+produces_rows_in: []          # 明确：不写入任何业务表
+consumed_by:
+  - rule_ref: normalize_antigen_name    # 见 sabdab_to_binder / dotad_to_binder / thera_sabdab_to_binder
+  - purpose: 靶点别名归一化与 UniProt accession 交叉引用
+
+
+# =========================================================
+# Part 1 — Source 字段清单
+# =========================================================
+# 取样：data/raw/ncbi/efetch_protein_308153624.gp（GenPept，24,252 bytes）
+#       data/raw/ncbi/esearch_protein_CDH17_human.json
+# 检索式：db=protein, term="CDH17[Gene Name] AND Homo sapiens[Organism]" → count=17
+
+source_field_inventory:
+
+  - source: esearchresult.count
+    example: '17'
+    target: null
+    note: 命中数，用于判断检索式是否过宽/过窄，不入库
+
+  - source: esearchresult.idlist[]
+    example: '308153624'
+    target: null
+    note: NCBI UID，用于后续 efetch
+
+  - source: LOCUS
+    example: CAD17_HUMAN  832 aa  linear  PRI 10-JUN-2026
+    target: null
+    note: |
+      含序列长度（832 aa）与注释更新日（10-JUN-2026，格式 DD-MON-YYYY，需转 ISO）。
+      832 aa 这个长度本身就是判据：抗体可变区约 110-130 aa，
+      八百多氨基酸的一定是全长抗原，不是 binder。
+
+  - source: DEFINITION
+    example: >-
+      RecName: Full=Cadherin-17; AltName: Full=Intestinal peptide-associated
+      transporter HPT-1; AltName: Full=Liver-intestine cadherin;
+      Short=LI-cadherin; Flags: Precursor.
+    target: reference_only.antigen_aliases
+    method: derived
+    rule: 抽取 Full= / AltName Full= / Short= 各段，组成该抗原的别名集合
+    note: |
+      这是本源对本项目最有价值的一栏。
+      CDH17 在文献与数据库里有 Cadherin-17 / LI-cadherin / HPT-1 /
+      Intestinal peptide-associated transporter 等多种写法，
+      各 binder 源（SAbDab2 的 antigen_name、DOTAD 的 Target、Thera-SAbDab 的 Target）
+      用法不一致。本栏提供权威别名表，供 normalize_antigen_name 使用。
+
+  - source: [ACCESSION, VERSION]
+    example: Q12864 / Q12864.3
+    target: reference_only.uniprot_accession
+    method: direct
+    note: |
+      带版本号的稳定标识。VERSION 变动说明序列本身被修订过，
+      跨源比对时应以 ACCESSION（不带版本）为键，但记录 VERSION 以备溯源。
+
+  - source: DBSOURCE
+    example: 'UniProtKB: locus CAD17_HUMAN, accession Q12864'
+    target: reference_only.uniprot_accession
+    method: derived
+    note: |
+      RefSeq / UniProt 交叉引用。实测本条记录本身来自 UniProtKB，
+      故 ACCESSION 即 UniProt accession，无需二次查询。
+      但非 UniProt 来源的记录（如 XP_ 开头的 RefSeq 预测蛋白）没有这层映射，需另查。
+
+  - source: ORGANISM
+    target: reference_only.species
+    method: direct
+    note: 用于挑出人/鼠/猴同源序列，支撑跨物种反应性的判断依据
+
+  - source: ORIGIN（氨基酸序列）
+    target: reference_only.antigen_sequence
+    method: direct
+    note: |
+      靶抗原的参考序列。用途：
+      (a) 与 binder 的复合物结构比对，定位表位
+      (b) 跨物种序列比对，判断 binder 是否可能跨物种结合
+      【注意】(b) 只能给出「可能性」，不能直接填 binder.binder.species_reactivity——
+      那一列的值必须来自实测证据。见 Part 3 R2。
+
+  - source: [FEATURES, REFERENCE, COMMENT]
+    target: null
+    note: |
+      结构域注释、文献引用与功能注释。
+      FEATURES 里的 domain / transmembrane / signal peptide 标注对判断
+      「抗原胞外域范围」有用（CAR-T 的 binder 只能结合胞外域），
+      但本轮未做该抽取，留作待办。
+
+
+# =========================================================
+# Part 2 — 参考数据结构（非业务表）
+# =========================================================
+# 建议落在一张独立的参考表或配置档里，不进 binder.binder。
+# 表名待定 —— sql/ 目录下当前没有对应的靶点参考表，见 Part 3 R1。
+
+reference_only_schema:
+  antigen_reference:
+    gene_symbol:          # CDH17 / GUCY2C
+    uniprot_accession:    # Q12864
+    version:              # Q12864.3
+    ncbi_uid:             # 308153624
+    species:              # Homo sapiens
+    canonical_name:       # Cadherin-17
+    aliases: []           # [LI-cadherin, HPT-1, Intestinal peptide-associated transporter]
+    sequence:             # 832 aa 的氨基酸序列
+    length_aa:            # 832
+    annotation_updated:   # 2026-06-10（由 LOCUS 的 DD-MON-YYYY 转 ISO）
+    retrieved_at:         # 2026-08-20
+
+
+# =========================================================
+# Part 3 — 已知问题
+# =========================================================
+risks:
+  - id: R1
+    desc: |
+      sql/ 目录下没有靶点参考表。
+      本档产出的 antigen_reference 目前无处可落，只能先以配置档形式存在
+      （建议 configs/antigen_reference.yaml）。
+      => 需要业务侧决定：靶点别名表要不要进数据库？
+      若阶段四「靶点发现与优先级」要做，迟早需要一张靶点表，届时并入。
+  - id: R2
+    desc: |
+      最容易犯的错：用 NCBI 的跨物种序列相似度直接填 binder.binder.species_reactivity。
+      序列同源只说明「抗原在该物种存在且相似」，不等于「该 binder 结合该物种抗原」。
+      species_reactivity 必须来自实测（SAbDab2 的 antigen_species 是单点观察，
+      文献的交叉反应性实验才是真证据）。
+  - id: R3
+    desc: |
+      esearch 的 term 写法极易踩坑。实测 "CDH17 AND antibody[All Fields]" 返回 0，
+      而 "CDH17" 单独返回 2,076 —— 两个 All Fields 词做 AND 会归零。
+      靶点检索必须用限定字段（如 [Gene Name] + [Organism]），不要用裸词 AND。
+  - id: R4
+    desc: |
+      限速：无 API key 时 3 requests/second，有 key 10 requests/second，超限封 IP。
+      本源虽只需按靶点查少量记录，批量补别名时仍须自行限速。

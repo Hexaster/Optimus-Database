@@ -1,0 +1,315 @@
+# =========================
+# Mapping: FDA CBER (SBRA) -> process.process
+# =========================
+# 只回答一件事：FDA CBER 的审批文档内容如何变成数据库字段。
+# 不描述如何获取数据（见 docs/SourceRegistry/fda_cber_cgt.yaml），
+# 不描述目标库结构、类型、约束（见 sql/05_process.sql）。
+
+mapping_id: fda_cber_to_process
+source_name: FDA CBER — Approved Cellular and Gene Therapy Products
+route_id: [product_page_html, sbra_pdf]
+target_schema: sql/05_process.sql → process.process
+source_format: parsed_document
+record_grain: 一个已批准 CAR-T 产品的一份 Summary Basis for Regulatory Action
+
+status: draft
+last_verified: 2026-08-20
+
+
+# =========================================================
+# Part 0 — 先读这一节：本源的能力上限被 (b)(4) 卡死
+# =========================================================
+hard_ceiling: |
+  这是本轮实测得出、且直接决定本档写法的一条结论。
+
+  Carvykti SBRA 全文 23 页，"(b) (4)"（美国 FOIA 商业机密豁免的涂黑标记）出现 123 次，
+  且恰好压在我们最需要的定量字段上：
+    "After ___ of culture"          → culture_days 拿不到
+    "Sterility (b) (4) No growth"   → 检测方法与限度拿不到，只知道结论
+    "Endotoxin (b) (4) (b) (4)"     → 限度值完全拿不到
+  再加上 VCN(0) / MOI(0) / CD3+(0) / CD4(0) / CD8(0) 全文 0 命中。
+
+  => FDA SBRA 只能给「定性工艺链」，给不了「定量工艺参数」。
+  本档因此比 ema_epar_to_process.yaml 覆盖面小得多，这是源的限制不是遗漏。
+
+  【定位】以 EMA EPAR 为 C 库主源（146 页、"(b)(4)" 命中 0 次），本源作补充与交叉验证：
+    (a) 覆盖 EMA 未批准的美国产品
+    (b) 同一产品两边对读，可发现工艺变更
+    (c) Package Insert 与批准函提供剂量、适应症等 EMA 之外的口径
+
+
+# =========================================================
+# Part 1 — 清单层：从产品页解析文档索引
+# =========================================================
+# 取样：data/raw/fda_cber/approved_cgt_products_2026-08-20.html（46,814 bytes）
+#       data/raw/fda_cber/carvykti_product_page_2026-08-20.html（34,999 bytes）
+
+manifest:
+  step_1_product_list:
+    url: https://www.fda.gov/vaccines-blood-biologics/cellular-gene-therapy-products/approved-cellular-and-gene-therapy-products
+    parse: 抽 href 形如 /vaccines-blood-biologics/cellular-gene-therapy-products/{slug}
+    observed_slugs: 27
+    car_t_slugs: [kymriah, yescarta, tecartus, breyanzi, carvykti, tecelra]
+    note: |
+      27 个产品里只有 6 个与 CAR/TCR-T 相关（tecelra 是 TCR-T），其余是脐带血与基因治疗。
+      【注意】Abecma 与 Aucatzyl 未出现在实测 slug 清单里，接入前需再确认其页面位置。
+
+  step_2_document_index:
+    url: https://www.fda.gov/vaccines-blood-biologics/cellular-gene-therapy-products/{slug}
+    parse: 抽 <a> 的 href 与锚文本，href 形如 /media/{id}/download?attachment
+    observed_carvykti:
+      - {text: 'Package Insert and Medication Guide - CARVYKTI',        media_id: 156560}
+      - {text: 'February 28, 2022 Summary Basis for Regulatory Action', media_id: 156999}   # ← 工艺载体
+      - {text: 'April 5, 2024 Clinical Review - CARVYKTI',              media_id: 178689}
+      - {text: 'April 5, 2024 Statistical Review - CARVYKTI',           media_id: 177750}
+      - {text: '批准函 ×6（2022-02-28 / 2023-02-22 / 2023-12-21 / 2024-04-05 / 2025-06-26 / 2025-10-10）'}
+      - {text: 'Approval History, Letters, Reviews, and Related Documents', media_id: 157051}
+    note: |
+      URL 是 /media/{数字}/download 这种不透明形态，必须先解析产品页拿到
+      id 与标题的对应关系，不能猜。
+      锚文本里的日期格式为 "February 28, 2022"，需转 ISO 2022-02-28。
+
+  filter:
+    conditions:
+      - 锚文本包含 'Summary Basis for Regulatory Action'
+    expected_rows: 每产品 1 份（补充批准可能有多份，取最早的原始 SBRA + 后续变更）
+
+  fetch_constraint: |
+    fda.gov 对无 User-Agent 的请求返回 404（实测 WebFetch 直接 404，
+    curl 带浏览器 UA 后 200）。抓取脚本必须设 UA。
+
+
+# =========================================================
+# Part 2 — 文档层：可抽取的字段
+# =========================================================
+# 每一条都在 Carvykti SBRA（23 页）全文检索中确认存在，括号内为实测命中次数。
+
+targets:
+
+  - table: process.process
+    record_per_source: one
+    entity_key: [product_slug, sbra_date]
+    fields:
+
+      # ---- 公共元数据 ----
+      - target: source_type
+        method: constant
+        value: 公开库
+        note: 同 EMA EPAR —— 监管文件不落在 core.source_type 四值任何一档，公开库为最优近似
+      - target: evidence_level
+        method: constant
+        value: 同行评议
+        note: |
+          【业务侧 2026-08-20 决定：按源定固定值】
+          SBRA 是 FDA CBER 对 BLA 的正式审评结论。
+          与 EMA EPAR 同理，core.evidence_level 无「监管文件」一档，取「同行评议」
+          => source_weight = 0.7。
+          【但请注意一个不对称】本源的信息完整度远低于 EMA（见 Part 0），
+          却拿到相同的 source_weight。若下游打分对两者一视同仁，会高估 FDA 记录的价值。
+          建议在 experiment_conditions 中标注涂黑比例，供筛选智能体参考。
+      - target: source_id
+        source: [product_slug, media_id]
+        method: derived
+        rule: '"fda-cber/{product_slug}/media-{media_id}"'
+        required: true
+      - target: product_name
+        source: 产品页标题
+        method: direct
+        example: CARVYKTI
+      - target: name_code
+        source: [product_slug, sbra_date]
+        method: derived
+        rule: '"{product_slug}-SBRA-{sbra_date}"'
+      - target: citation
+        source: [锚文本, sbra_date, media_url, 页码]
+        method: derived
+        required: true
+        rule: '"FDA CBER SBRA: {product_name}, {sbra_date}, p.{page}. {media_url}"'
+      - target: contrary_evidence
+        method: constant
+        value: null
+
+      # ---- 起始材料 ----
+      - target: t_cell_source
+        source: 产品与制造设施描述段
+        method: llm
+        rule_ref: extract_t_cell_source
+        value_map: {autologous: 自体, allogeneic: 异体, patient: 自体}
+        evidence: '"Janssen Pharmaceuticals manufacturing facility using patient leukapheresis materials"'
+
+      # ---- 基因导入 ----
+      - target: vector
+        source: 产品描述段
+        method: llm
+        rule_ref: extract_vector_type
+        value_map: {lentiviral: 慢病毒, retroviral: 逆转录病毒}
+        evidence: '"genetically modified by a lentiviral vector (LVV) to target cells expressing BCMA"'
+
+      # ---- 冻存 / 配方 ----
+      - target: cryo_condition
+        source: 制剂段
+        method: llm
+        rule_ref: extract_cryo_condition
+        evidence: '"cryopreserved in an infusion bag"（cryopreserv 命中 5 次）'
+        note: 只有定性描述，无温度与冻存液组成
+      - target: formulation
+        source: 制剂与放行段
+        method: llm
+        rule_ref: extract_formulation
+        evidence: '"quantity, dose and potency) is performed on samples taken from the final formulated DP"'
+
+      # ---- 放行指标（仅「有此项」，值多被涂黑）----
+      - target: sterility
+        source: 章节 "b. Testing Specifications"
+        method: llm
+        rule_ref: extract_release_spec_redacted
+        evidence: '"Safety Sterility (b) (4) No growth"（命中 1 次）'
+        note: |
+          结论 "No growth" 可抽，但检测方法与取样时点被涂黑。
+          入库时必须如实写成「No growth（方法与限度经 FOIA 豁免涂黑）」，
+          不得只写 "No growth" 让人误以为信息完整。
+      - target: mycoplasma
+        source: 同上
+        method: llm
+        rule_ref: extract_release_spec_redacted
+        evidence: '"mycoplasma testing is performed on samples taken at the time of ;"（命中 2 次）'
+        note: |
+          注意原文句尾的 " ;" —— 时点被涂黑后留下的空洞。
+          这是 FDA 文档的典型形态：句子结构完整但关键名词消失。
+          抽取提示词必须能识别这种「残句」并标记为 partially_redacted，
+          否则 LLM 容易自行脑补时点。这是本档最危险的一处。
+      - target: endotoxin
+        source: 同上
+        method: llm
+        rule_ref: extract_release_spec_redacted
+        evidence: '"Endotoxin (b) (4) (b) (4)"（命中 1 次）'
+        note: 限度值完全涂黑，只能记录「有此检测项」
+      - target: viability_pct
+        source: 放行与表征段
+        method: llm
+        rule_ref: extract_release_spec_redacted
+        unit_from: '%'
+        evidence: '". T cell viability, T cell purity, and NK ..."（命中 1 次）'
+        note: 只提到检测项名称，未见数值。多半只能填 null 并在 experiment_conditions 说明
+
+      # ---- 溯源 ----
+      - target: experiment_conditions
+        source: [章节号, 页码, 原文片段, redaction_flag, rule_ref]
+        method: derived
+        required: true
+        note: |
+          必填，且本源比 EMA 多一项义务：必须记录 redaction_flag
+          （none / partial / full），说明该值是否受涂黑影响。
+          建议同时在记录级别写入全文涂黑计数（Carvykti = 123），
+          供下游判断这份文档的信息完整度。
+
+
+# =========================================================
+# Part 3 — 本源填不了的字段
+# =========================================================
+
+not_available_redacted:
+  # 有对应内容，但被 (b)(4) 涂黑
+  columns:
+    - column: culture_days
+      evidence: '"After ___ of culture" —— 时长被涂黑'
+    - column: transduction_condition
+      evidence: '"transduced with lentiviral vector in ___. After ___ of culture" —— 条件被涂黑'
+  note: 这类字段应填 null，reason 记 redacted，与 data_absent 区分开
+
+not_available_verified_absent:
+  # 全文 0 命中
+  - {column: moi,              searched: ['MOI', 'multiplicity of infection'], hits: 0}
+  - {column: vcn,              searched: ['vector copy number', 'VCN'],        hits: 0}
+  - {column: cd3_positive_pct, searched: ['CD3+'],                             hits: 0}
+  - {column: cd4_cd8_ratio,    searched: ['CD4', 'CD8'],                       hits: 0}
+
+not_available:
+  - starting_quality
+  - activation_method       # 工序链在 SBRA 中未展开到 EMA 那种细度
+  - activation_reagents
+  - culture_system
+  - cytokines               # IL-2 命中 3 次但全在 CRS 不良反应语境
+                            #（"IL-10, IFN-γ, and IL-2RA with the incidence of CRS"），不得挪用
+  - transduction_efficiency_pct
+  - phenotype
+  - cytotoxicity
+  - cytokine_release
+  - applicable_scenario
+  - car_construct_uid
+
+platform_managed:
+  - uid
+  - version
+  - entry_date
+  - source_weight
+  - batch_id
+  - registry_id
+  - merged_into
+  - created_at
+  - updated_at
+
+
+# =========================================================
+# Part 4 — 抽取规则标识
+# =========================================================
+rule_refs:
+  extract_t_cell_source:
+    scope: 产品与制造设施描述段
+    output: {value: 自体|异体|未知, page: int, quote: str}
+  extract_vector_type:
+    scope: 产品描述段
+    output: {value: 慢病毒|逆转录病毒|转座子|电转|其他|未知, page: int, quote: str}
+  extract_cryo_condition:
+    scope: 制剂段
+  extract_formulation:
+    scope: 制剂与放行段
+  extract_release_spec_redacted:
+    scope: 章节 "b. Testing Specifications"
+    output: {item: str, method: str|null, limit: str|null, result: str|null,
+             redaction_flag: none|partial|full, page: int, quote: str}
+    note: |
+      本源专用规则，与 EMA 的 extract_release_spec 不同之处在于必须处理涂黑：
+      1. 识别 "(b) (4)" 标记，把被它取代的位置标为 redacted，不得跳过当作不存在
+      2. 识别「残句」—— 如 "at the time of ;"、"in . After of culture"
+         这类涂黑后留下的语法空洞，标 partial 并原样保留 quote
+      3. 【绝对禁止】根据上下文或常识补全被涂黑的数值/时点/方法。
+         这是本档最容易被 LLM 违反的一条，提示词中必须显式重复
+      4. 结论性文字（如 "No growth"）可抽，但必须与 redaction_flag 一起返回
+
+common_constraints: |
+  与 ema_epar_to_process.yaml 的 common_constraints 相同，另加：
+  5. 涂黑内容一律不得推断。返回 null + reason=redacted，
+     使其与 reason=data_absent（文档根本没提）可区分。
+     CLAUDE.md 要求「data absent」与「extraction failed」可区分，
+     本源再多一类 redacted，共三类。
+
+
+# =========================================================
+# Part 5 — 已知风险
+# =========================================================
+risks:
+  - id: R1
+    desc: |
+      LLM 补全涂黑内容。这是本档头号风险。
+      "mycoplasma testing is performed on samples taken at the time of ;" 这种残句
+      对语言模型有极强的补全诱惑（很容易补成 "at the time of harvest"）。
+      一旦补全，就是凭空捏造的监管事实进了数据库。
+      建议对本源的每一条抽取结果加一道自动校验——
+      若 quote 中含 "(b) (4)" 或残句模式，而返回值非 null，直接判 extraction_failed。
+  - id: R2
+    desc: |
+      cytokines 的 CRS 语境混淆。IL-2 在 SBRA 中命中 3 次，
+      全部出现在 "IL-10, IFN-γ, and IL-2RA with the incidence of CRS" 这类不良反应描述里，
+      与培养所用细胞因子毫无关系。EMA 那边 IL-2 是真的培养试剂，本源不是。
+      同一个关键词在两个源里语义不同 —— 不可复用同一套提示词。
+  - id: R3
+    desc: |
+      本源与 EMA 会对同一产品产生两条 process.process 记录（Carvykti 两边都有）。
+      这是期望行为，便于交叉验证，但归并时不可简单取并集：
+      涂黑导致的 null 与真实的 data_absent 含义不同，
+      合并规则须以 EMA 值优先、FDA 值作补充，并保留两条原始记录。
+  - id: R4
+    desc: |
+      产品覆盖不全。实测 slug 清单里没有 Abecma 与 Aucatzyl，而 EMA 侧这两个产品都有。
+      接入前需确认它们在 fda.gov 上的位置，否则 C 库会缺这两个产品的美国口径。

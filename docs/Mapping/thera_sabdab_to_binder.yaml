@@ -1,0 +1,396 @@
+# =========================
+# Mapping: Thera-SAbDab -> binder.binder
+# =========================
+# 只回答一件事：Thera-SAbDab 的字段如何变成数据库字段。
+# 不描述如何获取数据（见 docs/SourceRegistry/thera_sabdab.yaml），
+# 不描述目标库结构、类型、约束（见 sql/03_binder.sql）。
+
+mapping_id: thera_sabdab_to_binder
+source_name: Thera-SAbDab
+route_id: seqstruc_download
+target_schema: sql/03_binder.sql → binder.binder
+source_format: csv_row
+record_grain: 一个 WHO INN 治疗性抗体（单特异一条 = 一个 binder；双特异一条 = 两个 binder）
+
+status: draft
+last_verified: 2026-08-20
+
+
+# =========================================================
+# Part 0 — 输入档案
+# =========================================================
+source_dataset:
+  file: data/raw/therasabdab/TheraSAbDab_SeqStruc_OnlineDownload_2026-08-20.csv
+  encoding: utf-8-sig            # 档首有 BOM，必须用 utf-8-sig 读，否则首栏名会带乱码
+  observed_rows: 1133
+  observed_cols: 24
+  record_key: [Therapeutic]
+  snapshot: 2025-03-18           # Last-Modified；本源已停更，见 Part 5 R1
+  target_subset:
+    file: data/raw/therasabdab/therasabdab_GCC_CDH17_subset.csv
+    rows: 本项目靶点命中 —— Cabotamig(CDH17;CD3E, Active)、Indusatumab(GUCY2C, Discontinued)
+
+
+# =========================================================
+# Part 1 — Source 字段清单（24 栏）
+# =========================================================
+# fill 为 2026-08-20 实测非空率（'na' 计为空）。
+
+source_field_inventory:
+
+  - source: Therapeutic
+    fill: 100.0%
+    uniq: 1133
+    example: Abagovomab
+    target: binder.binder.name_code
+    note: INN 名称；同时作 source_id 与 entity_key
+  - source: Format
+    fill: 100.0%
+    uniq: 104
+    example: Whole mAb
+    target: binder.binder.format
+    method: derived
+    rule_ref: derive_binder_format
+    note: |
+      实测分布：Whole mAb 800、Whole mAb ADC 58、Bispecific mAb 50、
+      Bispecific Mixed mAb and scFv 21、Whole mAb Fusion 19、Fab 11、Fusion Protein 11、
+      Bispecific scFv 9、scFv 7 ……
+      => 纯 scFv 只有 7 条。CAR-T 用的 A 必须是 scFv/VHH，
+      其余 Whole mAb 需先判断能否 scFv 化，不能直接当 binder 用。见 Part 5 R2。
+  - source: CH1 Isotype
+    fill: 97.6%
+    example: G1
+    target: null
+    note: 恒定区亚型，本库无对应列
+  - source: VD LC
+    fill: 98.8%
+    example: Kappa
+    target: null
+    note: 轻链型别 κ/λ，本库无对应列
+  - source: "Highest_Clin_Trial (Feb '25)"
+    fill: 100.0%
+    uniq: 14
+    example: Phase-III
+    target: binder.binder.development_stage
+    method: derived
+    note: 栏名自带截止日 Feb '25。注意栏名含空格与撇号，读取时勿改写
+  - source: Est. Status
+    fill: 100.0%
+    uniq: 6
+    example: Discontinued
+    target: binder.binder.development_stage
+    method: derived
+  - source: HeavySequence
+    fill: 99.8%
+    uniq: 1047
+    example: QVKLQESGAELARPGASVKLSCKASGYTFTNYWMQ...
+    target: binder.binder.vh_seq
+  - source: LightSequence
+    fill: 97.6%
+    uniq: 993
+    target: binder.binder.vl_seq
+  - source: HeavySequence(ifbispec)
+    fill: 13.9%
+    target: binder.binder.vh_seq
+    note: 双特异的第二组重链。非空时该行展开成第二个 binder 实体，见 Part 3 (2)
+  - source: LightSequence(ifbispec)
+    fill: 12.3%
+    target: binder.binder.vl_seq
+    note: 同上
+  - source: 100% SI Structure
+    fill: 32.5%
+    example: 7vux:HL
+    target: binder.binder.structure_template
+    method: derived
+    rule: 格式为 "{pdb}:{chains}"；取 100% 序列一致的优先
+  - source: [99% SI Structure, 95-98% SI Structure]
+    fill: 20.6% / 19.7%
+    target: binder.binder.structure_template
+    method: derived
+    note: |
+      【填充率虚高告警】实测这两栏的值常为字串 "None;None" 而非空，
+      朴素的非空判断会把它们算作有值。必须先把 "None" 当缺失处理。
+      仅在 100% SI Structure 为空时才回退到 99%，再回退到 95-98%，
+      并把实际相似度档位写进 experiment_conditions。
+  - source: [Year Proposed, Year Recommended]
+    fill: 100.0% / 88.4%
+    example: '2006'
+    target: binder.binder.citation
+    method: derived
+    note: WHO INN 提出年 / 推荐年，用于组装 citation
+  - source: Target
+    fill: 100.0%
+    uniq: 523
+    example: MUC16/CA125
+    target: binder.binder.target_antigen
+    method: derived
+    rule_ref: normalize_antigen_name
+    note: |
+      分隔符有两种语义，必须区分：
+        "/" —— 同一靶点的别名，如 MUC16/CA125，归一化成一个靶点
+        ";" —— 真正的多靶点，如 CDH17;CD3E（双特异），拆成两条 binder
+      本项目靶点即命中这两种：Indusatumab=GUCY2C（单）、Cabotamig=CDH17;CD3E（双）
+  - source: Companies
+    fill: 99.7%
+    target: null
+    note: 开发公司。本库无对应列；对 patent_status 有参考价值但不足以直接填
+  - source: Conditions Approved
+    fill: 25.2%
+    target: binder.binder.applicable_scenario
+    method: derived
+  - source: [Conditions Active, Conditions Discontinued]
+    fill: 66.8% / 54.0%
+    target: binder.binder.applicable_scenario
+    method: derived
+    rule: 三个 Conditions 栏合并，各自标注状态；";" 分隔多个适应症
+  - source: Development Tech
+    fill: 17.2%
+    uniq: 43
+    example: 'BiTE Technology.'
+    target: null
+    note: |
+      【本轮更正】docs/SourceRegistry/thera_sabdab.yaml 初版曾把此栏映射到 germline，那是错的。
+      本栏内容是平台技术名（BiTE Technology 等），不是人源化程度，且只有 17.2% 非空。
+      人源化信息在 Genetics 栏，见下。
+  - source: Genetics (Bispecifics delimited with semicolon)
+    fill: 97.0%
+    uniq: 31
+    example: Murine
+    target: binder.binder.germline
+    method: derived
+    note: |
+      这才是人源化/来源信息所在栏（Murine / Humanized / Human / Chimeric 等）。
+      双特异的两组值以 ";" 分隔，拆分后分别给两个 binder 实体。
+      仍不直接填 humanization —— 该列语义是「人源化程度」，需业务侧定义分级后再填。
+  - source: Notes
+    fill: 38.1%
+    example: 'Sequence sourced through DrugBank. Biosimilars...'
+    target: binder.binder.experiment_conditions
+    method: derived
+    note: |
+      含序列出处说明（如 "Sequence sourced through DrugBank"）。
+      对证据可追溯性有用：若 Notes 指出序列来自第三方而非原始发表，
+      应在 citation 中如实标注，不得伪装成 Thera-SAbDab 自有数据。
+  - source: Alternative Therapeutic Names
+    fill: 99.7%
+    uniq: 1032
+    example: ACA 125;ACA125;ACA-125
+    target: null
+    note: |
+      不直接入库，但必须交给实体归一化用——
+      这是把本源与 DOTAD / SAbDab2 / 文献源对齐的最有效别名表。
+
+
+# =========================================================
+# Part 2 — binder.binder 中本源填不了的字段
+# =========================================================
+unmapped_target_columns:
+  not_available:
+    - scfv_seq          # 有 VH/VL，无 scFv 构建体
+    - linker            # 即便 Format 写 scFv 也没给 linker 序列
+    - numbering
+    - cdr_h1
+    - cdr_h2
+    - cdr_h3
+    - cdr_l1
+    - cdr_l2
+    - cdr_l3
+    - cdr_lengths
+    - vdj_genes
+    - somatic_mutations
+    - epitope_position
+    - epitope_kind
+    - binding_site
+    - glycosylation_sites
+    - free_cysteine
+    - humanization      # Genetics 只给来源类别，分级定义未定，见 Part 1
+    - kd_nm             # 本源无任何定量测量值
+    - kon_m1s1
+    - koff_s1
+    - measure_method
+    - measure_condition
+    - tm_celsius
+    - viscosity
+    - aggregation
+    - solubility
+    - hydrophobicity
+    - net_charge
+    - immunogenicity_risk
+    - cross_reactivity
+    - species_reactivity
+    - complex_structure # 只有 "{pdb}:{chains}"，无抗原链信息
+    - in_vitro_readout
+    - prediction_confidence
+    - patent_status     # Companies 栏不足以判定专利状态
+  platform_managed:
+    - uid
+    - version
+    - entry_date
+    - source_weight
+    - batch_id
+    - registry_id
+    - merged_into
+    - created_at
+    - updated_at
+
+
+# =========================================================
+# Part 3 — 可执行映射
+# =========================================================
+
+targets:
+
+  # ---------- (1) 单特异：一行 = 一个 binder ----------
+  - table: binder.binder
+    record_per_source: one
+    condition: HeavySequence(ifbispec) 为空
+    entity_key: [Therapeutic]
+    fields:
+      - target: source_type
+        method: constant
+        value: 公开库
+      - target: evidence_level
+        method: constant
+        value: 同行评议
+        note: |
+          【业务侧 2026-08-20 决定：按源定固定值】
+          Thera-SAbDab 收录 WHO INN 名单内的治疗性抗体，
+          序列来自公开发表或监管/药典来源（部分经 DrugBank，见 Notes 栏）。
+          core.evidence_level 四值中归「同行评议」。
+          注意：本源虽含临床阶段信息，那是 development_stage 的内容，不是 evidence_level。
+          CLAUDE.md 权重(1) 把「临床」当证据等级，与 sql 口径不同，以 sql 为准。
+      - target: source_id
+        source: Therapeutic
+        method: direct
+        required: true
+      - target: name_code
+        source: Therapeutic
+        method: direct
+      - target: vh_seq
+        source: HeavySequence
+        method: direct
+      - target: vl_seq
+        source: LightSequence
+        method: direct
+      - target: format
+        source: Format
+        method: derived
+        rule_ref: derive_binder_format
+      - target: target_antigen
+        source: Target
+        method: derived
+        rule_ref: normalize_antigen_name
+      - target: germline
+        source: Genetics (Bispecifics delimited with semicolon)
+        method: direct
+      - target: structure_template
+        source: [100% SI Structure, 99% SI Structure, 95-98% SI Structure]
+        method: derived
+        rule_ref: pick_best_structure
+      - target: development_stage
+        source: ["Highest_Clin_Trial (Feb '25)", Est. Status]
+        method: derived
+        rule: '"{Highest_Clin_Trial} / {Est. Status} (as of 2025-02)"'
+      - target: applicable_scenario
+        source: [Conditions Approved, Conditions Active, Conditions Discontinued]
+        method: derived
+        rule: '各栏以 ";" 拆分后加状态前缀合并，如 "Approved: X; Active: Y"'
+      - target: citation
+        source: [Therapeutic, Year Proposed, Year Recommended, Notes]
+        method: derived
+        rule: '"Thera-SAbDab: {Therapeutic}, INN proposed {Year Proposed}, recommended {Year Recommended}."'
+      - target: experiment_conditions
+        source: [Notes, 实际采用的 SI 档位]
+        method: derived
+
+  # ---------- (2) 双特异：一行 = 两个 binder ----------
+  - table: binder.binder
+    record_per_source: many
+    condition: HeavySequence(ifbispec) 非空（实测 13.9%，约 158 行）
+    iterate_over: 两组序列 —— (HeavySequence, LightSequence) 与 (HeavySequence(ifbispec), LightSequence(ifbispec))
+    entity_key: [Therapeutic, arm_index]
+    fields:
+      - target: source_id
+        source: [Therapeutic, arm_index]
+        method: derived
+        rule: '"{Therapeutic}#arm{1|2}"'
+      - target: target_antigen
+        source: Target
+        method: derived
+        rule: |
+          按 ";" 拆分 Target，第 n 段配第 n 组序列。
+          实测例：Cabotamig 的 Target="CDH17;CD3E"
+            → arm1 = CDH17 配 (HeavySequence, LightSequence)
+            → arm2 = CD3E  配 (HeavySequence(ifbispec), LightSequence(ifbispec))
+          【必须校验】Target 的 ";" 段数与非空序列组数不一致时，
+          整行判为 extraction_failed，不得凭顺序硬配。见 Part 5 R3。
+      - target: germline
+        source: Genetics (Bispecifics delimited with semicolon)
+        method: derived
+        rule: 同样按 ";" 拆分，第 n 段配第 n 组
+      - target: vh_seq
+        source: [HeavySequence, HeavySequence(ifbispec)]
+        method: derived
+      - target: vl_seq
+        source: [LightSequence, LightSequence(ifbispec)]
+        method: derived
+      # 其余字段与 (1) 相同，两个 arm 共用
+    note: |
+      本项目靶点 Cabotamig 正属此类。
+      对 CAR-T 用途，只有 CDH17 那一臂是我们要的 binder，CD3E 臂是 T 细胞衔接臂；
+      入库后应在筛选阶段按 target_antigen 过滤，而不是在此丢弃——保留双臂便于溯源。
+
+
+# =========================================================
+# Part 4 — 派生规则标识
+# =========================================================
+rule_refs:
+  derive_binder_format:
+    description: 由 Format（104 个取值）判定 binder.binder_format 五值枚举
+    value_map:
+      Whole mAb: IgG
+      Whole mAb ADC: IgG
+      Whole mAb Fusion: IgG
+      Whole mAb Radiolabelled: IgG
+      Fab: Fab
+      scFv: scFv
+      Bispecific scFv: scFv
+      VHH: VHH
+    fallback: 其他
+    note: 双特异行的两个 arm 可能 format 不同（如 "Bispecific Mixed mAb and scFv"），需逐 arm 判定
+  normalize_antigen_name:
+    description: 靶点名归一化
+    rule: '"/" 视为别名合并；";" 视为多靶点拆分'
+  pick_best_structure:
+    description: 三个 SI Structure 栏按相似度优先级回退取值
+    rule: 100% → 99% → 95-98%；字串 "None" 与 "None;None" 一律当缺失
+    note: 采用的档位必须写进 experiment_conditions，否则下游无法判断结构可信度
+
+
+# =========================================================
+# Part 5 — 已知风险
+# =========================================================
+risks:
+  - id: R1
+    desc: |
+      本源已停更。档案 Last-Modified 为 2025-03-18，栏名写死 "Highest_Clin_Trial (Feb '25)"。
+      development_stage 与 Est. Status 已过时约 18 个月，不得当作当前状态使用，
+      须以 ClinicalTrials.gov 或文献复核。
+      建议在 experiment_conditions 中一律注明 "(as of 2025-02)"。
+  - id: R2
+    desc: |
+      1,133 条里纯 scFv 只有 7 条、Bispecific scFv 9 条。
+      本源对 A 库的价值主要是「提供 VH/VL 序列 + INN 名称 + 靶点」，
+      而不是「提供可直接用的 scFv 构建体」。
+      Whole mAb（800 条）需另行 scFv 化，linker 本源也没给。
+  - id: R3
+    desc: |
+      双特异展开依赖 Target 的 ";" 段数与序列组数一一对应。
+      实测 HeavySequence(ifbispec) 13.9% 非空、LightSequence(ifbispec) 12.3% 非空，
+      两者不等 —— 说明存在「有重链无轻链」的第二臂（可能是 VHH 臂）。
+      硬按顺序配对会错配靶点。必须先校验，不一致则判 extraction_failed。
+  - id: R4
+    desc: |
+      99% / 95-98% SI Structure 两栏含字串 "None;None"，
+      朴素非空判断会把填充率虚高到 20% 左右。
+      pick_best_structure 必须显式处理该字串。

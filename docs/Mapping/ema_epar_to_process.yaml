@@ -1,0 +1,377 @@
+# =========================
+# Mapping: EMA EPAR -> process.process
+# =========================
+# 只回答一件事：EMA EPAR 的内容如何变成数据库字段。
+# 不描述如何获取数据（见 docs/SourceRegistry/ema_epar.yaml），
+# 不描述目标库结构、类型、约束（见 sql/05_process.sql）。
+
+mapping_id: ema_epar_to_process
+source_name: EMA EPAR
+route_id: [documents_json, assessment_report_pdf]
+target_schema: sql/05_process.sql → process.process
+source_format: json_object（清单层）+ parsed_document（文档层）
+record_grain: 一个已批准 CAR-T 产品的一份 EPAR public assessment report
+
+status: draft
+last_verified: 2026-08-20
+
+
+# =========================================================
+# Part 0 — 本档是「两段式」，与 A 库的逐栏映射根本不同
+# =========================================================
+two_stage: |
+  EMA EPAR 不是结构化数据库，是文档源。取数分两段：
+
+  第一段（清单层，JSON）：定位 PDF。
+    GET .../documents-output-epar_documents_json-report_en.json
+    实测 20,121 条 × 12 个键，全是文档层级元数据。
+    它一个工艺字段都填不了，只能给 source_id / citation / product_name。
+
+  第二段（文档层，PDF）：抽取工艺值。
+    process.process 的每一个工艺列都靠 LLM 从 PDF 正文抽取，
+    没有任何 source 栏位可以 direct 搬运。
+    故本档所有工艺字段的 method 一律为 llm，
+    source 填「该值在文档中的位置」，rule_ref 填抽取规则标识。
+
+  按 CLAUDE.md 的证据可追溯要求，每个抽出的值都必须同时记录
+  document_url + 页码 + 原文片段，写入 citation 与 experiment_conditions。
+
+
+# =========================================================
+# Part 1 — 清单层字段（JSON，12 个键）
+# =========================================================
+# 取样：data/raw/ema_epar/epar_documents_CART_subset_2026-08-20.json
+# 全量 20,121 条，筛出 7 个已批准 CAR-T 产品共 91 条文档记录。
+
+manifest_fields:
+  - source: medicine_name
+    example: Carvykti
+    target: process.process.product_name
+    method: direct
+  - source: ema_product_number
+    example: EMEA/H/C/005095
+    target: process.process.source_id
+    method: derived
+    rule: '"{ema_product_number}|{document_url}"，保证同一产品的多份文档不撞 ID'
+  - source: document_url
+    example: https://www.ema.europa.eu/en/documents/assessment-report/carvykti-epar-public-assessment-report_en.pdf
+    target: process.process.citation
+    method: derived
+  - source: type
+    example: assessment-report
+    target: null
+    method: filter
+    note: |
+      【这是筛选条件，不是入库值】
+      实测 7 个 CAR-T 产品的 type 分布：
+        variation-report 19、procedural-steps-after 12、scientific-conclusion 11、
+        orphan-maintenance-report 8、all-authorised-presentations 7、product-information 7、
+        assessment-report 7、overview 7、orphan-maintenance-report-post 6、rmp 5、rmp-summary 2
+      每个产品有且只有 1 份 assessment-report，那是工艺内容的唯一载体。
+      => 第一轮只取 type == "assessment-report" 的 7 份。
+      variation-report 里可能有工艺变更信息，是否纳入待定。
+  - source: [first_published_date, last_updated_date]
+    example: '2022-05-31T02:00:00Z'
+    target: process.process.citation
+    method: derived
+    note: ISO 8601 带时区，转 ISO 日期入 citation；last_updated_date 用于增量复查
+  - source: [id, name, status, consultation_date, reference_number, translations]
+    target: null
+
+manifest_filter:
+  conditions:
+    - medicine_name IN [Kymriah, Yescarta, Tecartus, Abecma, Breyanzi, Carvykti, Aucatzyl]
+    - type == 'assessment-report'
+  expected_rows: 7
+
+
+# =========================================================
+# Part 2 — 文档层：可抽取的工艺字段
+# =========================================================
+# 下列每一条都在 Carvykti EPAR（146 页）全文检索中确认真实存在，
+# 括号内为实测命中次数。未确认的字段一律列入 Part 3，不写在这里。
+
+targets:
+
+  - table: process.process
+    record_per_source: one
+    entity_key: [ema_product_number]
+    fields:
+
+      # ---- 公共元数据 ----
+      - target: source_type
+        method: constant
+        value: 公开库
+        note: |
+          core.source_type 四值为 公开库/文献/专利/内部。
+          监管审评报告不落在任何一档；选 公开库 是因为它确为公开发布的官方文件，
+          且非文献、非专利、非内部。这是四选一下的最优近似。
+      - target: evidence_level
+        method: constant
+        value: 同行评议
+        note: |
+          【业务侧 2026-08-20 决定：按源定固定值】
+          EPAR assessment report 是 EMA 科学委员会（CHMP）对上市申请的正式评估，
+          经多轮质询与答复后定稿，严谨度不低于同行评议文献。
+          core.evidence_level 四值（内部实验/同行评议/专利预印本/模型预测）中
+          没有「监管文件」一档，「同行评议」是唯一合理的近似 => source_weight = 0.7。
+          【若业务侧认为监管文件应高于文献】需在 sql/01_enums.sql 新增枚举值并改 weight_of，
+          本档随之更新。当前按现有枚举执行。
+      - target: source_id
+        source: manifest.ema_product_number + manifest.document_url
+        method: derived
+        required: true
+      - target: product_name
+        source: manifest.medicine_name
+        method: direct
+      - target: name_code
+        source: manifest.medicine_name
+        method: derived
+        rule: '"{medicine_name}-EPAR-process"'
+      - target: citation
+        source: [manifest.name, manifest.ema_product_number,
+                 manifest.document_url, manifest.first_published_date, 页码]
+        method: derived
+        required: true
+        rule: '"EMA EPAR: {name}, {ema_product_number}, p.{page}. {document_url}"'
+      - target: contrary_evidence
+        method: constant
+        value: null
+
+      # ---- 起始材料 ----
+      - target: t_cell_source
+        source: 章节 "Manufacture of the product and process controls" 的起始材料段
+        method: llm
+        rule_ref: extract_t_cell_source
+        value_map: {autologous: 自体, allogeneic: 异体}
+        evidence: '"The autologous PBMCs are obtained from the patients by leukapheresis"'
+        note: process.t_cell_source 枚举为 自体/异体/未知；无法判定时填 未知，不留空
+      - target: cd4_cd8_ratio
+        source: 放行/表征段
+        method: llm
+        rule_ref: extract_cd4_cd8_ratio
+        evidence: '"percent CD4+ cells, percent CD8+ cells, CD4/CD8 ratio, transduction efficiency, CAR..."（命中 1 次）'
+      - target: starting_quality
+        source: 起始材料段
+        method: llm
+        rule_ref: extract_starting_quality
+        evidence: '"process performance post-thaw attributes, such as cell counts, viability and cell phenotype"'
+
+      # ---- 激活 ----
+      - target: activation_method
+        source: 工序链描述
+        method: llm
+        rule_ref: extract_activation
+        evidence: '"apheresis thaw and T cell enrichment, T cell activation, T cell transduction and expansion"'
+      - target: activation_reagents
+        source: 同上
+        method: llm
+        rule_ref: extract_activation
+        evidence: '"Kit and human IL-2. The pre-activated T cells were transduced with the second/third generation..."（IL-2 命中 5 次）'
+        note: 试剂具体品名在 EPAR 中常以泛称出现（"Kit"），抽取时如实保留原文，不得补全品牌
+
+      # ---- 基因导入 ----
+      - target: vector
+        source: 产品描述段
+        method: llm
+        rule_ref: extract_vector_type
+        value_map:
+          lentiviral: 慢病毒
+          retroviral: 逆转录病毒
+          transposon: 转座子
+          electroporation: 电转
+        evidence: '"genetically modified by a lentiviral vector (LVV) to target cells expressing BCMA"（命中 2+ 次）'
+        note: process.vector_type 枚举含 慢病毒/逆转录病毒/转座子/电转/其他/未知
+      - target: transduction_condition
+        source: 工序段
+        method: llm
+        rule_ref: extract_transduction_condition
+        evidence: '"engineered ex vivo by lentiviral transduction of a chimeric..."'
+        note: 只能抽到工序层级的定性描述，抽不到 MOI 等定量参数。见 Part 3
+
+      # ---- 扩增 ----
+      - target: culture_system
+        source: 工序段
+        method: llm
+        rule_ref: extract_culture_system
+        evidence: '"T cell transduction and expansion"'
+      - target: cytokines
+        source: 工序段
+        method: llm
+        rule_ref: extract_cytokines
+        evidence: '"human IL-2"（IL-2 命中 5 次）'
+        note: 其余细胞因子（IL-7 / IL-15）按产品而异，Carvykti 未见
+
+      # ---- 冻存 / 配方 ----
+      - target: cryo_condition
+        source: 制剂与冻存段
+        method: llm
+        rule_ref: extract_cryo_condition
+        evidence: '"apheresis material, the CAR T cell pellet as well as on the final cryopreserved medicinal..."（cryopreserv 命中 21 次）'
+      - target: formulation
+        source: 制剂段
+        method: llm
+        rule_ref: extract_formulation
+        evidence: '"final cryopreserved medicinal product"'
+
+      # ---- 放行指标 ----
+      - target: viability_pct
+        source: 放行规格段
+        method: llm
+        rule_ref: extract_release_spec
+        unit_from: '%'
+        evidence: '"... revealed cell viability, ..."（cell viability 命中 7 次）'
+        note: 抽到的可能是「有此检测项」而非具体限度值；无数值时该列留 null，条件写进 experiment_conditions
+      - target: transduction_efficiency_pct
+        source: 放行规格段
+        method: llm
+        rule_ref: extract_release_spec
+        unit_from: '%'
+        evidence: 与 CD4/CD8 ratio 同句列出
+      - target: sterility
+        source: 放行规格段
+        method: llm
+        rule_ref: extract_release_spec
+        evidence: '"controlled through routine release at least for identity, sterility and endotoxin"（命中 1 次）'
+      - target: endotoxin
+        source: 放行规格段
+        method: llm
+        rule_ref: extract_release_spec
+        evidence: 同上（命中 1 次）
+      - target: experiment_conditions
+        source: [章节号, 页码, 原文片段, 抽取时的 rule_ref]
+        method: derived
+        required: true
+        note: |
+          必填。这一列承担证据可追溯性：
+          每个 llm 抽出的值都要在此记录它来自哪一章、哪一页、原文怎么写。
+          缺了这列，Day14 的引用可追溯性检查过不了。
+
+
+# =========================================================
+# Part 3 — 本源填不了的字段（实测阴性，非推测）
+# =========================================================
+# 下列关键词在 Carvykti EPAR 146 页全文检索中命中 0 次。
+
+not_available_verified_absent:
+  columns:
+    - column: moi
+      searched: ['MOI', 'multiplicity of infection']
+      hits: 0
+    - column: culture_days
+      searched: ['days of culture']
+      hits: 0
+    - column: vcn
+      searched: ['vector copy number', 'VCN']
+      hits: 0
+    - column: mycoplasma
+      searched: ['mycoplasma']
+      hits: 0
+  note: |
+    这四个字段是 C 库的核心定量参数，EMA 与 FDA 都给不了
+    （FDA 侧被 (b)(4) 涂黑，见 fda_cber_to_process.yaml）。
+    => 必须靠 Europe PMC 的同行评议文献补齐，见 europe_pmc_to_process.yaml。
+
+not_available_ambiguous:
+  - column: cd3_positive_pct
+    reason: |
+      CD3+ 在全文命中 4 次，但实测全部出现在 PK（药代动力学）语境
+      —— "cilta-cel CAR transgene and CD3+CAR+ cell levels" 说的是输注后患者体内的细胞水平，
+      不是产品放行时的 CD3+ 比例。两者语义完全不同，不得挪用。
+      抽取提示词必须显式排除 PK 段落。
+
+not_available:
+  - phenotype          # 记忆/耗竭/Treg 表型；EPAR 提到 "cell phenotype" 但未给具体分型
+  - cytotoxicity
+  - cytokine_release   # 注意：EPAR 里的 IL-6/IFN-γ 讨论是 CRS 不良反应，
+                       # 不是产品放行的细胞因子释放检测，不得混填
+  - applicable_scenario
+  - car_construct_uid  # 需等 B 库（car.construct）建好后回填
+
+platform_managed:
+  - uid
+  - version
+  - entry_date
+  - source_weight
+  - batch_id
+  - registry_id
+  - merged_into
+  - created_at
+  - updated_at
+
+
+# =========================================================
+# Part 4 — 抽取规则标识
+# =========================================================
+# 业务侧 2026-08-20 决定：mapping 只登记规则标识与语义，
+# 完整抽取提示词另存（建议 prompts/process_extraction/*.md），保持本档可读。
+
+rule_refs:
+  extract_t_cell_source:
+    scope: 章节 "Manufacture of the product and process controls" 起始材料段
+    output: {value: 自体|异体|未知, page: int, quote: str}
+  extract_cd4_cd8_ratio:
+    scope: 表征与放行段
+  extract_starting_quality:
+    scope: 起始材料与 post-thaw 属性段
+  extract_activation:
+    scope: 工序链描述
+    output: {activation_method: str, activation_reagents: str, page: int, quote: str}
+  extract_vector_type:
+    scope: 产品描述与基因导入段
+    output: {value: 慢病毒|逆转录病毒|转座子|电转|其他|未知, generation: str, page: int, quote: str}
+  extract_transduction_condition:
+    scope: 工序段；显式说明「若无定量参数则返回 null 并注明 data_absent」
+  extract_culture_system:
+    scope: 扩增工序段
+  extract_cytokines:
+    scope: 扩增工序段
+  extract_cryo_condition:
+    scope: 制剂与冻存段
+  extract_formulation:
+    scope: 制剂段
+  extract_release_spec:
+    scope: 放行规格表
+    output: 逐检测项 {item, method, limit, page, quote}
+    note: |
+      必须区分三种情形并分别标记，不得混为一谈：
+        (a) 有检测项且有限度值      → 填值
+        (b) 有检测项但无限度值      → 列填 null，experiment_conditions 记「有此项，未公开限度」
+        (c) 文档中根本没提该检测项  → 列填 null，原因 data_absent
+      CLAUDE.md 要求「data absent」与「extraction failed」可区分，此处即落点。
+
+common_constraints: |
+  所有 llm 规则统一遵守：
+  1. 不得编造缺失的科学数值。抽不到就返回 null 并给 reason。
+  2. 每个返回值必须附 page 与 quote，否则该值作废。
+  3. 单位必须原样返回，由 parser 换算；不得在提示词里让模型自行换算。
+  4. 枚举列（t_cell_source / vector）只能返回枚举内取值，
+     模型给出枚举外的值时判 extraction_failed，不做模糊匹配。
+
+
+# =========================================================
+# Part 5 — 已知风险
+# =========================================================
+risks:
+  - id: R1
+    desc: |
+      本源只有 7 份文档，产出至多 7 条 process.process 记录。
+      C 库若只靠 EMA，规模远不足以支撑「≈10^2 制造工艺」的组合空间。
+      文献源（Europe PMC，实测 CAR-T manufacturing 命中 11,000 篇）才是数量来源，
+      EMA 的价值在于「已上市产品的权威工艺基线」，是质量锚点不是数量来源。
+  - id: R2
+    desc: |
+      抽取质量无法自动校验。A 库的映射可以拿 fill 率与枚举值做断言，
+      本档的每个值都是 LLM 从 146 页 PDF 里读出来的。
+      建议 7 份文档全部人工复核一遍，作为抽取提示词的验收集。规模小，值得做。
+  - id: R3
+    desc: |
+      cd3_positive_pct 的 PK 混淆（见 Part 3）是本档最可能出错处。
+      同类风险还有 cytokine_release —— EPAR 大量讨论 CRS 时的 IL-6/IFN-γ，
+      那是患者不良反应，不是产品放行检测。提示词必须显式排除。
+  - id: R4
+    desc: |
+      清单层 JSON 用 HTTP/2 下载会中途断流（实测 curl 报
+      "HTTP/2 stream 1 was not closed cleanly: INTERNAL_ERROR"，
+      档案截断成 12.9 MB 且 JSON 解析失败）。
+      必须强制 HTTP/1.1 才能拿到完整的 29.1 MB。

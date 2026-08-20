@@ -1,0 +1,433 @@
+# =========================
+# Mapping: Europe PMC -> process.process
+# =========================
+# 只回答一件事：Europe PMC 的内容如何变成数据库字段。
+# 不描述如何获取数据（见 docs/SourceRegistry/europe_pmc.yaml），
+# 不描述目标库结构、类型、约束（见 sql/05_process.sql）。
+
+mapping_id: europe_pmc_to_process
+source_name: Europe PMC
+route_id: [search_api, fulltext_xml]
+target_schema: sql/05_process.sql → process.process
+source_format: json_object（检索层）+ parsed_document（全文层）
+record_grain: 一篇文献中报告的一套 CAR-T 制造工艺
+
+status: draft
+last_verified: 2026-08-20
+
+
+# =========================================================
+# Part 0 — 本源在 C 库中不可替代，先说清楚为什么
+# =========================================================
+why_this_source_matters: |
+  这是三个 C 库源里唯一能填定量工艺参数的。
+
+  实测对比同一批字段：
+    process.process.moi           EMA 全文 0 命中 | FDA 全文 0 命中
+    process.process.culture_days  EMA 全文 0 命中 | FDA 被 (b)(4) 涂黑（"After ___ of culture"）
+    process.process.vcn           EMA 全文 0 命中 | FDA 全文 0 命中
+    process.process.mycoplasma    EMA 全文 0 命中 | FDA 有检测项但限度涂黑
+
+  监管文档给的是「工艺链的定性描述 + 已上市产品的权威基线」，
+  给不了做推荐算法所需的定量参数。这些只能来自同行评议文献。
+  => Europe PMC 不是锦上添花的文献源，是 C 库定量字段的唯一来源。
+
+  数量上也是主力：
+    EMA 7 份文档 → 至多 7 条 process 记录
+    Europe PMC 实测 '"CAR-T" AND "manufacturing"' → hitCount 11,000
+
+  【但代价】EMA 是 7 份固定 PDF，本源是上万篇待筛文献，
+  抽取工作量高一到两个量级，且质量参差。见 Part 5。
+
+
+# =========================================================
+# Part 1 — 检索层字段（REST search API，resultType=core，48 个键）
+# =========================================================
+# 取样：data/raw/europe_pmc/epmc_GUCY2C_CDH17_CAR_2026-08-20.json（184,285 bytes）
+# 检索式：'("GUCY2C" OR "CDH17") AND ("CAR-T" OR "chimeric antigen receptor")'
+#         → hitCount 315，取回 25 条
+
+search_layer_fields:
+
+  - source: [source, id]
+    example: MED / 39315411
+    target: process.process.source_id
+    method: derived
+    rule: '"{source}:{id}"，如 "MED:39315411"'
+    required: true
+  - source: [pmid, pmcid, doi]
+    example: 39315411 / 10.3390/cells15151333
+    target: process.process.citation
+    method: derived
+  - source: [title, authorString, journalInfo, pubYear]
+    example: 'CD8α Structural Domains Enhance GUCY2C CAR-T Cell Efficacy.'
+    target: process.process.citation
+    method: derived
+    required: true
+  - source: [isOpenAccess, inEPMC, inPMC, hasPDF, fullTextUrlList]
+    example: 'Y / Y'
+    target: null
+    method: filter
+    note: |
+      【这是分流条件，不是入库值】决定该篇能否做全文抽取。
+      实测前 5 条有 4 条 inEPMC=Y。
+      OA 的走全文 XML 抽取；非 OA 的（如 PMID 42241671）只能拿摘要，
+      工艺参数多半在正文与补充材料里，拿不到 => 只入引用级证据，不产生 process 行。
+  - source: license
+    target: null
+    note: |
+      逐篇授权不同。本项目非商用，但仍应按此栏区分
+      「可全文入库」与「只可存引用」。入库前必须读。
+  - source: [pubTypeList, meshHeadingList, keywordList, chemicalList]
+    target: null
+    method: filter
+    note: |
+      用于筛选，不入库。
+      pubTypeList 含 Review 的应降权或排除——综述转述他人工艺参数，
+      会造成同一工艺被重复计数且失去原始出处。见 Part 5 R2。
+  - source: [firstPublicationDate, firstIndexDate, dateOfRevision]
+    target: process.process.citation
+    method: derived
+    note: firstIndexDate 用于 cursorMark 增量
+  - source: citedByCount
+    target: null
+    note: 可作筛选参考（高被引的工艺描述通常更可靠），但不入库
+  - source: [abstractText, affiliation, grantsList, subsetList, pageInfo, language,
+             publicationStatus, pubModel, authorIdList, hasReferences, hasSuppl,
+             hasData, hasDbCrossReferences, hasEvaluations, hasLabsLinks,
+             hasTextMinedTerms, hasTMAccessionNumbers, tmAccessionTypeList,
+             authMan, epmcAuthMan, nihAuthMan, hasBook, dateOfCreation,
+             dateOfCompletion, electronicPublicationDate, fullTextReceivedDate]
+    target: null
+    note: |
+      hasSuppl 值得注意：CAR-T 工艺的定量参数（MOI、培养天数）
+      经常只出现在补充材料里，正文只写 "as previously described"。
+      hasSuppl=Y 的应额外抓补充材料，本轮未做，见 Part 5 R3。
+
+search_layer_filters:
+  candidate_query: '"CAR-T" AND "manufacturing"'          # hitCount 11,000
+  target_query: '("GUCY2C" OR "CDH17") AND ("CAR-T" OR "chimeric antigen receptor")'  # hitCount 315
+  required:
+    - resultType == 'core'                    # lite 只给基本字段，抽取用途必须用 core
+    - isOpenAccess == 'Y' OR inEPMC == 'Y'    # 否则拿不到全文
+  pagination: cursorMark（响应给 nextCursorMark / nextPageUrl）；不要用 offset
+  note: 第一轮建议只做 target_query 的 315 篇，跑通再扩到 11,000 篇
+
+
+# =========================================================
+# Part 2 — 全文层：可抽取的工艺字段
+# =========================================================
+# 【与 EMA/FDA 的关键差异】
+# 那两个源的 evidence 栏可以给出实测原文，因为文档固定且已下载。
+# 本源是上万篇异质文献，无法逐篇预验证。
+# 下列字段是「文献中通常报告、且 process.process 有对应列」的交集，
+# 属预期覆盖而非已验证覆盖。见 Part 5 R1。
+
+targets:
+
+  - table: process.process
+    record_per_source: one
+    entity_key: [source, id]
+    entity_key_note: |
+      一篇文献可能报告多套工艺（如对比实验的 A 组/B 组）。
+      此时 record_per_source 应为 many，按工艺组展开，source_id 加组别后缀。
+      抽取规则须先判断「本文报告了几套工艺」。
+
+    fields:
+
+      # ---- 公共元数据 ----
+      - target: source_type
+        method: constant
+        value: 文献
+        note: core.source_type 四值中唯一贴合的一档
+      - target: evidence_level
+        method: derived
+        rule_ref: derive_evidence_level_by_source
+        note: |
+          【业务侧 2026-08-20 决定：按源定固定值；本源需一个例外分支】
+          MED（PubMed）与 PMC 记录为同行评议期刊文献 → 同行评议（weight 0.7）。
+          但 Europe PMC 也收录 PPR（preprint）来源，
+          source == 'PPR' 时必须改填「专利预印本」（weight 0.4），
+          一律填同行评议会虚抬权重。
+      - target: source_id
+        source: [source, id]
+        method: derived
+        required: true
+      - target: citation
+        source: [authorString, title, journalInfo, pubYear, doi, pmid, 页码/章节]
+        method: derived
+        required: true
+      - target: product_name
+        source: 全文中的产品/构建体代号
+        method: llm
+        rule_ref: extract_product_name
+        note: 学术文献多用内部代号（如 "GCC-CART"），非商品名；如实抽取
+      - target: contrary_evidence
+        source: 全文
+        method: llm
+        rule_ref: extract_contrary_evidence
+        note: |
+          本源是三个 C 库源里唯一可能提供相反证据的。
+          监管文档只写已批准产品的成功工艺；文献会报告失败/劣于对照的工艺。
+          这对推荐算法有独立价值——负样本比正样本稀缺。
+
+      # ---- 定量参数（本源的核心价值）----
+      - target: moi
+        source: Methods 章节的转导段
+        method: llm
+        rule_ref: extract_moi
+        note: |
+          EMA/FDA 均 0 命中，本列只能由本源填。
+          单位为无量纲比值；文献常写 "MOI of 5" 或 "MOI = 1:10"，
+          后者是感染比而非 MOI，须区分，不可直接取数字。
+      - target: culture_days
+        source: Methods 章节的扩增段
+        method: llm
+        rule_ref: extract_culture_days
+        unit_from: day
+        note: 文献常写 "expanded for 9 days" 或 "day 0 to day 10"，后者需换算成时长
+      - target: vcn
+        source: Results 或 Methods 的质控段
+        method: llm
+        rule_ref: extract_vcn
+        unit_from: copies/cell
+        note: EMA/FDA 均 0 命中，本列只能由本源填
+      - target: mycoplasma
+        source: Methods 的质控段
+        method: llm
+        rule_ref: extract_release_spec
+        note: EMA 0 命中、FDA 涂黑，本列主要靠本源
+
+      # ---- 工艺链（与 EMA 重叠，用于交叉验证）----
+      - target: t_cell_source
+        source: Methods 的起始材料段
+        method: llm
+        rule_ref: extract_t_cell_source
+        value_map: {autologous: 自体, allogeneic: 异体, healthy donor: 异体}
+        note: |
+          【文献特有的坑】学术研究多用健康供者 PBMC 做体外实验，
+          那在临床语境下属「异体」，但研究者本意只是「实验材料来源」。
+          若所描述的工艺本身是自体工艺，不得因材料来自健康供者就填 异体。
+          抽取时须区分「研究用材料」与「所描述工艺的细胞来源」。
+      - target: activation_method
+        source: Methods 的激活段
+        method: llm
+        rule_ref: extract_activation
+        note: 文献通常写得比 EMA 具体（如 "anti-CD3/CD28 Dynabeads at 1:1 bead-to-cell ratio"）
+      - target: activation_reagents
+        source: 同上
+        method: llm
+        rule_ref: extract_activation
+      - target: vector
+        source: Methods 的基因导入段
+        method: llm
+        rule_ref: extract_vector_type
+        value_map: {lentiviral: 慢病毒, retroviral: 逆转录病毒,
+                    piggyBac: 转座子, sleeping beauty: 转座子,
+                    electroporation: 电转, nucleofection: 电转}
+        note: 文献的载体类型比监管文档多样（转座子、电转在学术工艺中常见，
+              已上市产品几乎全是慢病毒）
+      - target: transduction_condition
+        source: Methods 的转导段
+        method: llm
+        rule_ref: extract_transduction_condition
+      - target: culture_system
+        source: Methods 的扩增段
+        method: llm
+        rule_ref: extract_culture_system
+        note: 文献会写具体培养基品名（X-VIVO 15、TexMACS 等），比 EMA 的泛称有用
+      - target: cytokines
+        source: Methods 的扩增段
+        method: llm
+        rule_ref: extract_cytokines
+        note: |
+          文献常给浓度（"IL-7 (10 ng/mL) and IL-15 (5 ng/mL)"），
+          比 EMA 只写 "human IL-2" 信息量大得多。浓度须一并抽取写入本列。
+      - target: cryo_condition
+        source: Methods 的冻存段
+        method: llm
+        rule_ref: extract_cryo_condition
+      - target: formulation
+        source: Methods
+        method: llm
+        rule_ref: extract_formulation
+      - target: cd4_cd8_ratio
+        source: Results 的表型段
+        method: llm
+        rule_ref: extract_cd4_cd8_ratio
+      - target: starting_quality
+        source: Methods 的起始材料段
+        method: llm
+        rule_ref: extract_starting_quality
+
+      # ---- 放行 / 表征指标 ----
+      - target: viability_pct
+        source: Results
+        method: llm
+        rule_ref: extract_release_spec
+        unit_from: '%'
+      - target: transduction_efficiency_pct
+        source: Results
+        method: llm
+        rule_ref: extract_release_spec
+        unit_from: '%'
+        note: 文献几乎必报此值（流式 CAR+ 比例），是本源填充率最高的定量列之一
+      - target: cd3_positive_pct
+        source: Results 的流式段
+        method: llm
+        rule_ref: extract_release_spec
+        unit_from: '%'
+        note: EMA 因 PK 语境混淆而不可用，本源可正常抽取
+      - target: phenotype
+        source: Results 的表型段
+        method: llm
+        rule_ref: extract_phenotype
+        note: |
+          记忆表型（Tscm/Tcm/Tem/Teff）与耗竭表型（PD-1/TIM-3/LAG-3）。
+          这是文献相对监管文档的最大增量——EPAR 只写 "cell phenotype" 不给分型。
+          与 CLAUDE.md 提到的紧张性信号（tonic signaling）直接相关。
+      - target: cytotoxicity
+        source: Results 的功能段
+        method: llm
+        rule_ref: extract_functional_readout
+        note: 杀伤活性（E:T ratio 下的裂解率）。须连同 E:T 比与靶细胞株一起抽取
+      - target: cytokine_release
+        source: Results 的功能段
+        method: llm
+        rule_ref: extract_functional_readout
+        note: |
+          体外共培养上清的 IFN-γ/IL-2/TNF-α 释放。
+          【与 EMA/FDA 的语义差异】那两个源里的细胞因子讨论是 CRS 不良反应，
+          本源是产品功能读出。同一列在不同源含义不同，归并时须留意。
+      - target: sterility
+        source: Methods 的质控段
+        method: llm
+        rule_ref: extract_release_spec
+      - target: endotoxin
+        source: 同上
+        method: llm
+        rule_ref: extract_release_spec
+
+      # ---- 溯源 ----
+      - target: experiment_conditions
+        source: [章节名, 段落, 原文片段, rule_ref, 是否来自补充材料]
+        method: derived
+        required: true
+      - target: applicable_scenario
+        source: [靶点, 适应症, 体外/小鼠/临床]
+        method: llm
+        rule_ref: extract_study_context
+        note: |
+          必须记录该工艺是在什么阶段验证的（体外 / 小鼠 / 临床）。
+          CLAUDE.md 权重(1) 的原始阶梯（临床 0.8 > 小鼠 0.6 > 细胞 0.5）正是这个维度。
+          它在 sql 的 evidence_level 里没有位置（四值只分来源类型不分实验阶段），
+          故只能落在本列。下游若要复现 CLAUDE.md 的分级，须读本列而非 evidence_level。
+
+
+# =========================================================
+# Part 3 — 本源也填不了的字段
+# =========================================================
+not_available:
+  - car_construct_uid   # 需等 B 库建好后按构建体描述回填
+platform_managed:
+  - uid
+  - version
+  - entry_date
+  - source_weight
+  - batch_id
+  - registry_id
+  - merged_into
+  - created_at
+  - updated_at
+
+
+# =========================================================
+# Part 4 — 抽取规则标识
+# =========================================================
+# 业务侧 2026-08-20 决定：mapping 只登记规则标识与语义，
+# 完整抽取提示词另存（建议 prompts/process_extraction/*.md）。
+# 与 ema_epar_to_process.yaml 同名的规则可共用主体，但须按本源语境差异调整。
+
+rule_refs:
+  derive_evidence_level_by_source:
+    rule: 'source == "PPR" → 专利预印本；否则 同行评议'
+    note: 必须实现。Europe PMC 混收 preprint，一律填同行评议会虚抬权重
+  extract_moi:
+    note: 区分 "MOI of N"（正确）与 "1:N ratio"（感染比，非 MOI）
+  extract_culture_days:
+    note: '"day 0 to day 10" 需换算为时长 10；"expanded for 9 days" 直接取 9'
+  extract_vcn:
+    unit: copies/cell
+  extract_t_cell_source:
+    note: 区分「研究用材料来源」与「所描述工艺的细胞来源」，见 Part 2
+  extract_activation:
+    scope: Methods 激活段
+  extract_vector_type:
+    scope: Methods 基因导入段
+  extract_transduction_condition:
+    scope: Methods 转导段
+  extract_culture_system:
+    scope: Methods 扩增段
+  extract_cytokines:
+    note: 浓度必须与因子名一起抽取
+  extract_cryo_condition:
+    scope: Methods 冻存段
+  extract_formulation:
+    scope: Methods
+  extract_cd4_cd8_ratio:
+    scope: Results 表型段
+  extract_starting_quality:
+    scope: Methods 起始材料段
+  extract_phenotype:
+    note: 记忆表型与耗竭表型分开返回，各自附标志物
+  extract_functional_readout:
+    note: 杀伤活性须附 E:T 比与靶细胞株，否则数值不可比
+  extract_release_spec:
+    note: 同 EMA —— 区分「有项有值」「有项无值」「未提及」三种情形
+  extract_product_name:
+    scope: 全文
+  extract_contrary_evidence:
+    scope: 全文
+  extract_study_context:
+    output: {stage: 体外|小鼠|临床, target: str, indication: str}
+    note: 支撑 CLAUDE.md 权重(1) 的实验阶段维度
+
+common_constraints: |
+  与 ema_epar_to_process.yaml 相同的四条，另加：
+  5. "as previously described" 是文献的常见写法。遇到时不得从被引文献推断参数，
+     应返回 null + reason=reference_to_other_work，并记录被引文献 ID 供人工追。
+  6. 综述（pubTypeList 含 Review）中的工艺参数一律不入库——
+     那是转述，原始出处应另行检索。
+
+
+# =========================================================
+# Part 5 — 已知风险
+# =========================================================
+risks:
+  - id: R1
+    desc: |
+      本档的覆盖面是「预期」而非「已验证」。
+      EMA/FDA 两档的每个字段都能给出实测原文命中，本源不能——
+      315 篇（乃至 11,000 篇）异质文献无法逐篇预验证。
+      建议：先人工精读 5-10 篇（首选实测命中的
+      "CD8α Structural Domains Enhance GUCY2C CAR-T Cell Efficacy"，PMID 39315411），
+      确认这些字段确实可抽，再据此固化提示词并回填本档的 evidence。
+  - id: R2
+    desc: |
+      重复计数。同一套工艺会被原始论文、后续论文、综述反复描述。
+      若不去重，C 库会出现大量近似记录，且都带 weight 0.7。
+      对策：pubTypeList 含 Review 的排除；
+      "as previously described" 的返回 null；
+      归并阶段按 (product_name + vector + culture_days + cytokines) 做相似度判定。
+  - id: R3
+    desc: |
+      补充材料。CAR-T 工艺的定量参数经常只在 supplementary 里
+      （正文写 "detailed protocols in Supplementary Methods"）。
+      本轮未做补充材料抓取。若不做，moi / culture_days 的实际填充率会远低于预期，
+      而这两列正是本源存在的理由。=> 接入前须确认补充材料的抓取路径。
+  - id: R4
+    desc: |
+      非 OA 文献占比。实测前 5 条有 1 条 isOpenAccess=N（PMID 42241671，
+      恰好是 GUCY2C CAR-T 的临床研究——正是我们最想要的那类）。
+      临床阶段的工艺描述往往在高影响因子的非 OA 期刊上。
+      => 最有价值的文献可能恰恰拿不到全文。需评估机构订阅或馆际互借。
