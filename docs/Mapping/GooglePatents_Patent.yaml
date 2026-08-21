@@ -1,0 +1,183 @@
+source_name: Google Patents                    # 结构字段走 Public Data (BigQuery)，全文走专利页 PDF
+domain: patent
+入口_API: {endpoint: patents-public-data.patents.publications, method: bigquery_sql, authentication: service_account, credential_env: GOOGLE_APPLICATION_CREDENTIALS}
+文件格式: [bigquery_table, pdf]   # 直接下载：BQ 结构表 或 专利页 PDF
+抽取:
+  可用格式: [bigquery_table, text]  # 结构字段直接查 BQ；序列/权利要求全文 → PDF 解析
+  获取步骤: 结构字段(号/权利/受让人/法律状态)直接查 BQ；VH/VL 序列、claims 全文 → 下 PDF 后解析(或用 SEQ 序列数据集)
+  额外成本: BQ 需服务账号 + 计费(1TB/月免费额度)；逐页抓 PDF 易被限流(需退避/间隔)
+版本或快照: {mode: release, version_source: dataset last update（滞后1季度+）, snapshot_date: null}
+更新频率: {upstream: quarterly, project_check: quarterly}
+取样验证:
+  verified: true
+  verification_sample: 'US9156915B2 ANTI-GCC ANTIBODY MOLECULES(授权/Waldman/Thomas Jefferson University)：publication_number/claims/assignee/inventor/grant_date/legal_status=granted/SEQ ID 1-4(MS7 与 MS20 的 VH/VL) 存在'
+  verified_at: 2026-08-19
+  # ⚠逐字核对更正：claim17 仅限定「识别域(VH+VL)结合人 GCC」，不含 hinge/TM/共刺激/CD3ζ；
+  #   早前误记的 IgG1 hinge/CH2CH3+免疫受体跨膜 实为 claim7-10 的 Fc/免疫偶联物条款，非 CAR。
+# ---------------------------------------------------------------
+# 可填性词表（三个 可填字段_* 小节通用）
+#   直给 / 派生 / 需另取 / 需计算 / ◐条件 / 不适用 / 无 / 平台
+#   （定义同 EuropePMC.yaml 档头词表）
+# ---------------------------------------------------------------
+
+可填字段_Binder:
+  规范条目: 47
+  本源可填: 24
+  本源不可填: 30
+  总述: ★专利侧主力，A 库 S 级正样本来源——序列齐全、专利状态齐全。
+        与文献源正好互补：专利给序列不给数值，文献给数值不给序列
+  字段:
+    名称代号: {列: name_code, 可填性: 直给, 来源位置: 说明书的抗体代号（如 MS7 / MS20）, 置信度: 高}
+    来源类型: {列: source_type, 可填性: 派生, rule: 恒为 专利}
+    来源ID: {列: source_id, 可填性: 直给, 来源位置: publication_number（BQ 结构字段）}
+    实验条件: {列: experiment_conditions, 可填性: 无, 备注: ★专利不披露实验条件（无 SPR/BLI/流式条件描述）}
+    证据等级: {列: evidence_level, 可填性: 派生, rule: 恒为 专利预印本（weight 0.4）, 备注: ★即便是授权专利也不升级}
+    版本:
+      列: version
+      可填性: 直给
+      来源位置: 文献类型代码（B2 授权本 / A1 申请公开本）
+      备注: ★专利的"版本"就是 kind code，B2 与 A1 内容可能不同，必须记明用的是哪一本
+    录入日期: {列: entry_date, 可填性: 平台, 备注: 不得用授权日冒充}
+    引用: {列: citation, 可填性: 直给, 备注: ★须精确到 SEQ ID NO 与 claim 号}
+    适用场景: {列: applicable_scenario, 可填性: 派生, rule: 由权利要求覆盖的形态推出（抗体 / 免疫偶联物 / CAR 识别域）}
+    相反证据:
+      列: contrary_evidence
+      可填性: ◐条件
+      备注: ★本源少见地能填此栏——说明书常有"本发明抗体不与 X 交叉""不是 Y 抗体"等排除性陈述，
+             正是用来抵消误读的相反证据
+    VH序列:
+      列: vh_seq
+      可填性: 直给
+      来源位置: 说明书序列段 SEQ ID NO:n（claim 以编号引用）
+      成本: 需解析 PDF，或改用 BQ 序列数据集
+      置信度: 中（见备注）
+      备注: ★PDF 文本层 OCR 会把 Q 认成 O、V 认成 W（WVRQT→WVROT），
+             直接用 pdftotext 结果入库会引入静默序列错误且下游不报错。
+             必须以官方 SEQ listing 或 Google Patents Public Data 序列数据集校核
+    VL序列: {列: vl_seq, 可填性: 直给, 备注: 同 VH 的 OCR 风险}
+    scFv全序列:
+      列: scfv_seq
+      可填性: 无
+      备注: ★权利要求常覆盖 scFv 形态，但说明书不给 scFv 全序列也不给 VH/VL 朝向。
+             由 VH/VL 自行拼接属我方构造，不是来源数据，不得填入
+    linker: {列: linker, 可填性: ◐条件, 备注: 多数专利不给 linker 序列}
+    格式: {列: format, 可填性: 派生, rule: 由亚型描述判定（IgG1κ → IgG）；claim 覆盖的其他形态不另建行}
+    编号体系: {列: numbering, 可填性: 需计算, 备注: ★不得因专利用某体系描述就写死，由我方 pipeline 决定}
+    'FR/CDR 区':
+      列: '[cdr_h1, cdr_h2, cdr_h3, cdr_l1, cdr_l2, cdr_l3] —— ★FR 无列'
+      可填性: 需计算
+      前置: VH/VL 已到手 → 跑 ANARCI 即得
+      备注: ★属"可执行的下一步"而非死缺口——这是专利源相对文献源的优势
+    CDR长度: {列: cdr_lengths, 可填性: 需计算}
+    'V(D)J基因': {列: vdj_genes, 可填性: 需计算}
+    胚系来源: {列: germline, 可填性: 直给, 来源位置: 免疫动物描述（如 "generated from BALB/c mice"）, 置信度: 高}
+    体细胞突变: {列: somatic_mutations, 可填性: 需计算}
+    靶抗原: {列: target_antigen, 可填性: 直给, 来源位置: 标题与权利要求, 置信度: 高}
+    表位:
+      列: epitope_position
+      可填性: ◐条件（实际多为空）
+      备注: |
+        ★最大抽取陷阱：说明书背景技术段会列出第三方抗体的表位（并常明确排除之，
+        如 "the antibody molecule is not GCC:B10, GCC:4D7 or GCC:C8"）。
+        那些表位属被排除的现有技术，绝不可挂到本专利 binder 名下。
+        必须先跑 separate_prior_art_antibodies 规则区分"本专利方案"与"背景/排除项"
+    表位类型: {列: epitope_kind, 可填性: ◐条件, 备注: 无判定依据时填 未知}
+    结合位点: {列: binding_site, 可填性: ◐条件, 来源位置: 如"结合胞外域，不结合 kinase homology 域"这类域级描述, 置信度: 中}
+    交叉反应性:
+      列: cross_reactivity
+      可填性: ◐条件
+      备注: ★须逐字读——专利常写"与啮齿类无实质交叉"这类阴性陈述，
+             与"人鼠交叉"意思完全相反，误读会系统性污染 A 库
+    种属反应性: {列: species_reactivity, 可填性: ◐条件, 备注: 同上，注意阴性陈述}
+    人源化程度:
+      列: humanization
+      可填性: ◐条件
+      备注: ★说明书常另述"人源化方法"但不给人源化后序列。
+             此时只可记 SEQ 的鼠源事实，不得记为"已人源化"
+    专利状态: {列: patent_status, 可填性: 直给, 来源位置: BQ legal_status, 备注: ★BQ 滞后一季度以上；商业决策前须查实时法律状态与维持费}
+    开发临床阶段: {列: development_stage, 可填性: 派生, rule: 专利申请阶段（无临床阶段标注）}
+    已有体外功能读出:
+      列: in_vitro_readout
+      可填性: ◐条件
+      置信度: 低
+      备注: ★说明书的"In some embodiments... is an agonist of GCC"属实施方式表述并常引外部文献，
+             不是本件实测数据，须标低置信度
+  不可填:
+    - 列: [kd_nm, kon_m1s1, koff_s1, measure_method, measure_condition]
+      原因: ★专利几乎从不披露数值亲和力（披露会缩小保护范围）——这是专利源的结构性缺口
+    - 列: [tm_celsius, viscosity, aggregation, solubility, hydrophobicity, net_charge,
+           glycosylation_sites, free_cysteine, immunogenicity_risk]
+      原因: 无成药性表征
+    - 列: [structure_template, complex_structure, prediction_confidence]
+      原因: 无结构数据
+
+可填字段_CAR:
+  规范条目: 25
+  本源可填: 15
+  本源不可填: 10
+  总述: ★B 侧很弱——专利 CAR 多为"纸面 CAR"：claim 只限定识别域，无骨架模块、无功能数据
+  字段:
+    元数据11:
+      列: [uid, name_code, source_type, source_id, experiment_conditions,
+           evidence_level, version, entry_date, citation, applicable_scenario, contrary_evidence]
+      可填性: 同 可填字段_Binder 的对应栏
+      备注: experiment_conditions = 无
+    模块类型:
+      列: module_type
+      可填性: ◐条件
+      来源位置: CAR 权利要求
+      备注: ★多数只限定 识别域 一档。抽取时须逐字判定 claim 是否限定
+             hinge/transmembrane/costimulatory/CD3ζ；仅限定识别域者标 paper_car = true
+      陷阱: ★不得把 Fc / 免疫偶联物条款误读为 CAR 骨架（实测 US9156915B2 的 claim 7-13 即属此）
+    来源分子: {列: source_molecule, 可填性: ◐条件, 备注: 骨架未指定时填 未指定，禁止补全}
+    序列: {列: sequence, 可填性: 直给（识别域）, 来源位置: SEQ ID, 备注: ★专利源在 B 库唯一的强项}
+    长度: {列: length_aa, 可填性: 需计算, rule: 由 SEQ 序列实算}
+    装配规则:
+      列: assembly_rules
+      可填性: ◐条件
+      备注: ★属 car.module 列。"纸面 CAR"时此栏内容实质是"限定范围声明"而非真正装配顺序，应写明
+    可兼容模块:
+      列: compatible_modules
+      可填性: 无
+      备注: ★claim 对骨架不设限，法律上等于"与任意骨架兼容"，但那是权利范围不是技术验证。
+             填入会被下游误读为已验证兼容——这是必须守住的边界
+    不可兼容模块: {列: incompatible_modules, 可填性: 无}
+  不可填:
+    - 列: [activation_speed, metabolic_state, expansion_capacity, memory_phenotype,
+           persistence, exhaustion_risk, tonic_signaling]
+      原因: ★专利无 CAR 功能数据；且这些主要描述共刺激域属性，而"纸面 CAR"根本没有共刺激域模块
+             → 语义上是 not_applicable，QC 计缺失率时不应与"做了实验没报"同等对待
+    - 列: [epitope_distance_effect, synapse_effect, tonic_effect]
+      原因: 无铰链/跨膜模块，三栏天然不适用
+    - 列: 几何长度
+      原因: ★双重缺口——schema 无列，本源亦无相关模块
+
+可填字段_制造工艺:
+  规范条目: 36
+  本源可填: 0
+  本源不可填: 36
+  建行建议: ★不建行——22 个业务列逐栏核对，无一有值
+  元数据11:
+    列: [uid, name_code, source_type, source_id, experiment_conditions,
+         evidence_level, version, entry_date, citation, applicable_scenario, contrary_evidence]
+    可填性: 技术上可填（同 可填字段_Binder 的对应栏）
+    备注: ★但业务列全空时，元数据齐全并无意义——故本源不建 process 行，这 11 栏一并不产出
+  结构性原因: |
+    ★专利工艺全空是结构性的，不是抽取不力：
+    权利要求写入制备工艺会缩小保护范围，故抗体/CAR 专利通常只写序列与结合活性。
+    若需工艺数据，应转向监管文件（BLA / EPAR）或同行评议文献，不应在专利源上加大投入。
+  不可填:
+    - 列: [t_cell_source, cd4_cd8_ratio, starting_quality, activation_method,
+           activation_reagents, vector, moi, transduction_condition, culture_system,
+           cytokines, culture_days, cryo_condition, formulation]
+      原因: 专利不披露制备流程
+    - 列: [viability_pct, transduction_efficiency_pct, vcn, cd3_positive_pct, phenotype,
+           sterility, mycoplasma, endotoxin, cytotoxicity, cytokine_release]
+      原因: 无放行与功能指标
+    - 列: [car_construct_uid, product_name]
+      原因: car_construct_uid 技术上可指向"纸面 CAR"，但无工艺内容可载
+
+notes: >
+  专利侧主力：补 Binder 序列(VH/VL 全序列)+表位+专利状态，是 S 级 Binder 正样本来源。
+  B 侧通常只是「纸面 CAR」——claims 仅限定识别域、无骨架模块、无功能数据。
+  C(制造工艺)≈0。

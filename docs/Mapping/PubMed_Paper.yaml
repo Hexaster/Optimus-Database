@@ -1,0 +1,144 @@
+source_name: PubMed
+domain: literature
+入口_API: {endpoint: https://eutils.ncbi.nlm.nih.gov/entrez/eutils/, method: rest_api, authentication: api_key, credential_env: NCBI_API_KEY}
+文件格式: [xml, json]       # 直接下载：efetch 题录+摘要 XML(该粒度即用)
+抽取:
+  可用格式: [xml]           # 摘要级即用
+  获取步骤: 题录/摘要直接用；深抽全文需带 PMCID → 转 PMC(=EuropePMC 全文路由)
+  额外成本: 本身无全文；全文依赖 PMC(仅 OA 子集)
+版本或快照: {mode: release, version_source: baseline year + daily update files, snapshot_date: null}
+更新频率: {upstream: daily, project_check: monthly}
+取样验证: {verified: true, verification_sample: 'PMID 40487639「CDH17-targeting CAR-NK cells synergize with CD47 blockade」：题录+摘要存在；带 PMCID PMC12144966 → 可转 PMC 取 OA 全文', verified_at: 2026-08-19}
+# ---------------------------------------------------------------
+# 可填性词表（三个 可填字段_* 小节通用）
+#   直给 / 派生 / 需另取 / 需计算 / ◐条件 / 不适用 / 无 / 平台
+#   本源特有：本粒度缺失 = 摘要级给不出，但同文全文层有（≠永久缺失）
+#   （其余定义同 EuropePMC.yaml 档头词表）
+# ---------------------------------------------------------------
+
+可填字段_Binder:
+  规范条目: 47
+  本源可填: 14      # 其中 11 项是元数据，专属字段只有 3 项
+  本源不可填: 40
+  总述: |
+    ★摘要级的天花板：47 条里只有 靶抗原 / 格式 / 已有体外功能读出 三项专属字段有值。
+    但绝大多数空栏是「本粒度缺失」而非「永久缺失」——同文全文层多数有值。
+    正确动作不是标 data_absent，而是走 PMCID 转 PMC 全文重抽。
+  字段:
+    名称代号:
+      列: name_code
+      可填性: 无（本粒度）
+      备注: ★摘要不给克隆名。禁止用文章标题充当 binder 名称——
+             那会在 A 库造出名字是句子的实体，且无法与全文层的真名归并
+    来源类型: {列: source_type, 可填性: 派生, rule: 恒为 文献}
+    来源ID:
+      列: source_id
+      可填性: 直给
+      来源位置: 'ArticleId[IdType=doi]（优先）；PMID 作辅助键'
+      备注: ★优先 DOI——跨源归并时覆盖面比 PMID 广
+    实验条件: {列: experiment_conditions, 可填性: 无（本粒度）}
+    证据等级: {列: evidence_level, 可填性: 派生, rule: 由 PublicationType 判定（Journal Article + 同行评议期刊 → 同行评议）；Preprint/Review 须另判}
+    版本: {列: version, 可填性: 派生, rule: 记文献状态（正式发表版 / 预印本）}
+    录入日期:
+      列: entry_date
+      可填性: 平台
+      备注: ★不得用 PubDate（2025 May）或 ArticleDate（电子首发日 2025-03-19）冒充；两者本身也不可混用
+    引用:
+      列: citation
+      可填性: 直给
+      来源位置: 题录全组（作者 / 期刊 / 卷期 / 页码 / DOI / PMID）
+      备注: ★组装时取 PubDate 而非 ArticleDate
+    适用场景: {列: applicable_scenario, 可填性: 派生, 置信度: 低, rule: 由标题与关键词的适应症推出}
+    相反证据: {列: contrary_evidence, 可填性: 无}
+    靶抗原:
+      列: target_antigen
+      可填性: 直给
+      来源位置: Keyword（精确词）+ AbstractText
+      置信度: 高
+      备注: |
+        ★本源唯一高置信的专属字段，也是 PubMed 作为"发现源"的核心价值。
+        注意 MeSH 不可作为唯一依据——新文常未标引（实测本例 DescriptorName 为空），
+        而新文恰恰最有价值。主路径须是 Keyword + 标题 + 摘要 NER。
+    格式:
+      列: format
+      可填性: 派生
+      置信度: 中
+      rule: 由 "nanobody" / "scFv" / "Fab" 等词判定
+      备注: ★文本推断，未见序列证实；取到序列后应以序列判定覆盖之
+    已有体外功能读出: {列: in_vitro_readout, 可填性: ◐条件, 置信度: 中, 备注: 摘要多为定性表述（如"有效清除肿瘤细胞"），无数值无方法}
+    开发临床阶段: {列: development_stage, 可填性: 派生, rule: 由摘要提及的实验层级推出}
+  本粒度缺失:
+    note: ★以下在同文 OA 全文层多数有值；走 PMCID → PMC 全文重抽即可补齐
+    组:
+      - {列: [vh_seq, vl_seq, scfv_seq, linker], 全文层: 部分有（本例正文亦无，须查补充材料）}
+      - {列: [numbering, cdr_h1, cdr_h2, cdr_h3, cdr_l1, cdr_l2, cdr_l3, cdr_lengths,
+              vdj_genes, germline, somatic_mutations], 全文层: 需先有序列再计算；★schema 无 FR 列}
+      - {列: [epitope_position, epitope_kind, binding_site], 全文层: ◐条件}
+      - {列: [cross_reactivity, species_reactivity], 全文层: 有（本例为人鼠双交叉，蛋白水平）}
+      - {列: [experiment_conditions, contrary_evidence, name_code], 全文层: 有}
+  永久缺失:
+    note: ★摘要与全文层均无，须另寻来源
+    组:
+      - 列: [kd_nm, kon_m1s1, koff_s1, measure_method, measure_condition]
+        原因: 本例全文层也只有定性 "high binding affinity"，无数值 → 须由 SAbDab / DOTAD 补
+      - 列: [tm_celsius, viscosity, aggregation, solubility, hydrophobicity, net_charge,
+             glycosylation_sites, free_cysteine, humanization, immunogenicity_risk]
+        原因: 无成药性数据
+      - 列: [structure_template, complex_structure, prediction_confidence]
+        原因: 无结构数据
+      - 列: [patent_status]
+        原因: 论文不提专利状态
+
+可填字段_CAR:
+  规范条目: 25
+  本源可填: 0（模块级）
+  本源不可填: 25
+  建行建议: ★car.module 不建行；car.construct 至多建空壳占位行（由业务侧定）
+  决定性原因: |
+    ★car.module.module_type 为 NOT NULL，而摘要只出现 "chimeric antigen receptor (CAR)"
+    与 "nanobody-based" 两个词，不含任何模块名（无信号肽/铰链/跨膜/共刺激/CD3ζ）
+    → 该列无从填起，这一条即决定不建行。
+  逐栏核对:
+    元数据11: 技术上可填，但只有元数据而无标识栏，行本身无意义
+    module_type: ★NOT NULL 且无值 → 决定不建行
+    source_molecule: null
+    sequence: null
+    length_aa: null
+    功能属性7栏: 'null（activation_speed / metabolic_state / expansion_capacity / memory_phenotype / persistence / exhaustion_risk / tonic_signaling）'
+    几何长度: 'null（且 car.module 无此列）'
+    几何效应3栏: 'null（epitope_distance_effect / synapse_effect / tonic_effect）'
+    组合约束3栏: 'null（compatible_modules / incompatible_modules / assembly_rules；★assembly_rules 属 car.module 非 car.construct）'
+  补齐路径: 走 PMCID → PMC 全文；实测同文全文层可拆出 7 个模块、2 个 construct
+
+可填字段_制造工艺:
+  规范条目: 36
+  本源可填: 1
+  本源不可填: 35
+  建行建议: ★不建行
+  原因: |
+    22 个业务列里只有 product_name 一栏可由摘要推出（如 CDH17-CAR-NK）。
+    只有产品名而其余全空的行属伪值，只会虚增 C 库计数、拉低完整度统计。
+    产品名信息由 citation 与 car.construct 承载即可。
+    ★对比同文全文层：那边 22 栏里 11 栏有值——差距即"摘要 vs 全文"的产出比。
+  元数据11:
+    列: [uid, name_code, source_type, source_id, experiment_conditions,
+         evidence_level, version, entry_date, citation, applicable_scenario, contrary_evidence]
+    可填性: 技术上可填（同 可填字段_Binder 的对应栏）
+    备注: ★但业务列全空时，元数据齐全并无意义——故本源不建 process 行，这 11 栏一并不产出
+  逐栏核对:
+    可填: {product_name: '◐由摘要推出'}
+    不可填:
+      - 列: [t_cell_source, cd4_cd8_ratio, starting_quality, activation_method,
+             activation_reagents, vector, moi, transduction_condition, culture_system,
+             cytokines, culture_days, cryo_condition, formulation]
+        原因: 摘要不含任何制备参数
+      - 列: [viability_pct, transduction_efficiency_pct, vcn, cd3_positive_pct, phenotype,
+             sterility, mycoplasma, endotoxin, cytotoxicity, cytokine_release]
+        原因: 摘要不含放行与定量功能指标（杀伤为定性表述，计入 Binder 的 in_vitro_readout）
+      - 列: [car_construct_uid]
+        原因: 可指向占位 construct，但无工艺内容可载
+
+notes: >
+  摘要级：A/B/C 专属字段几乎全空，仅能填元数据 + 靶抗原/CAR 产品等定性项。
+  深抽须带 PMCID 转 PMC 全文(=EuropePMC 全文路由，实测本例 PMID 40487639 → PMC12144966)。
+  PubMed 定位为补充/发现源。

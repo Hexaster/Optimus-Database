@@ -1,0 +1,222 @@
+source_name: Europe PMC
+domain: literature
+入口_API: {endpoint: https://www.ebi.ac.uk/europepmc/webservices/rest/search, method: rest_api, authentication: none, credential_env: null, 全文route: 'NCBI efetch db=pmc（有 PMCID 的 OA 全文；EPMC fullTextXML 端点 404）'}
+文件格式: [json]            # 直接下载：检索接口回题录/摘要 JSON
+抽取:
+  可用格式: [xml]           # 全文抽取目标：OA 全文 XML
+  获取步骤: 检索得 PMCID → NCBI efetch db=pmc 取 OA 全文 XML(EPMC 自身 fullTextXML 端点 404)
+  额外成本: 仅 OA 子集(有 PMCID)有全文；非 OA 只回摘要
+版本或快照: {mode: rolling, version_source: daily update, snapshot_date: null}
+更新频率: {upstream: daily, project_check: monthly}
+取样验证: {verified: true, verification_sample: 'PMC12144966 OA 全文 177KB，含 Materials and methods / lentivirus / Generation of CAR-NK', verified_at: 2026-08-19}
+# ---------------------------------------------------------------
+# 可填性词表（三个 可填字段_* 小节通用）
+#   直给   = 源档案直接给出该值，无需加工
+#   派生   = 由源字段按规则推出（rule 写明）
+#   需另取 = 需再发一次请求/换一种档案才有（登录、PDF、补充材料）
+#   需计算 = 需跑工具才有（ANARCI 编号、序列比对、坐标切分）
+#   ◐条件 = 只有部分论文/部分专利有（本源最常见的状态）
+#   不适用 = 该字段对本源的记录类型语义上不成立（≠缺失）
+#   无     = 本源任何路径都给不出
+#   平台   = 由库自身管理
+# ---------------------------------------------------------------
+
+可填字段_Binder:
+  规范条目: 47
+  本源可填: 26      # 其中 13 项为 ◐条件（视论文而定）
+  本源不可填: 28
+  总述: ★文献侧唯一能同时填 A/B/C 三库的源；但几乎所有专属字段都是 ◐条件——
+        同一个字段在一篇论文里齐全、在另一篇里全空，故本表的"可填"须读作"该源有可能给出"
+  字段:
+    名称代号:
+      列: name_code
+      可填性: ◐条件
+      来源位置: Methods 的构建体描述 / Results 的克隆命名
+      置信度: 高（给出时）
+      备注: ★摘要级常无克隆名，须深抽 Methods；实测本例全文才有 NbCDH17/NbC9
+    来源类型: {列: source_type, 可填性: 派生, rule: 恒为 文献}
+    来源ID: {列: source_id, 可填性: 直给, 来源位置: DOI（优先）/ PMID / PMCID}
+    实验条件:
+      列: experiment_conditions
+      可填性: ◐条件
+      来源位置: Methods 各测定小节
+      备注: ★本源少见地能填此栏——其他五源基本全空
+    证据等级: {列: evidence_level, 可填性: 派生, rule: 期刊同行评议 → 同行评议（weight 0.7）；预印本须降为 专利预印本}
+    版本: {列: version, 可填性: 派生, rule: 记文献状态（正式发表版 / 预印本 / 有无勘误）}
+    录入日期: {列: entry_date, 可填性: 平台, 备注: 不得用 PubDate 或 ArticleDate 冒充}
+    引用: {列: citation, 可填性: 直给, 备注: ★须精确到章节（如 "2.6 Plasmid construction"）才满足可回溯要求}
+    适用场景: {列: applicable_scenario, 可填性: 派生, rule: 由适应症 + 效应细胞类型推出}
+    相反证据: {列: contrary_evidence, 可填性: ◐条件, 备注: 阴性结果/对照失败在正文中有时明写}
+    VH序列:
+      列: vh_seq
+      可填性: ◐条件 + 需另取
+      来源位置: ★正文极少给序列；多在 Supplementary / 附表
+      成本: 需另下补充材料
+      置信度: 低（覆盖率低）
+      备注: ★这是文献源相对专利源的系统性劣势——文献给功能与工艺，专利给序列
+    VL序列: {列: vl_seq, 可填性: ◐条件 + 需另取, 备注: 单域 VHH 论文此栏为 不适用（无 VH/VL 配对）}
+    scFv全序列: {列: scfv_seq, 可填性: ◐条件 + 需另取}
+    linker: {列: linker, 可填性: ◐条件, 来源位置: 构建体描述句（如 "(G4S)4 linker"）, 备注: 常给类型不给序列}
+    格式: {列: format, 可填性: 派生, rule: 由 "scFv"/"nanobody"/"VHH" 等词判定, 置信度: 高}
+    编号体系: {列: numbering, 可填性: 需计算, 备注: 由我方 pipeline 决定}
+    'FR/CDR 区':
+      列: '[cdr_h1, cdr_h2, cdr_h3, cdr_l1, cdr_l2, cdr_l3] —— ★FR 无列'
+      可填性: 需计算
+      前置: ★必须先拿到序列（多数论文拿不到）→ 实际覆盖率很低
+    CDR长度: {列: cdr_lengths, 可填性: 需计算, 前置: 同上}
+    'V(D)J基因': {列: vdj_genes, 可填性: 需计算, 前置: 同上}
+    胚系来源: {列: germline, 可填性: ◐条件, 来源位置: 免疫动物/文库来源描述（如 camelid、BALB/c）, 置信度: 中}
+    体细胞突变: {列: somatic_mutations, 可填性: 需计算, 前置: 同上}
+    靶抗原: {列: target_antigen, 可填性: 直给, 来源位置: 标题/摘要/Methods, 置信度: 高, 覆盖率: 全部条目}
+    表位: {列: epitope_position, 可填性: ◐条件, 备注: 仅表位定位类论文才有；一般功能类论文无}
+    表位类型: {列: epitope_kind, 可填性: ◐条件, 备注: 无判定依据时填 未知，不得由抗原类型推断}
+    结合位点: {列: binding_site, 可填性: ◐条件, 来源位置: 所用重组抗原构建体（如 ECD）可推知结合区}
+    Kd: {列: kd_nm, 可填性: ◐条件, 备注: ★"high binding affinity" 这类定性表述不得填入数值栏；实测本例即无数值}
+    Kon: {列: kon_m1s1, 可填性: ◐条件}
+    Koff: {列: koff_s1, 可填性: ◐条件}
+    测量方法:
+      列: measure_method
+      可填性: ◐条件
+      备注: ★本栏语义限定为亲和力测定方法（SPR/BLI）。流式/ELISA 等表面检测手段
+             应记入 experiment_conditions，混填是常见错误
+    测量条件: {列: measure_condition, 可填性: ◐条件, 来源位置: Methods 的 SPR/BLI 小节}
+    交叉反应性:
+      列: cross_reactivity
+      可填性: ◐条件
+      备注: ★规范要求区分蛋白水平与细胞水平。多数论文只做其一，须在值里写明是哪一级，
+             否则会被下游读成两级均已验证
+    种属反应性: {列: species_reactivity, 可填性: ◐条件, 备注: 人鼠交叉与否直接决定能否用同源小鼠模型，价值高}
+    人源化程度:
+      列: humanization
+      可填性: ◐条件
+      备注: ★对天然 camelid VHH 为 不适用；且"构建体采用人源序列"≠"scFv 已人源化"，不可过度解读
+    开发临床阶段: {列: development_stage, 可填性: 派生, rule: 由所做实验层级推出（体外 / 小鼠模型 / 临床）}
+    已有体外功能读出: {列: in_vitro_readout, 可填性: 直给, 备注: ★本源强项——杀伤/细胞因子/结合读出基本必有}
+  不可填:
+    - 列: [tm_celsius, viscosity, aggregation, solubility, hydrophobicity, net_charge,
+           glycosylation_sites, free_cysteine, immunogenicity_risk]
+      原因: ★成药性表征几乎从不出现在 CAR 功能类论文中；须由 DOTAD / Thera-SAbDab 补
+    - 列: [structure_template, complex_structure, prediction_confidence]
+      原因: 除结构生物学论文外无结构数据；★正文的 CAR 结构示意图是卡通图，不得当作结构数据
+    - 列: [patent_status]
+      原因: 论文一般不提专利状态
+
+可填字段_CAR:
+  规范条目: 25
+  本源可填: 17
+  本源不可填: 8
+  字段:
+    元数据11:
+      列: [uid, name_code, source_type, source_id, experiment_conditions,
+           evidence_level, version, entry_date, citation, applicable_scenario, contrary_evidence]
+      可填性: 同 可填字段_Binder 的对应栏
+      备注: ★experiment_conditions 在本源可填（记效应细胞类型与培养背景），是与质粒/序列源的关键差别
+    模块类型:
+      列: module_type
+      可填性: 直给
+      来源位置: Methods 的 "Plasmid construction" 段模块罗列句
+      置信度: 高
+      备注: ★本源强项——模块顺序在一句话里完整给出，按出现顺序取即可，不得重排
+    来源分子: {列: source_molecule, 可填性: 直给, 备注: 只取原文明写者；未写来源的模块填 未指明}
+    序列:
+      列: sequence
+      可填性: ◐条件（实际极少）
+      备注: ★正文只给模块名不给序列，这是文献源的系统性缺口；与 CARTiBASE/Addgene 正相反
+    长度: {列: length_aa, 可填性: 需计算, 前置: 先有序列（多数论文没有）}
+    装配规则:
+      列: assembly_rules
+      可填性: 直给
+      备注: ★属 car.module 列（04_car.sql:39），不在 car.construct；
+             值得记的结构事实：铰链与跨膜是否同源配对（如 CD8 铰链 + CD28 跨膜属混源）
+    可兼容模块:
+      列: compatible_modules
+      可填性: ◐条件
+      rule: 由"该组合已成功表达并有功能"反推兼容
+      备注: 单构型论文只能给弱证据；多构型对照论文才给得出强证据
+    不可兼容模块: {列: incompatible_modules, 可填性: ◐条件, 备注: ★"未验证混搭"≠"不兼容"，不得据此填入}
+    对表位距离的影响:
+      列: epitope_distance_effect
+      可填性: ◐条件
+      前置: ★必须有构型对照（如 CD8HTM vs CD28HTM）才可归因
+      备注: 单一构型论文此栏恒空——这是本组三栏能否填上的唯一判据
+    对免疫突触的影响: {列: synapse_effect, 可填性: ◐条件, 前置: 同上}
+    对紧张性信号的影响: {列: tonic_effect, 可填性: ◐条件, 前置: 同上, 备注: 注意与 tonic_signaling 区分（前者是"该模块对 tonic 的影响"）}
+  不可填:
+    - 列: [activation_speed, metabolic_state, expansion_capacity, memory_phenotype,
+           persistence, exhaustion_risk, tonic_signaling]
+      原因: |
+        ★论文常测这些指标，但它们是"CAR × 效应细胞 × 靶细胞"的组合读出，
+        按本项目设计归 DB1，不回填 B 库。B 库只存模块固有属性。
+        唯一例外是铰链/跨膜的几何效应（epitope_distance/synapse/tonic_effect），那属模块固有。
+    - 列: 几何长度
+      原因: ★schema 无对应列。本源尤其可惜——铰链/跨膜对照论文的核心结论正是几何差异
+
+可填字段_制造工艺:
+  规范条目: 36
+  本源可填: 28
+  本源不可填: 8
+  总述: ★本源是 C 库的唯一实质来源。其余五源的 C 库产出合计接近 0
+  字段:
+    元数据11:
+      列: [uid, name_code, source_type, source_id, experiment_conditions,
+           evidence_level, version, entry_date, citation, applicable_scenario, contrary_evidence]
+      可填性: 同上
+      备注: 规范此处明写"同行评议文献"档，本源正对应该档
+    T细胞来源:
+      列: t_cell_source
+      可填性: 派生
+      rule: 患者来源 → 自体；健康供者 → 异体；细胞系 → ★三档皆不贴切，只能填 未知
+      备注: ★枚举(自体/异体/未知)为原代 T 设计。CAR-NK 论文用 NK92 等细胞系时本栏失真，
+             真实语义须记入 starting_quality；且"研究用健康供者"≠临床异体产品
+    'CD4:CD8比例':
+      列: cd4_cd8_ratio
+      可填性: ◐条件
+      备注: ★对 CAR-NK 论文为 不适用（NK 无 CD4/CD8 分群）；
+             CAR-T 论文也常只分别报告两群指标而不给比例数值
+    起始细胞质量: {列: starting_quality, 可填性: ◐条件, 来源位置: Methods 的细胞分离段（供者数、分选方法、货号）}
+    激活方式:
+      列: activation_method
+      可填性: ◐条件
+      备注: ★细胞系平台此栏为 不适用（无需激活），非缺失——QC 按"空=缺失"会误判质量
+    试剂: {列: activation_reagents, 可填性: ◐条件, 来源位置: 激活段的细胞因子与货号}
+    载体类型: {列: vector, 可填性: 直给, rule: lentiviral→慢病毒 等（process.vector_type 枚举）, 置信度: 高}
+    MOI: {列: moi, 可填性: ◐条件, 备注: 给出率约一半；实测两条文献实例一有一无}
+    转导条件:
+      列: transduction_condition
+      可填性: 直给
+      备注: ★可承载信息量最大的一栏——包装系统代次、质粒配比、收毒时间、polybrene、筛选与分选
+    培养体系: {列: culture_system, 可填性: 直给, 备注: 基础培养基 + 全部添加剂，本源给得很细}
+    细胞因子组合: {列: cytokines, 可填性: 直给, 备注: IL-2 / IL-7+IL-15 等，几乎必给}
+    培养时长:
+      列: culture_days
+      可填性: ◐条件
+      备注: ★"选择期 10 天""扩增 12 天"语义不同，不得混填；只有明确的总培养时长才可入此栏
+    冻存条件: {列: cryo_condition, 可填性: ◐条件, 来源位置: 冻存液品名 + 细胞密度}
+    制剂: {列: formulation, 可填性: 无（研究级）, 备注: 冻存液属 cryo_condition，不重复填此栏}
+    细胞活率:
+      列: viability_pct
+      可填性: ◐条件
+      备注: ★常见"有方法无数值"（只说用某仪器测、组间无差，不给百分数）；
+             此时应把方法记入 experiment_conditions，数值列留 null，不得编造
+    转导效率: {列: transduction_efficiency_pct, 可填性: ◐条件, 备注: 同上，常只给定性比较}
+    VCN: {列: vcn, 可填性: 无（研究级几乎从不测）}
+    'CD3+比例': {列: cd3_positive_pct, 可填性: ◐条件, 备注: 对 CAR-NK 为 不适用（NK92 为 CD3-）}
+    表型: {列: phenotype, 可填性: ◐条件, 备注: 记忆/耗竭/Treg 分型；阴性结论（"两构型无差"）也应记录}
+    杀伤活性: {列: cytotoxicity, 可填性: 直给, 备注: ★本源强项——测定方法/靶细胞/E:T 比/时长齐全}
+    细胞因子释放: {列: cytokine_release, 可填性: 直给, 备注: granzyme B / IFN-γ / TNF-α / IL-2 等}
+    对应CAR产品: {列: [car_construct_uid, product_name], 可填性: 派生, rule: 指向同文抽出的 construct}
+  不可填:
+    - 列: [sterility, mycoplasma, endotoxin]
+      原因: |
+        ★研究级制备无成品放行三项。
+        常见陷阱：论文里的 "endotoxin-free" 多指质粒纯化试剂盒，不是终产品内毒素放行，不得挪用。
+    - 列: [vcn]
+      原因: 研究级几乎从不测载体拷贝数；须由 IND/BLA 类监管文件补
+    - 列: [formulation]
+      原因: 无终产品制剂配方
+
+notes: >
+  抽取主力（文献侧唯一能抽功能/工艺参数的源）。全文仅 OA 子集（有 PMCID）。
+  两点口径：① binder 可能是单域 VHH(无 VH/VL 配对)，非都是 scFv；
+  ② 效应细胞可能是 NK 系(CAR-NK)而非原代 CAR-T——工艺字段按对应细胞口径填。
+  功能属性按设计归 DB1，不进 B 库。
