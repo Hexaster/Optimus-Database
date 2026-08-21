@@ -1,0 +1,621 @@
+# =========================
+# Instance: OpenAlex W4402816281 -> A / B / C
+# =========================
+# 只回答一件事：这一条记录抽出来的值，如何变成数据库字段。
+# 不描述如何获取数据（见 1_数据源登记/OpenAlex.yaml），
+# 不描述目标库结构、类型、约束（见 sql/03_binder.sql、04_car.sql、05_process.sql）。
+#
+# 本条的教学目的：演示「两级抽取」——
+#   ① 元数据层（OpenAlex 本体 json）能填什么；
+#   ② OA 全文层（经 best_oa_location 取 PDF）再能补上什么。
+#
+# 【2026-08-21 更正】旧版本称元数据层"专属字段全空"，实测偏严：
+#   json 里 abstract_inverted_index 非空、mesh 非空、ids.pmid 非空，
+#   靠这三项已能定出靶抗原并接上 PubMed/PMC 全文路由。见 Part 2。
+
+instance_id: openalex_W4402816281_to_abc
+source_name: OpenAlex
+route_id: [works_api, oa_fulltext]
+target_schema:
+  - sql/03_binder.sql  → binder.binder
+  - sql/04_car.sql     → car.module / car.construct
+  - sql/05_process.sql → process.process
+source_format: json（元数据）+ pdf（OA 全文）
+record_grain: 一条 OpenAlex work（W4402816281）
+
+status: verified
+last_verified: 2026-08-19
+
+example:
+  id: W4402816281
+  title: CD8α Structural Domains Enhance GUCY2C CAR-T Cell Efficacy
+  url: https://openalex.org/W4402816281
+  doi: 10.1080/15384047.2024.2398801
+  pmid: 39315411
+  journal: 'Cancer Biology & Therapy（2024-09-24）'
+  format: 'json(元数据) + OA pdf(全文)'
+
+attached_files:
+  - file: OpenAlex_W4402816281.json
+    note: 元数据 json，49 个顶层键；Part 2 的取证来源
+  - file: OpenAlex_W4402816281.pdf
+    note: '★OA 全文 PDF（经 best_oa_location.pdf_url 取得）；Part 3-5 的深抽来源'
+
+
+# =========================================================
+# Part 1 — 两级抽取对照（本档核心论点）
+# =========================================================
+two_tier_extraction:
+  tier_1_metadata:
+    source: OpenAlex works json
+    gives:
+      - 书目元数据（id / doi / title / 期刊 / 日期 / 作者 / 机构）
+      - 'open_access = {is_oa: true, oa_status: gold, any_repository_has_fulltext: true}'
+      - best_oa_location.pdf_url → ★通往 tier 2 的钥匙
+      - ids.pmid = 39315411 → 通往 PubMed/PMC 全文路由的第二把钥匙
+      - abstract_inverted_index（非空，可还原摘要）
+      - mesh（非空，本条含 Receptors, Enterotoxin 等主题词）
+      - concepts / topics（primary_topic = "CAR-T cell therapy research"）
+      - 计量：cited_by_count = 10, fwci = 1.745, referenced_works_count = 48
+    cannot_give:
+      - 任何序列、模块、工艺参数、功能读出
+    verdict: 足以完成「发现 + 去重 + 靶点粗判 + 判定能否深抽」，不足以填 A/B/C 专属字段
+
+  tier_2_oa_fulltext:
+    source: best_oa_location.pdf_url → OpenAlex_W4402816281.pdf
+    gives: Methods / Results 全部细节 → A/B/C 专属字段大量填充（见 Part 3-5）
+    verdict: ★本源真正的价值在这一层；元数据层只是入口
+
+
+# =========================================================
+# Part 2 — 原文取证（tier 1 出自 json，tier 2 出自 pdf）
+# =========================================================
+raw_evidence:
+  - key: oa_gate
+    tier: 1
+    verbatim: '{"is_oa": true, "oa_status": "gold", "any_repository_has_fulltext": true}'
+    locator: json.open_access
+    note: 这一栏决定本条能否进 tier 2；非 OA 条目到此为止
+  - key: pdf_url
+    tier: 1
+    verbatim: 'https://www.tandfonline.com/doi/pdf/10.1080/15384047.2024.2398801?needAccess=true'
+    locator: json.best_oa_location.pdf_url
+  - key: pmid_link
+    tier: 1
+    verbatim: '"pmid": "https://pubmed.ncbi.nlm.nih.gov/39315411"'
+    locator: json.ids
+  - key: car_cassette
+    tier: 2
+    verbatim: >-
+      The CAR expression cassette consists of an EF1ɑ promoter and the following human
+      sequences: CD8ɑ leader sequence, anti-GUCY2C (Clone 5F9) single chain variable
+      fragment (scFv) with a (G4S)4 linker, hinge and transmembrane domains (HTM) from
+      CD8ɑ (CD8HTM) or CD28 (CD28HTM), the CD28 ICD, 4-1BB ICD, and CD3ζ ICD, followed by
+      the virally-derived T2A peptide and green fluorescent protein (GFP) reporter.
+    locator: Results / Figure 1a
+    note: ★三代 CAR（CD28 + 4-1BB 双共刺激域）；hinge/TM 是唯一变量
+  - key: transfer_vector
+    tier: 2
+    verbatim: >-
+      Cassettes for CAR transfer plasmids were synthesized and cloned (GenScript Biotech)
+      into the pCDH-EF1ɑ-MCS-T2A-GFP lentiviral transfer vector (CD525A–1, System
+      Biosciences) using the XbaI and BamHI restriction sites.
+    locator: Methods / Production of lentiviral vectors
+  - key: packaging
+    tier: 2
+    verbatim: >-
+      Lipofectamine 3000 ... 17.7 ug CAR transfer plasmid, 14.7 ug pRSV-Rev (12253, Addgene),
+      31 ug pMDLg/pRRE (12251, Addgene), and 7.6 ug pMD2.G (12259, Addgene) ...
+      28.4 million HEK293T/17 cells (CRL11268, ATCC). Six hours post-transfection a complete
+      media exchange was performed. Media was collected at 24- and 52-hours post-transfection.
+    locator: Methods
+    note: 三代包装系统（Rev 独立质粒）
+  - key: t_cell_source
+    tier: 2
+    verbatim: >-
+      Human T cells were isolated from the peripheral blood mononuclear cells (PBMCs) of six
+      healthy donor leukopaks (200-0092, Stemcell Technologies) using magnetically sorted
+      negative selection (130-096-535, Miltenyi Biotec).
+    locator: Methods
+  - key: activation_transduction
+    tier: 2
+    verbatim: >-
+      T cells were activated using CD3/CD28/CD2 magnetic beads (1:1 bead-to-cell ratio,
+      130-091-441, Miltenyi Biotec) in the presence of 10 ng/mL human IL-7 and 10 ng/mL human
+      IL-15 ... T cells were transduced with CAR LV at an MOI of 5 with 0.8 ug/mL Polybrene
+      24 hours after activation. Activation beads were magnetically removed 72 hours ...
+    locator: Methods
+  - key: culture_medium
+    tier: 2
+    verbatim: >-
+      1X Insulin-Transferrin-Selenium (ITS-G), 10 mM N-Acetyl-L-cysteine, 1X GlutaMAX,
+      1X Glucose solution, 1X Sodium Pyruvate, 1X MEM Non-Essential Amino Acids, 1X HEPES
+      Buffer, 1X Penicillin-Streptomycin ...
+    locator: Methods / T-cell culture medium（RPMI-1640 基础）
+  - key: expansion_cryo
+    tier: 2
+    verbatim: >-
+      CAR-T cells were expanded ex vivo for 12 days using G-Rex plates before
+      cryopreservation. ... T cells were collected on Day 12. T-cell concentration and
+      viability were assessed using the Guava MUSE Cell Analyzer. T cells were cryopreserved
+      using CryoStor CS10 at a density of 20 million cells/mL.
+    locator: Methods / Results
+  - key: car_quantification
+    tier: 2
+    verbatim: >-
+      mean molecules/cell for CD8+ T cells being 3906 and for the CD4+ T cells being
+      10,365 (p < .0001), regardless of CAR design.
+    locator: Results / Figure 4c（BD Quantibrite PE beads 定量）
+  - key: surface_detection
+    tier: 2
+    verbatim: >-
+      Similar to Protein L, an antibody directed against this peptide linker can be used to
+      identify CAR molecules on the surface of the T cell, independent of antigen.
+    locator: Results
+    note: 抗 (G4S)4 linker 抗体 / Protein L —— 抗原非依赖的 CAR 表面检测
+  - key: killing_assay
+    tier: 2
+    verbatim: >-
+      real-time cell killing xCELLigence assay ... equivalent time to 80% killing of the
+      target cell population (KT80) of ~9 hours for each CAR ... In the medium GUCY2C
+      expressing cell line (LS174T), there was an expected slowing of the tumor killing kinetics.
+    locator: Results / Figure 6c-d（靶细胞 T84 / LS174T / LoVo）
+
+
+# =========================================================
+# Part 3 — A 库映射（binder.binder）
+# =========================================================
+# 按 Binder 字段规范 47 栏逐栏对齐。
+targets_binder:
+  - table: binder.binder
+    record_per_source: one
+    entity_key: [name_code, target_antigen]
+
+    # ===== 公共元数据 11 栏 =====
+    metadata_fields:
+      - {target: uid, method: platform}
+      - {target: name_code, method: derived, value: 'anti-GUCY2C scFv, Clone 5F9', source_ref: car_cassette}
+      - {target: source_type, method: constant, value: 文献}
+      - {target: source_id, method: constant, value: '10.1080/15384047.2024.2398801'}
+      - target: experiment_conditions
+        method: derived
+        value: 'Protein L / 抗 (G4S)4 linker 抗体流式检测；BD Quantibrite PE 珠做 CAR 分子数定量；重组 GUCY2C ECD 结合实验'
+      - {target: evidence_level, method: constant, value: 同行评议, note: 'Cancer Biology & Therapy，DOAJ 收录 gold OA；core.weight_of = 0.7'}
+      - {target: version, method: constant, value: 正式发表版（非预印本）}
+      - {target: entry_date, method: platform}
+      - {target: citation, method: derived, value: 'Baybutt TR, Entezari AA, Caspi A, Staudt RE, Carlson RD, Waldman SA, et al. (2024). CD8α Structural Domains Enhance GUCY2C CAR-T Cell Efficacy. Cancer Biol Ther. doi:10.1080/15384047.2024.2398801. PMID 39315411. OpenAlex W4402816281. 见 Results/Figure 1a 与 Methods。'}
+      - {target: applicable_scenario, method: derived, value: '结直肠癌 GUCY2C 靶向；同一 scFv 可用于对比不同铰链/跨膜构型（本文即此用途）'}
+      - {target: contrary_evidence, method: constant, value: null}
+
+    # ===== 序列 4 栏 =====
+    sequence_fields:
+      - target: [vh_seq, vl_seq, scfv_seq]
+        method: constant
+        value: null
+        status: 缺失
+        note: ★全文只给克隆号 5F9，未给任何序列——本条 A 库无法用于序列建模，见 R3
+      - {target: linker, method: derived, value: '(G4S)4 = (GGGGS)×4，柔性甘氨酸/丝氨酸 linker', note: 序列已知但仅 linker 一段}
+
+    # ===== 编号 / 注释 7 栏 =====
+    annotation_fields:
+      - {target: numbering, method: constant, value: null}
+      - target: 'FR 区'
+        method: constant
+        value: null
+        status: ★schema 无对应列
+        note: 规范列出「FR/CDR 区」，binder.binder 只有 cdr_h1-h3 / cdr_l1-l3，无 FR 列，见 R7
+      - {target: [cdr_h1, cdr_h2, cdr_h3, cdr_l1, cdr_l2, cdr_l3, cdr_lengths], method: constant, value: null, note: 无序列则无从算}
+      - {target: [vdj_genes, germline, somatic_mutations], method: constant, value: null}
+
+    # ===== 靶点 / 表位 4 栏 =====
+    target_fields:
+      - target: target_antigen
+        method: derived
+        value: GUCY2C
+        tier: 1
+        note: ★元数据层即可定出（title + mesh "Receptors, Enterotoxin" + 摘要），无需全文
+      - target: epitope_position
+        method: constant
+        value: null
+        note: |
+          未做表位定位。全文有抗原构建体细节（重组 GUCY2C ECD：23 aa 信号肽 +
+          N 端 6×His + 408 aa 胞外域 + C 端 8 aa StrepII，GenScript 合成），
+          ★那是抗原构建体描述，不是表位，不得填入本栏。
+      - {target: epitope_kind, method: constant, value: 未知}
+      - {target: binding_site, method: derived, value: 'GUCY2C 胞外域（ECD）——由所用重组抗原推知，非表位定位', confidence: 中}
+
+    # ===== 亲和力 5 栏 =====
+    affinity_fields:
+      - target: [kd_nm, kon_m1s1, koff_s1]
+        method: constant
+        value: null
+        note: |
+          ★全文的"CD8HTM 构型抗原结合更强"是 CAR 层面亲合力（avidity）差异，
+          由铰链/跨膜几何造成，与 scFv 5F9 本身亲和力无关（两构型 scFv 完全相同）。
+          填入本栏会得出"同一 scFv 有两种亲和力"的荒谬记录。见 R2。
+      - target: measure_method
+        method: constant
+        value: null
+        note: 本栏语义为 SPR/BLI；本文只有流式与珠定量，不是亲和力测定 → null
+      - {target: measure_condition, method: constant, value: null}
+
+    # ===== 特异性 2 栏 =====
+    specificity_fields:
+      - target: cross_reactivity
+        method: constant
+        value: null
+        note: ★规范要求区分蛋白水平与细胞水平；本文两级均未做跨反应性实验
+      - {target: species_reactivity, method: constant, value: null, note: 未做跨种属结合实验；靶细胞株均为人源（T84/LS174T/LoVo）}
+
+    # ===== 成药性 10 栏 =====
+    developability_fields:
+      - target: [tm_celsius, viscosity, aggregation, solubility, hydrophobicity,
+                 net_charge, glycosylation_sites, free_cysteine, immunogenicity_risk]
+        method: constant
+        value: null
+        note: 文献未做成药性表征
+      - target: humanization
+        method: derived
+        value: 人源序列（原文 "the following human sequences"）
+        confidence: 中
+        note: ★原文说的是整个表达盒采用人源序列，未单独就 scFv 做人源化程度判定，不宜过度解读
+
+    # ===== 结构 3 栏 =====
+    structure_fields:
+      - {target: [structure_template, complex_structure, prediction_confidence], method: constant, value: null}
+
+    # ===== 状态 / 功能 3 栏 =====
+    status_fields:
+      - {target: development_stage, method: constant, value: '临床前（体外 + 体内小鼠模型）'}
+      - {target: patent_status, method: constant, value: null, note: '★注意通讯作者 Waldman 同时是 US9156915B2 的发明人，但 5F9 与该专利的 MS7/MS20 非同一抗体，不可挪用其专利状态'}
+      - {target: in_vitro_readout, method: derived, value: 'xCELLigence 实时杀伤（KT80，靶 T84/LS174T/LoVo）；低抗原密度下 CD8HTM 构型杀伤更强'}
+
+
+# =========================================================
+# Part 4 — B 库映射（car.module + car.construct）
+# =========================================================
+# 按 CAR 结构库字段规范 25 栏逐栏对齐。
+# ★本条是六个实例里唯一能填「对表位距离/免疫突触/tonic 的影响」的一条——
+#   因为它有 CD8HTM vs CD28HTM 双构型对照，其余五条都只有单一构型。
+targets_car:
+  - table: car.module
+    record_per_source: many
+    entity_key: [source_id, module_type, source_molecule]
+
+    # ===== 元数据 11 栏 =====
+    metadata_fields:
+      - {target: uid, method: platform}
+      - {target: name_code, method: derived, rule: '"{source_molecule}-{module_type}@W4402816281"'}
+      - {target: source_type, method: constant, value: 文献}
+      - {target: source_id, method: constant, value: '10.1080/15384047.2024.2398801'}
+      - {target: experiment_conditions, method: derived, value: '原代人 T 细胞（6 名健康供者），12 天 G-Rex 扩增后评价；两构型仅铰链/跨膜不同，其余完全一致'}
+      - {target: evidence_level, method: constant, value: 同行评议}
+      - {target: version, method: constant, value: 正式发表版}
+      - {target: entry_date, method: platform}
+      - {target: citation, method: derived, value: 'Baybutt TR, et al. (2024). Cancer Biol Ther. doi:10.1080/15384047.2024.2398801. 见 Results/Figure 1a 的 CAR expression cassette 描述。'}
+      - {target: applicable_scenario, method: derived, value: '三代 CAR（CD28 + 4-1BB 双共刺激域）；铰链/跨膜选型的对照证据来源'}
+      - {target: contrary_evidence, method: constant, value: null}
+
+    # ===== 标识 4 栏 =====
+    identity_fields:
+      - {target: module_type, method: derived, rule_ref: parse_car_cassette_sentence}
+      - {target: source_molecule, method: derived}
+      - {target: sequence, method: constant, value: null, note: ★正文只给模块名与来源分子，无序列}
+      - {target: length_aa, method: constant, value: null}
+
+    modules:
+      - {module_type: null, source_molecule: CD8α, name: 'CD8α leader（信号肽）', note: 枚举缺「信号肽」档，见 R4}
+      - {module_type: 识别域, source_molecule: 'anti-GUCY2C scFv (Clone 5F9)'}
+      - {module_type: linker, source_molecule: '(G4S)4'}
+      - {module_type: 铰链, source_molecule: 'CD8α 或 CD28', note: ★本研究唯一变量；两构型各建一行}
+      - {module_type: 跨膜区, source_molecule: 'CD8α 或 CD28', note: 与铰链同源成对更换（HTM 整体替换），不拆开混搭}
+      - {module_type: 共刺激域, source_molecule: CD28}
+      - {module_type: 共刺激域, source_molecule: 4-1BB}
+      - {module_type: CD3ζ, source_molecule: CD3ζ}
+      - {module_type: 标签, source_molecule: 'T2A + GFP', note: 枚举缺「2A 自剪切肽」「报告基因」档}
+
+    # ===== 功能属性 7 栏 =====
+    functional_fields:
+      - target: [activation_speed, metabolic_state, expansion_capacity,
+                 memory_phenotype, persistence, exhaustion_risk, tonic_signaling]
+        method: constant
+        value: null
+        note: |
+          ★本文确实测了记忆表型、耗竭、tonic、扩增，但结论均是"两构型无统计学差异"——
+          这是"CAR × T 细胞"的组合读出，按设计归 DB1，不回填本表。
+          且"无差异"本身不构成任何单个模块的固有属性值，填入反而误导。
+          （唯一例外是铰链/跨膜的几何效应，那是模块固有属性，见 geometry_fields。）
+
+    # ===== 铰链/跨膜几何属性（★本条的核心价值）=====
+    geometry_fields:
+      - target: 几何长度
+        method: derived
+        value: 'CD8α 与 CD28 的铰链/跨膜跨度不同（本文归因于此），但未给数值长度'
+        status: ★schema 无对应列
+        note: |
+          规范把「长度（残基数）」与「几何长度」分列两栏。本文的核心结论正是几何差异，
+          却因 car.module 无该列而无处可落——本条是这个 schema 缺口代价最大的一例，见 R7。
+      - target: epitope_distance_effect
+        method: derived
+        value: 'CD8α hinge/TM 构型在低抗原密度靶细胞（LoVo）上杀伤显著更强；高抗原密度（T84）下两构型相当（KT80 均约 9 h）→ 铰链/跨膜几何在低抗原密度时才成为限速因素'
+        applies_to: 铰链 / 跨膜区
+        note: ★这是本文最有价值的"模块固有属性"结论，属 car.module 而非 DB1
+      - target: synapse_effect
+        method: derived
+        value: 'CD8α 构型抗原结合/亲合力更高（CAR 层面），提示免疫突触形成更有利；两构型表面 CAR 分子数相同（CD8+ 3906、CD4+ 10,365），故差异非表达量所致'
+        note: ★"表面分子数相同"是关键对照——它把差异锁定在几何而非表达量上
+      - target: tonic_effect
+        method: derived
+        value: '两构型 scFv 相同 → tonic signaling 相近，未见铰链/跨膜带来的 tonic 差异'
+        note: 阴性结论，但有价值：说明该位点的模块更换不引入 tonic 风险
+
+    # ===== 组合约束 3 栏 =====
+    assembly_fields:
+      - target: assembly_rules
+        method: derived
+        value: 'EF1α 启动子 | CD8α leader | anti-GUCY2C(5F9) scFv | (G4S)4 | 铰链+跨膜(CD8α 或 CD28，成对) | CD28 ICD | 4-1BB ICD | CD3ζ ICD | T2A | GFP（三代，双共刺激域）'
+        note: |
+          ★assembly_rules 是 car.module 的列（04_car.sql 第 39 行），非 car.construct 的列。
+          装配约束一条：铰链与跨膜作为 HTM 整体成对更换，原文未验证混搭（如 CD8 铰链 + CD28 跨膜）。
+      - target: compatible_modules
+        method: derived
+        value: '5F9 scFv + (G4S)4 与 CD8α-HTM、CD28-HTM 两种铰链/跨膜均兼容（两构型均正常表达，表面 CAR 分子数无差）；CD28 ICD 与 4-1BB ICD 可串联共存（三代）'
+      - target: incompatible_modules
+        method: constant
+        value: null
+        note: 未报告任何不兼容组合；但"未验证混搭"≠"不兼容"，不得据此填入
+
+  - table: car.construct
+    record_per_source: two            # CD8HTM 与 CD28HTM
+    fields:
+      - {target: name_code, method: derived, value: 'GUCY2C-CAR-CD8HTM / GUCY2C-CAR-CD28HTM'}
+      - {target: source_type, method: constant, value: 文献}
+      - {target: source_id, method: constant, value: '10.1080/15384047.2024.2398801'}
+      - {target: evidence_level, method: constant, value: 同行评议}
+      - {target: experiment_conditions, method: derived, value: '6 名健康供者原代 T 细胞，MOI 5 转导，12 天 G-Rex 扩增后冻存再复苏评价'}
+      - {target: version, method: constant, value: 正式发表版}
+      - {target: entry_date, method: platform}
+      - {target: citation, method: derived, value: 'Baybutt TR, et al. (2024). Cancer Biol Ther. doi:10.1080/15384047.2024.2398801.'}
+      - {target: applicable_scenario, method: derived, value: '低抗原密度肿瘤优选 CD8HTM 构型；高抗原密度下两构型等效'}
+      - {target: contrary_evidence, method: constant, value: null}
+      - {target: binder_uid, method: derived, rule: 指向 Clone 5F9 binder}
+      - target: [scfv_module_uid, linker_module_uid, hinge_module_uid,
+                 tm_module_uid, costim_module_uid, cd3z_module_uid]
+        method: derived
+        rule: 指向 car.module 对应模块 uid
+        note: ★6 个外键全部可填；但 costim_module_uid 是单列而本条有 CD28 与 4-1BB 两个共刺激域，见 R7b
+      - {target: full_sequence, method: constant, value: null}
+      - {target: vector_backbone, method: derived, value: 'pCDH-EF1α-MCS-T2A-GFP（CD525A-1, System Biosciences），XbaI/BamHI 克隆，GenScript 合成'}
+      - {target: logic, method: constant, value: 无}
+      - {target: validated_function, method: derived, value: 'CAR 分子数/细胞 CD8+ 3906、CD4+ 10,365（两构型无差）；T84 杀伤 KT80 约 9 h（两构型相当）；低抗原 LoVo 上 CD8HTM 更优；体内 CD8HTM 更稳健持久'}
+      - {target: risk_tags, method: derived, value: '["no_sequence_in_fulltext", "paired_constructs_differ_only_in_HTM", "two_costim_domains_one_fk_slot"]'}
+
+functional_readouts_to_DB1:
+  note: 以下均为组合读出，按设计入 DB1，不入 B 库明细
+  items:
+    - 记忆表型（N/Tscm、CM、EM、Eff —— 两构型无统计学差异）
+    - 基线耗竭标志（含 CD39，两构型无差）
+    - tonic signaling（scFv 相同 → 两构型相近）
+    - 细胞因子分泌（CD8HTM 的 IL-2 / IFN-γ 更高，TNF-α 相近）
+    - granzyme B（CD8HTM 更高）
+    - 实时杀伤动力学（xCELLigence KT80，按靶细胞抗原密度分层）
+    - 体内抑瘤与持久性
+
+
+# =========================================================
+# Part 5 — C 库映射（process.process）
+# =========================================================
+# 按制造工艺字段规范逐栏对齐。★本条是六个实例里 C 库填得最满的一条：
+#   原代人 T 细胞全流程齐全（来源→激活→转导→扩增→冻存），仅放行指标缺。
+targets_process:
+  - table: process.process
+    record_per_source: one
+
+    # ===== 元数据 11 栏 =====
+    metadata_fields:
+      - {target: uid, method: platform}
+      - {target: name_code, method: constant, value: GUCY2C 三代 CAR-T 制备流程（12 天）}
+      - {target: source_type, method: constant, value: 文献}
+      - {target: source_id, method: constant, value: '10.1080/15384047.2024.2398801'}
+      - {target: experiment_conditions, method: derived, value: '6 名健康供者独立制备（n=6）；两构型平行制备，除铰链/跨膜外条件完全一致'}
+      - {target: evidence_level, method: constant, value: 同行评议}
+      - {target: version, method: constant, value: 正式发表版}
+      - {target: entry_date, method: platform}
+      - {target: citation, method: derived, value: 'Baybutt TR, et al. (2024). Cancer Biol Ther. 见 Methods / Production of lentiviral vectors 与 T-cell culture。'}
+      - {target: applicable_scenario, method: derived, value: '研究级原代 CAR-T 制备；G-Rex 静态扩增 12 天，可作实验室工艺基线（非 GMP）'}
+      - {target: contrary_evidence, method: constant, value: null}
+
+    # ===== 起始材料 3 栏 =====
+    starting_material_fields:
+      - target: t_cell_source
+        method: derived
+        value: 异体
+        note: |
+          健康供者 leukopak（n=6）来源的 PBMC，非患者自体 → 枚举取 异体。
+          ★但这是"研究用健康供者"，与临床意义上的异体产品不是一回事，见 R6。
+      - target: cd4_cd8_ratio
+        method: constant
+        value: null
+        note: |
+          ★未报告起始或终产品的 CD4:CD8 比例。但本文多处按 CD4+/CD8+ 分别报告
+          （CAR 分子数 CD8+ 3906 vs CD4+ 10,365；GFP+ 比例 CD4>CD8），
+          说明两群均存在且被分别分析——只是比例数值未给。
+      - {target: starting_quality, method: derived, value: '6 名健康供者 leukopak（Stemcell 200-0092）PBMC，Miltenyi 磁珠负选（130-096-535）分离 T 细胞'}
+
+    # ===== 激活 2 栏 =====
+    activation_fields:
+      - {target: activation_method, method: derived, value: 'CD3/CD28/CD2 磁珠，1:1 珠细胞比（Miltenyi 130-091-441）；激活后 72 h 磁力去珠'}
+      - {target: activation_reagents, method: derived, value: 'IL-7 10 ng/mL + IL-15 10 ng/mL（NCI BRB Preclinical Biologics Repository）'}
+
+    # ===== 基因导入 3 栏 =====
+    transduction_fields:
+      - {target: vector, method: derived, value: 慢病毒, note: '三代包装系统 pMDLg/pRRE + pRSV-Rev + pMD2.G（Rev 独立质粒）'}
+      - {target: moi, method: direct, value: 5}
+      - target: transduction_condition
+        method: derived
+        value: '激活后 24 h 转导，MOI 5，0.8 μg/mL polybrene。载体生产：HEK293T/17（2840 万细胞）+ Lipofectamine 3000，质粒配比 17.7 μg 转移 + 31 μg pMDLg/pRRE + 14.7 μg pRSV-Rev + 7.6 μg pMD2.G；转染后 6 h 全量换液，24 h 与 52 h 收上清。质粒经 Purelink Expi Endotoxin-Free Maxi Kit 纯化。'
+
+    # ===== 扩增 3 栏 =====
+    expansion_fields:
+      - {target: culture_system, method: derived, value: 'RPMI-1640 + 10% FBS + ITS-G + 10 mM N-乙酰半胱氨酸 + GlutaMAX + 葡萄糖 + 丙酮酸 + 非必需氨基酸 + HEPES + 青链霉素；G-Rex 板静态扩增'}
+      - {target: cytokines, method: derived, value: 'IL-7 10 ng/mL + IL-15 10 ng/mL'}
+      - {target: culture_days, method: direct, value: 12, note: 'D0 激活 → D1 转导 → D3 去珠 → D12 收获冻存'}
+
+    # ===== 冻存 / 配方 2 栏 =====
+    formulation_fields:
+      - {target: cryo_condition, method: derived, value: 'CryoStor CS10，2×10^7 cells/mL，D12 收获后冻存'}
+      - target: formulation
+        method: constant
+        value: null
+        note: 研究级，无终产品制剂配方（CryoStor CS10 是冻存液，属 cryo_condition，不重复填此栏）
+
+    # ===== 放行指标 10 栏 =====
+    release_fields:
+      - target: viability_pct
+        method: constant
+        value: null
+        note: ★有方法无数值：Guava MUSE Cell Analyzer 测定，原文只说两构型无差，未给百分数。见 R5
+      - target: transduction_efficiency_pct
+        method: constant
+        value: null
+        note: ★有方法无数值：GFP+ 流式，只说 CD4+ 的比例/MFI 高于 CD8+，未给百分数
+      - {target: vcn, method: constant, value: null, note: 未测载体拷贝数}
+      - {target: cd3_positive_pct, method: constant, value: null, note: 未报终产品 CD3+ 比例（起始已负选纯化 T 细胞，但终产品纯度未给）}
+      - target: phenotype
+        method: derived
+        value: '记忆分型 N/Tscm、CM、EM、Eff 四群均测（两构型无统计学差异）；耗竭标志含 CD39 亦测（无差）'
+        note: 有测定且有结论（阴性），故填；具体数值归 DB1
+      - target: [sterility, mycoplasma, endotoxin]
+        method: constant
+        value: null
+        note: |
+          ★研究级制备，无成品放行三项。原文的 endotoxin-free 只针对质粒纯化
+          （Purelink Expi Endotoxin-Free Maxi Kit），不是终产品内毒素放行，不得挪用填 endotoxin。
+      - {target: cytotoxicity, method: derived, value: 'xCELLigence RTCA 实时杀伤，指标 KT80（到 80% 杀伤时间）；靶细胞 T84（高 GUCY2C）/ LS174T（中）/ LoVo（低）'}
+      - {target: cytokine_release, method: derived, value: 'IL-2 / IFN-γ / TNF-α 分泌与 granzyme B（CD8HTM 的 IL-2、IFN-γ、granzyme B 更高，TNF-α 相近）'}
+
+    # ===== 关联 2 栏 =====
+    linkage_fields:
+      - {target: car_construct_uid, method: derived, rule: 指向 Part 4 的两个 construct}
+      - {target: product_name, method: constant, value: 'GUCY2C 三代 CAR-T（CD8HTM vs CD28HTM）'}
+
+
+# =========================================================
+# Part 6 — 本条填不了的字段
+# =========================================================
+unmapped_target_columns:
+
+  binder_not_in_fulltext:
+    columns: [vh_seq, vl_seq, scfv_seq, cdr_h1, cdr_h2, cdr_h3, cdr_l1, cdr_l2,
+              cdr_l3, cdr_lengths, numbering, vdj_genes, germline, somatic_mutations]
+    note: 只给克隆号 5F9，无序列 → A 库无法用于任何序列建模，只能作元数据+功能标注
+
+  binder_not_available_at_all:
+    columns: [kd_nm, kon_m1s1, koff_s1, measure_condition, epitope_position,
+              epitope_kind, binding_site, cross_reactivity, species_reactivity,
+              tm_celsius, viscosity, aggregation, solubility, hydrophobicity,
+              net_charge, glycosylation_sites, free_cysteine, immunogenicity_risk,
+              structure_template, complex_structure, prediction_confidence, patent_status]
+
+  car_gaps:
+    columns: [sequence, length_aa, compatible_modules, incompatible_modules]
+
+  process_gaps:
+    columns: [formulation, viability_pct, transduction_efficiency_pct, vcn,
+              phenotype, sterility, mycoplasma, endotoxin, cytokine_release]
+    note: |
+      无 VCN；无成品放行三项（无菌/支原体/内毒素）——原文的 endotoxin-free 只针对
+      质粒纯化（Purelink Expi Endotoxin-Free Maxi Kit），★不是终产品内毒素放行，不得挪用；
+      无 CD3+ 终产品比例；活率与转导效率有方法无数值。
+
+  platform_managed:
+    - uid
+    - version
+    - entry_date
+    - source_weight
+    - batch_id
+    - registry_id
+    - merged_into
+    - created_at
+    - updated_at
+
+
+# =========================================================
+# Part 7 — 派生规则标识
+# =========================================================
+rule_refs:
+  gate_on_oa_then_fetch_fulltext:
+    description: 由元数据的 open_access 判定能否深抽，再走 best_oa_location.pdf_url 取全文
+    rule: 'is_oa == true → 取 pdf_url；否则止步 tier 1，仅入元数据'
+    fallback: ids.pmid → PMC 全文路由（=EuropePMC 路线），两条钥匙互为备份
+  parse_car_cassette_sentence:
+    description: 从 "expression cassette consists of ..." 句拆出有序模块表
+    guard: hinge 与 TM 若原文写作 "HTM"（成对整体），须记为成对更换，不得拆成可自由混搭的两模块
+  restore_abstract_from_inverted_index:
+    description: 由 abstract_inverted_index 还原摘要文本
+    rule: '{token: [positions]} → 按位置排序拼回原句'
+  separate_module_property_from_combination_readout:
+    description: 区分"模块固有属性"（入 car.module）与"组合读出"（入 DB1）
+    example: 'hinge/TM 几何 → epitope_distance_effect（模块属性）；记忆表型/细胞因子 → DB1'
+
+
+# =========================================================
+# Part 8 — 已知风险
+# =========================================================
+risks:
+  - id: R1
+    severity: P1
+    desc: |
+      元数据层不是"全空"。abstract_inverted_index、mesh、ids.pmid 三项非空，
+      靠它们已能定靶抗原并接上全文路由。
+      若按旧结论把 OpenAlex 仅当"发现/去重"用，会白白丢掉摘要与 MeSH 这两个
+      对靶点粗筛很有用的字段。（本轮已据实测更正，见档头。）
+  - id: R2
+    severity: P1
+    desc: |
+      全文中"CD8HTM 构型对 GUCY2C 亲和力更高"是 CAR 层面的亲合力（avidity）差异，
+      由铰链/跨膜几何造成，与 binder（scFv 5F9）本身的亲和力无关——两构型 scFv 完全相同。
+      若误写入 binder.kd_nm 或相对亲和力栏，会得出"同一 scFv 有两种亲和力"的荒谬记录。
+      正确归属：car.module 的 epitope_distance_effect / synapse_effect。
+  - id: R3
+    severity: P1
+    desc: |
+      无任何 binder 序列（只有克隆号 5F9）。这是文献源相对专利源的系统性劣势：
+      文献给功能与工艺，专利给序列。本项目 GUCY2C 靶点上，
+      序列须由 US9156915B2（MS7/MS20）等专利源提供——但注意 5F9 与 MS7/MS20 并非同一抗体，
+      不可跨源合并成一条 binder 记录。
+  - id: R4
+    severity: P2
+    desc: |
+      car.module_type 枚举缺「信号肽」「2A 自剪切肽」「报告基因」三档，
+      本条的 CD8α leader 与 T2A-GFP 落不进枚举。
+      与 Addgene R3、CARTiBASE R3、EuropePMC R5 同一问题，四条实例重复暴露，建议统一扩枚举。
+  - id: R5
+    severity: P2
+    desc: |
+      多处"有方法无数值"：活率（Guava MUSE，只说无差）、转导效率（GFP+ 只说 CD4>CD8）。
+      抽取管线须能表达这一状态（方法已知 / 数值缺失），否则要么误填 null 丢掉方法信息，
+      要么被下游误读为"未测"。建议 experiment_conditions 承载方法，数值列留 null。
+  - id: R6
+    severity: P2
+    desc: |
+      t_cell_source 填 异体，依据是"健康供者 leukopak"。
+      但这是研究用异体细胞，与临床意义上的异体（allogeneic）产品不是一回事。
+      若下游按 t_cell_source 筛"异体工艺"，会把大量健康供者研究误当成异体产品工艺。
+      建议增列区分 研究用/临床用。
+  - id: R7
+    severity: P1
+    desc: |
+      ★schema 缺口：规范的「FR/CDR 区」只实现了一半。
+      binder.binder 有 cdr_h1-h3 / cdr_l1-l3 六列，但无 FR（框架区）列。
+      FR 对人源化改造、稳定性评估与嵌合设计都必需，且跑 ANARCI 时 FR 与 CDR 是一并产出的，
+      丢弃 FR 等于每次都要重算。
+      建议：增 fr_h1-h4 / fr_l1-l4 八列，或用一个 regions jsonb 统一承载 FR+CDR。
+  - id: R8
+    severity: P1
+    desc: |
+      ★schema 缺口：规范的「几何长度」无对应列。
+      规范把「长度（残基数）」与「几何长度」并列为两栏：前者是残基计数（= length_aa），
+      后者是铰链/跨膜的物理跨度（决定免疫突触间距，是铰链选型的核心依据）。
+      car.module 只有 length_aa，无几何长度列 → 该栏在全部六条实例上都无处可落。
+      建议：car.module 增 geometric_length_nm numeric 列，并定义由残基数换算的规则。
