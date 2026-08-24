@@ -1,0 +1,511 @@
+# =========================
+# Instance: US9156915B2 -> A / B / C
+# =========================
+# 只回答一件事：这一件专利抽出来的值，如何变成数据库字段。
+# 不描述如何获取数据（见 1_数据源登记/GooglePatents.yaml），
+# 不描述目标库结构、类型、约束（见 sql/03_binder.sql、04_car.sql、05_process.sql）。
+#
+# 【2026-08-21 逐字核对，两处实质更正】
+# 更正 1（严重）：旧版本把 GCC:B10 / GCC:4D7 / GCC:C8 当作本专利的"表位克隆"，并据此
+#   填了表位 "B10=前63aa, 4D7=491-568"。核对说明书原文：这三者是第三方既有抗体
+#   （Nandi 1997 / Vijayachandra 2000 / Bakre 2000），且本专利明确排除之——
+#   原文 "In an embodiment, the antibody molecule is not GCC:B10, GCC:4D7 or GCC:C8."
+#   → 它们是被排除的现有技术，不是本专利的 binder，其表位不得填入本条 A 库记录。
+# 更正 2（严重）：旧版本填 种属反应性 = "人+鼠 GCC(交叉)"，与原文相反。
+#   原文 "the anti-GCC antibody molecule fails to show substantial cross reaction with
+#   one or both of rat GCC and mouse GCC." → 为人 GCC 特异、与啮齿类无实质交叉。
+# 沿用旧版本已做对的一处更正：claim 17 仅限定识别域，不含 hinge/TM/共刺激/CD3ζ；
+#   早前误记的 IgG1 hinge/CH2CH3 + 免疫受体跨膜，实为 Fc/免疫偶联物条款（claim 7-13），非 CAR。
+
+instance_id: uspto_US9156915B2_to_abc
+source_name: Google Patents
+route_id: [bigquery_structured, pdf_fulltext]
+target_schema:
+  - sql/03_binder.sql  → binder.binder
+  - sql/04_car.sql     → car.module / car.construct
+  - sql/05_process.sql → process.process
+source_format: pdf（全文）+ bigquery_table（结构字段）
+record_grain: 一件授权专利（US 9,156,915 B2）
+
+status: verified
+last_verified: 2026-08-21
+
+example:
+  id: US9156915B2
+  title: ANTI-GCC ANTIBODY MOLECULES
+  url: https://patents.google.com/patent/US9156915B2
+  format: 'pdf / bigquery_table'
+
+bibliographic:
+  patent_no: US 9,156,915 B2
+  grant_date: 2015-10-13
+  appl_no: 13/872,065
+  filed: 2013-04-26
+  provisional: '61/638,639（2012-04-26）'
+  pre_grant_pub: 'US 2013/0315923 A1（2013-11-28）'
+  assignee: Thomas Jefferson University（Philadelphia, PA, US）
+  inventors: [Scott A. Waldman, Michael S. Magee, Adam E. Snook]
+  primary_examiner: Prema Mertz
+  legal_status: granted
+
+attached_files:
+  - file: GooglePatents_US9156915.pdf
+    note: '★专利全文 PDF（4.9 MB）；Part 1 全部取证出自此档'
+
+
+# =========================================================
+# Part 1 — 原文取证（逐条可回溯到 PDF 全文）
+# =========================================================
+raw_evidence:
+  - key: claim_17
+    verbatim: >-
+      17. A chimeric antigen receptor comprising a light chain variable region and a heavy
+      chain variable region of an anti-GCC antibody molecule, the chimeric antigen receptor
+      comprising: a) heavy chain variable region Amino Acid Sequence SEQ ID NO:1 from
+      anti-GCC antibody MS7, and light chain variable region Amino Acid Sequence SEQ ID NO:2
+      from anti-GCC antibody MS7; or b) heavy chain variable region Amino Acid Sequence
+      SEQ ID NO:3 from anti-GCC antibody MS20, and light chain variable region Amino Acid
+      Sequence SEQ ID NO:4 from anti-GCC antibody MS20; wherein the chimeric antigen receptor
+      binds to human guanylyl cyclase C.
+    locator: Claims，claim 17
+    note: ★通篇唯一的 CAR 权利要求。只限定识别域 + 结合活性，无任何骨架模块。
+  - key: hybridoma_origin
+    verbatim: >-
+      Two hybridomas have been developed which secrete mouse monoclonal antibodies specific
+      for the extracellular domain of GCC. These monoclonal antibodies, MS7 (IgG1k) and
+      MS20 (IgG2ak), generated from BALB/c mice
+    locator: 说明书，Detailed Description
+    note: 同时给出三件事——鼠源(BALB/c)、亚型(IgG1κ / IgG2aκ)、结合区(GCC 胞外域)
+  - key: no_rodent_cross_reaction
+    verbatim: >-
+      In an embodiment, the anti-GCC antibody molecule fails to show substantial cross
+      reaction with one or both of rat GCC and mouse GCC.
+    locator: 说明书
+    note: ★与旧版本记载相反，见档头更正 2
+  - key: domain_exclusion
+    verbatim: >-
+      In another embodiment, an anti-GCC antibody molecule does not bind the kinase homology
+      domain or the guanylyl cyclase domain of GCC.
+    locator: 说明书
+    note: 与 hybridoma_origin 合起来构成本专利对结合区的全部描述（胞外域，非 KHD/GC 域）
+  - key: prior_art_disclaimer
+    verbatim: 'In an embodiment, the antibody molecule is not GCC:B10, GCC:4D7 or GCC:C8.'
+    locator: 说明书
+    note: ★B10/4D7/C8 是被排除的第三方抗体，见档头更正 1
+  - key: prior_art_epitopes
+    verbatim: >-
+      GCC:B10 binds to the first 63 amino acids of GCC (Nandi et al., J. Cell. Biochem.
+      66:500-511 (1997)). GCC:4D7 binds to the kinase homology domain, within residues
+      491-568 of GCC (Bhandari et al. Biochemistry 40:9196-9206 (2001)).
+    locator: 说明书，背景技术
+    note: |
+      ★这两条表位属于 B10/4D7 这两个第三方抗体，不属于 MS7/MS20。
+      若要入库，应作为独立的 binder 记录（来源=所引文献），且须标为现有技术；
+      绝不可挂在本专利的 MS7/MS20 名下。本档选择不入库，仅记录于此备查。
+  - key: seq_id_1
+    verbatim: 'MS7 heavy chain variable region (SEQ ID NO:1): EVMLVESGGGLVKPGGSLKLSCAASGFTFSTYAMSWVRQT...LQMSSLRSEDTAMYYCTRLRQIGLRGFSDYWGQGTTLTVSS'
+    locator: 说明书序列段
+  - key: seq_id_2
+    verbatim: 'MS7 light chain variable region (SEQ ID NO:2): DIDILMTQSPSSMYASLGERVTITCKASHDIKSYLSWYQQ...ESDDTATYYCLQHGESPYTFGGGTKLEIK'
+    locator: 说明书序列段
+  - key: seq_id_3
+    verbatim: 'MS20 heavy chain variable region (SEQ ID NO:3): EVQLEESGPELVKPGASVKMSCKASGYTFTDYVISWVKQR...MQLSSLTSEDSAVYFCTRNYGSFYALDYWGQGTSVTVSS'
+    locator: 说明书序列段
+  - key: seq_id_4
+    verbatim: 'MS20 light chain variable region (SEQ ID NO:4): DIDILMTQSPATLSVTPGDRVSLSCRASQSIRDYLHWYQH...EPEDVGVYYCQNGHSFPTFGGGTKLEIK'
+    locator: 说明书序列段
+  - key: scfv_embodiment
+    verbatim: >-
+      14. The anti-GCC antibody molecule of claim 3, wherein said antigen-binding fragment
+      of an antibody that binds to human guanylyl cyclase C is a single chain variable
+      fragment (scFv).
+    locator: Claims，claim 14
+    note: scFv 是权利要求覆盖的实施形态之一，但未给出 linker 序列或 VH/VL 朝向
+  - key: agonist_embodiment
+    verbatim: 'In some embodiments... the antibody molecule is an agonist of GCC (see, e.g., US2004/0258687).'
+    locator: 说明书
+    note: ★这是"实施方式"表述加外部引用，不是本专利实测数据；置信度低
+
+
+# =========================================================
+# Part 2 — A 库映射（binder.binder）
+# =========================================================
+# 本源在 A 库是 S 级正样本：VH/VL 全序列 + 专利状态齐全，且靶点 GCC 正是本项目靶点。
+# 按 Binder 字段规范 47 栏逐栏对齐。
+# ★本源在 A 库是 S 级正样本：VH/VL 全序列 + 专利状态齐全，且靶点 GCC 正是本项目靶点。
+targets_binder:
+  - table: binder.binder
+    record_per_source: two              # MS7 与 MS20 各一行
+    entity_key: [name_code, target_antigen]
+    records:
+      - {name_code: MS7,  vh: 'SEQ ID NO:1', vl: 'SEQ ID NO:2', isotype: IgG1κ}
+      - {name_code: MS20, vh: 'SEQ ID NO:3', vl: 'SEQ ID NO:4', isotype: IgG2aκ}
+
+    # ===== 公共元数据 11 栏 =====
+    metadata_fields:
+      - {target: uid, method: platform}
+      - {target: name_code, method: derived, value: 'MS7 / MS20', note: ★不得把被排除的 B10/4D7/C8 并入本栏，见档头更正 1}
+      - {target: source_type, method: constant, value: 专利}
+      - {target: source_id, method: constant, value: US9156915B2, note: 规范要求"专利号"}
+      - target: experiment_conditions
+        method: constant
+        value: null
+        note: ★专利不披露实验条件（无 SPR/BLI/流式条件）；不适用而非漏抽
+      - {target: evidence_level, method: constant, value: 专利预印本, note: 'core.weight_of = 0.4；★即便是授权专利也不升级为 同行评议'}
+      - target: version
+        method: derived
+        value: 'B2（授权公告本）；另有 A1 申请公开本 US 2013/0315923'
+        note: ★专利的"版本"就是文献类型代码，B2 与 A1 内容可能不同，须记明用的是哪一本
+      - {target: entry_date, method: platform, note: 不得用授权日 2015-10-13 冒充录入日}
+      - {target: citation, method: derived, value: 'Waldman SA, Magee MS, Snook AE. ANTI-GCC ANTIBODY MOLECULES. US 9,156,915 B2, granted 2015-10-13. Assignee: Thomas Jefferson University. SEQ ID NO:1-4；claim 17；说明书 Detailed Description。'}
+      - {target: applicable_scenario, method: derived, value: '结直肠癌 GCC 靶向；MS7/MS20 可用作抗体、免疫偶联物（claim 7-13）或 CAR 识别域（claim 17）三种形态'}
+      - target: contrary_evidence
+        method: derived
+        value: '说明书明述本发明抗体不与大鼠/小鼠 GCC 实质交叉 → 与"人鼠交叉"的任何记载相矛盾，以本件原文为准'
+        note: ★本栏少见地有值：旧版本曾据误读填"人鼠交叉"，此处留痕以防再犯
+
+    # ===== 序列 4 栏 =====
+    sequence_fields:
+      - target: vh_seq
+        method: direct
+        source: ['SEQ ID NO:1（MS7）', 'SEQ ID NO:3（MS20）']
+        note: ★PDF 文本层有 OCR 混淆（Q↔O、V↔W），入库前须以官方 SEQ 列表或 BQ 序列数据集校核，见 R3
+      - {target: vl_seq, method: direct, source: ['SEQ ID NO:2（MS7）', 'SEQ ID NO:4（MS20）']}
+      - target: scfv_seq
+        method: constant
+        value: null
+        note: |
+          ★claim 14 覆盖 scFv 实施形态，但说明书未给 scFv 全序列，也未给 VH/VL 朝向。
+          由 VH/VL 拼接 scFv 属我方构造，不是来源数据，不得填入本栏。
+      - {target: linker, method: constant, value: null, note: 未给 linker 序列}
+      - {target: format, method: constant, value: IgG, note: 'MS7/MS20 本体是完整单抗（IgG1κ / IgG2aκ）；claim 14 另覆盖 scFv 形态但无序列，故不另建行'}
+
+    # ===== 编号 / 注释 7 栏 =====
+    annotation_fields:
+      - target: numbering
+        method: constant
+        value: null
+        note: ★编号体系由我方 pipeline 决定（跑 ANARCI），不得因专利用某体系描述就写死
+      - target: 'FR 区'
+        method: constant
+        value: null
+        status: ★schema 无对应列
+        note: 规范列出「FR/CDR 区」，binder.binder 只有 cdr_h1-h3 / cdr_l1-l3，无 FR 列，见 R6
+      - target: [cdr_h1, cdr_h2, cdr_h3, cdr_l1, cdr_l2, cdr_l3, cdr_lengths]
+        method: constant
+        value: null
+        note: ★VH/VL 已到手 → 跑 ANARCI 即可算出，属可执行的下一步而非死缺口
+      - {target: vdj_genes, method: constant, value: null, note: 同上，可由序列比对推得}
+      - {target: germline, method: derived, value: 鼠源（BALB/c 杂交瘤）, source_ref: hybridoma_origin}
+      - {target: somatic_mutations, method: constant, value: null}
+
+    # ===== 靶点 / 表位 4 栏 =====
+    target_fields:
+      - {target: target_antigen, method: constant, value: 'GCC / GUCY2C（human guanylyl cyclase C）'}
+      - target: epitope_position
+        method: constant
+        value: null
+        note: |
+          ★说明书未给 MS7/MS20 的表位残基。见档头更正 1——
+          "前 63 aa" 属 GCC:B10、"491-568" 属 GCC:4D7，两者均为被本专利排除的第三方抗体，
+          其表位绝不可挪用到本条记录。
+      - {target: epitope_kind, method: constant, value: 未知, note: 原文无线性/构象判定依据}
+      - {target: binding_site, method: derived, value: 'GCC 胞外域（extracellular domain）；说明书明述不结合 kinase homology 域与 guanylyl cyclase 域', source_ref: [hybridoma_origin, domain_exclusion]}
+
+    # ===== 亲和力 5 栏 =====
+    affinity_fields:
+      - target: [kd_nm, kon_m1s1, koff_s1, measure_method, measure_condition]
+        method: constant
+        value: null
+        note: ★通篇无数值亲和力、无 SPR/BLI 测定描述——这是专利源的典型缺口（专利给序列，不给数值）
+
+    # ===== 特异性 2 栏 =====
+    specificity_fields:
+      - target: cross_reactivity
+        method: derived
+        value: '蛋白水平：说明书明述与大鼠/小鼠 GCC 无实质交叉反应。细胞水平：未做。'
+        note: ★规范要求区分蛋白水平与细胞水平；本件只有蛋白/分子层面陈述，且是"无交叉"的阴性陈述
+      - {target: species_reactivity, method: derived, value: 人 GCC 特异；与大鼠/小鼠 GCC 无实质交叉, source_ref: no_rodent_cross_reaction}
+
+    # ===== 成药性 10 栏 =====
+    developability_fields:
+      - target: [tm_celsius, viscosity, aggregation, solubility, hydrophobicity,
+                 net_charge, glycosylation_sites, free_cysteine, immunogenicity_risk]
+        method: constant
+        value: null
+        note: 专利不披露成药性表征
+      - target: humanization
+        method: derived
+        value: 未人源化（SEQ ID NO:1-4 为鼠源序列）
+        note: ★说明书另述人源化方法，但未给出人源化后的序列，故只记鼠源事实，不得记为"已人源化"
+
+    # ===== 结构 3 栏 =====
+    structure_fields:
+      - {target: [structure_template, complex_structure, prediction_confidence], method: constant, value: null, note: 无结构数据}
+
+    # ===== 状态 / 功能 3 栏 =====
+    status_fields:
+      - {target: development_stage, method: constant, value: 专利申请阶段（无临床阶段标注）}
+      - {target: patent_status, method: constant, value: granted, note: '以 BQ legal_status 为准；★维持费/失效状态需另查实时法律状态，见 R4'}
+      - {target: in_vitro_readout, method: derived, value: 'GCC agonist（说明书"实施方式"表述并引外部文献 US2004/0258687，非本件实测数据）', confidence: 低}
+
+
+# =========================================================
+# Part 3 — B 库映射（car.module + car.construct）
+# =========================================================
+# 按 CAR 结构库字段规范 25 栏逐栏对齐。
+# ★本源在 B 库很弱："纸面 CAR"——claim 17 只限定识别域，25 栏里过半是"权利要求根本没写"。
+targets_car:
+  - table: car.module
+    record_per_source: one              # 只有识别域一个模块
+    entity_key: [source_id, module_type, source_molecule]
+
+    # ===== 元数据 11 栏 =====
+    metadata_fields:
+      - {target: uid, method: platform}
+      - {target: name_code, method: derived, value: 'MS7-识别域@US9156915B2 / MS20-识别域@US9156915B2'}
+      - {target: source_type, method: constant, value: 专利}
+      - {target: source_id, method: constant, value: US9156915B2}
+      - {target: experiment_conditions, method: constant, value: null, note: 专利无实验条件}
+      - {target: evidence_level, method: constant, value: 专利预印本}
+      - {target: version, method: constant, value: 'B2（授权公告本）'}
+      - {target: entry_date, method: platform}
+      - {target: citation, method: derived, value: 'US 9,156,915 B2, claim 17 与 SEQ ID NO:1-4。'}
+      - {target: applicable_scenario, method: derived, value: '为 GCC CAR 提供有法律保护的识别域序列；使用前须做 FTO 分析'}
+      - {target: contrary_evidence, method: constant, value: null}
+
+    # ===== 标识 4 栏 =====
+    identity_fields:
+      - {target: module_type, method: constant, value: 识别域}
+      - {target: source_molecule, method: derived, value: 'MS7（VH=SEQ1/VL=SEQ2）或 MS20（VH=SEQ3/VL=SEQ4）'}
+      - {target: sequence, method: derived, rule: 取 Part 2 的 vh_seq / vl_seq, note: ★专利源的强项——识别域序列齐全}
+      - {target: length_aa, method: derived, rule: 由序列实算, note: 规范的"长度（残基数）"}
+
+    absent_modules:
+      note: |
+        ★claim 17 未限定下列任何模块，故本源不产出对应 car.module 行：
+        信号肽、linker、铰链、跨膜区、共刺激域、CD3ζ、标签、安全开关。
+        这是"claimed only"的典型形态——法律上覆盖，技术上无骨架可入库。
+
+    # ===== 功能属性 7 栏 =====
+    functional_fields:
+      - target: [activation_speed, metabolic_state, expansion_capacity,
+                 memory_phenotype, persistence, exhaustion_risk, tonic_signaling]
+        method: constant
+        value: null
+        status: 权利要求未写
+        note: |
+          ★专利无任何 CAR 功能数据。且这 7 栏主要描述共刺激域属性，
+          而本件根本没有共刺激域模块 → 语义上是 not_applicable，
+          QC 计缺失率时不应与"文献做了实验但没报"同等对待。
+
+    # ===== 铰链/跨膜几何属性 =====
+    geometry_fields:
+      - target: 几何长度
+        method: constant
+        value: null
+        status: ★schema 无对应列 + 本件无铰链/跨膜模块
+        note: 双重缺口：既无列可落，本件也无相关模块
+      - target: [epitope_distance_effect, synapse_effect, tonic_effect]
+        method: constant
+        value: null
+        status: 权利要求未写
+        note: 本件无铰链/跨膜模块，这三栏天然不适用
+
+    # ===== 组合约束 3 栏 =====
+    assembly_fields:
+      - target: assembly_rules
+        method: derived
+        value: 'claim 17 仅限定「识别域(VH+VL) + 结合人 GCC」；无骨架模块顺序可记'
+        note: |
+          ★assembly_rules 是 car.module 的列（04_car.sql 第 39 行），非 car.construct 的列。
+          本件此栏的内容实质是"限定范围声明"而非真正的装配顺序。
+      - target: compatible_modules
+        method: constant
+        value: null
+        note: |
+          ★claim 17 对骨架不设限，法律上等于"与任意骨架兼容"——
+          但那是权利范围而非技术验证，绝不可填入 compatible_modules（会被下游误读为已验证兼容）。
+      - {target: incompatible_modules, method: constant, value: null}
+
+  - table: car.construct
+    record_per_source: two              # MS7-CAR / MS20-CAR（claim 17 的 a) 与 b) 两支）
+    caveat: 是否为"纸面 CAR"建 construct 行由业务侧定，见 R2
+    fields:
+      - {target: name_code, method: derived, value: 'US9156915B2-CAR-MS7 / US9156915B2-CAR-MS20'}
+      - {target: source_type, method: constant, value: 专利}
+      - {target: source_id, method: constant, value: US9156915B2}
+      - {target: evidence_level, method: constant, value: 专利预印本}
+      - {target: experiment_conditions, method: constant, value: null}
+      - {target: version, method: constant, value: 'B2（授权公告本）'}
+      - {target: entry_date, method: platform}
+      - {target: citation, method: derived, value: 'US 9,156,915 B2, claim 17。'}
+      - {target: applicable_scenario, method: derived, value: 'FTO / 专利布局分析用；不具备可实施的构建体信息'}
+      - {target: contrary_evidence, method: constant, value: null}
+      - {target: binder_uid, method: derived, rule: 指向 Part 2 的 MS7 / MS20 binder 实体}
+      - {target: scfv_module_uid, method: derived, rule: 指向识别域模块}
+      - target: [linker_module_uid, hinge_module_uid, tm_module_uid,
+                 costim_module_uid, cd3z_module_uid]
+        method: constant
+        value: null
+        note: ★car.construct 共 6 个模块外键，本条 5 个悬空——只有识别域槽位有值
+      - {target: full_sequence, method: constant, value: null}
+      - {target: vector_backbone, method: constant, value: null}
+      - {target: logic, method: constant, value: 无}
+      - {target: validated_function, method: constant, value: null, note: 无任何 CAR 层面功能验证数据}
+      - {target: risk_tags, method: derived, value: '["paper_car_claimed_only", "no_backbone_modules", "no_functional_data"]'}
+
+
+# =========================================================
+# Part 4 — C 库映射（process.process）
+# =========================================================
+# 按制造工艺字段规范逐栏对齐——逐栏核对的结果是：全部为空。
+targets_process:
+  decision: 不建行
+  spec_checklist:
+    note: 逐栏核对，无一有值（★这是结论而非略过）
+    元数据11栏: '若建行则可填 source_type/source_id/evidence_level/citation 等，但业务列全空，元数据齐全无意义'
+    t_cell_source: null
+    cd4_cd8_ratio: null
+    starting_quality: null
+    activation_method: null
+    activation_reagents: null
+    vector: null
+    moi: null
+    transduction_condition: null
+    culture_system: null
+    cytokines: null
+    culture_days: null
+    cryo_condition: null
+    formulation: null
+    viability_pct: null
+    transduction_efficiency_pct: null
+    vcn: null
+    cd3_positive_pct: null
+    phenotype: null
+    sterility: null
+    mycoplasma: null
+    endotoxin: null
+    cytotoxicity: null
+    cytokine_release: null
+    car_construct_uid: '（可指向 Part 3，但无工艺内容可载）'
+    product_name: null
+  reason: |
+    实测本件专利 22 个工艺业务列无一有值。C 库产出为 0。
+    与 1_数据源登记/GooglePatents.yaml 的"工艺 ≈ 0"结论一致。
+    ★专利之所以工艺全空是结构性的：权利要求写工艺会缩小保护范围，
+    故抗体/CAR 专利通常只写序列与结合活性，不写制备流程。
+
+
+# =========================================================
+# Part 5 — 本条填不了的字段
+# =========================================================
+unmapped_target_columns:
+
+  binder_needs_computation:
+    columns: [scfv_seq, linker, cdr_h1, cdr_h2, cdr_h3, cdr_l1, cdr_l2, cdr_l3,
+              cdr_lengths, numbering, vdj_genes, somatic_mutations]
+    note: |
+      VH/VL 已到手 → 跑 ANARCI 编号即可算出 FR/CDR 与 cdr_lengths；
+      属可执行的下一步，不是死缺口。numbering 由我方 pipeline 决定，
+      不得因"专利用 Kabat 描述"就写死 Kabat。
+
+  binder_not_available_at_all:
+    columns: [kd_nm, kon_m1s1, koff_s1, measure_method, measure_condition,
+              epitope_position, tm_celsius, viscosity, aggregation, solubility,
+              hydrophobicity, net_charge, glycosylation_sites, free_cysteine,
+              immunogenicity_risk, structure_template, complex_structure,
+              prediction_confidence]
+    note: 专利不披露数值亲和力、成药性与结构；须由 SAbDab / DOTAD / 文献源补
+
+  car_absent_by_claim_scope:
+    columns: [sequence(骨架各模块), length_aa(骨架), full_sequence, vector_backbone,
+              validated_function, compatible_modules, incompatible_modules]
+    note: 非"数据缺失"，而是"权利要求根本没写"——语义上是 not_applicable，QC 计缺失率时应区别对待
+
+  process_all:
+    note: 见 Part 4，本源不产出 process 行
+
+  platform_managed:
+    - uid
+    - version
+    - entry_date
+    - source_weight
+    - batch_id
+    - registry_id
+    - merged_into
+    - created_at
+    - updated_at
+
+
+# =========================================================
+# Part 6 — 派生规则标识
+# =========================================================
+rule_refs:
+  parse_car_claim:
+    description: 从权利要求书中定位 CAR 权利要求，并判定其限定到哪一层
+    rule: |
+      检索 "chimeric antigen receptor" 开头的独立/从属权利要求；
+      逐字判定是否限定骨架模块（hinge / transmembrane / costimulatory / CD3 zeta）。
+      仅限定识别域者标 paper_car = true。
+    guard: ★不得把 Fc / 免疫偶联物条款（本件 claim 7-13）误读为 CAR 骨架
+  resolve_seq_id_refs:
+    description: 把 claim 中的 "SEQ ID NO:n" 解析为说明书序列段的实际氨基酸序列
+    guard: PDF 文本层 OCR 不可靠，须与官方 SEQ 列表或 BQ 序列数据集交叉校验
+  separate_prior_art_antibodies:
+    description: 区分"本专利的 binder"与"说明书引用/排除的第三方抗体"
+    rule: |
+      出现 "the antibody molecule is not X" / "X binds ... (Ref et al.)" 句式者，
+      判为现有技术，不得作为本专利记录的属性入库。
+    example: 'GCC:B10 / GCC:4D7 / GCC:C8 → 现有技术，排除'
+
+
+# =========================================================
+# Part 7 — 已知风险
+# =========================================================
+risks:
+  - id: R1
+    severity: P0
+    desc: |
+      旧版本本档存在两处实质错误（见档头更正 1、2），均已由 PDF 全文逐字核对修正：
+      ① 把第三方被排除抗体 B10/4D7/C8 的表位挂到 MS7/MS20 名下；
+      ② 种属反应性填反（原文为"与啮齿类无实质交叉"，旧版填"人鼠交叉"）。
+      教训：专利说明书大量陈述现有技术与"实施方式"，抽取时必须区分
+      「本专利的技术方案」与「背景/排除项」，否则会系统性污染 A 库。
+      建议把 separate_prior_art_antibodies 规则加入 QC 强校验。
+  - id: R2
+    severity: P1
+    desc: |
+      "纸面 CAR" 入库口径未定。claim 17 只限定识别域，若为其建 car.construct 行，
+      则该行 5 个模块外键有 4 个悬空、full_sequence 与 validated_function 全空，
+      在 B 库里与 CARTiBASE/文献那种"模块齐全"的构建体混排会拉低整体可用性。
+      建议：为 construct 增 completeness 标（claimed_only / modules_named / full_sequence），
+      或专利 CAR 只入 car.module 的识别域行，不建 construct。
+  - id: R3
+    severity: P1
+    desc: |
+      PDF 文本层 OCR 存在字符混淆（Q 被识别为 O、V 被识别为 W，
+      如 WVRQT→WVROT、LQMSSL→LOMSSL）。VH/VL 序列若直接取 pdftotext 结果入库，
+      会引入静默的序列错误，且下游比对不会报错、只会静静地对不上。
+      必须改由官方序列表（SEQ listing）或 Google Patents Public Data 的序列数据集取。
+  - id: R4
+    severity: P2
+    desc: |
+      legal_status = granted 取自 BQ 快照，且 BQ 数据集滞后一个季度以上。
+      本件 2013-04-26 申请（临时案 2012-04-26），名义届满约 2033 年，
+      但维持费是否缴纳、有无提前失效未查。专利状态用于商业决策前须查实时法律状态。
+  - id: R5
+    severity: P1
+    desc: |
+      靶点 GCC/GUCY2C 正是本项目靶点，且 VH/VL 全序列齐全 →
+      本条是 A 库最有价值的正样本之一（S 级）。
+      但同一靶点的另一条实例（OpenAlex/GUCY2C 文献）用的是 Clone 5F9，与 MS7/MS20 不同源，
+      两者不可归并；entity_key 按 name_code 区分，注意勿被"同靶点"误合并。
+  - id: R6
+    severity: P1
+    desc: |
+      ★schema 缺口：规范的「FR/CDR 区」只实现了一半。
+      binder.binder 有 cdr_h1-h3 / cdr_l1-l3 六列，但无 FR（框架区）列。
+      FR 对人源化改造、稳定性评估与嵌合设计都必需，且跑 ANARCI 时 FR 与 CDR 是一并产出的，
+      丢弃 FR 等于每次都要重算。
+      建议：增 fr_h1-h4 / fr_l1-l4 八列，或用一个 regions jsonb 统一承载 FR+CDR。

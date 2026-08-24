@@ -1,0 +1,600 @@
+# =========================
+# Instance: CARTiBASE EP20170776591_1209 -> A / B / C
+# =========================
+# 只回答一件事：这一条真实 CAR 序列记录抽出来的值，如何变成数据库字段。
+# 不描述如何获取数据（见 1_数据源登记/CARTiBASE.yaml），
+# 不描述目标库结构、类型、约束（见 sql/03_binder.sql、04_car.sql、05_process.sql）。
+#
+# 【2026-08-21 更正 — 序列其实已到手】
+# 旧版本写「headless 取不到记录体 / 序列需导出 CSV 后可得 / verified: false」，
+# 但本目录内已存在 EP20170776591_1209 (1).fasta，含该条目的完整 969 aa 蛋白序列。
+# 即：记录体确实无法 headless 抓取（README 所述成立），但序列已由浏览器手动取得。
+# 本档据该 FASTA 做了逐模块拆解（Part 2），B 库字段由"几乎全空"改为"基本填满"。
+
+instance_id: cartibase_EP20170776591_1209_to_abc
+source_name: CARTiBASE
+route_id: [web_manual_export]
+target_schema:
+  - sql/03_binder.sql  → binder.binder
+  - sql/04_car.sql     → car.module / car.construct
+  - sql/05_process.sql → process.process
+source_format: fasta（手动导出）+ web_record（SPA，headless 不可达）
+record_grain: 一条 CARTiBASE CAR 序列条目（键 = 来源号_序号）
+
+status: partially_verified          # 序列已核；条目页其余字段未核
+last_verified: 2026-08-21
+
+example:
+  id: EP20170776591_1209
+  title: CHIMERIC ANTIGEN RECEPTORS TARGETING CANCER
+  url: https://cartibase.org/entry/EP20170776591_1209
+  format: 'fasta（已到手）/ web(SPA) 手动导出 CSV（未取）'
+
+attached_files:
+  - file: EP20170776591_1209 (1).fasta
+    note: '★条目完整蛋白序列，969 aa，单条记录；Part 2 全部模块坐标由此档实算'
+  - file: CARTiBASE_EP20170776591_1209_README.txt
+    note: 取数受阻说明 + 站点许可条款摘录
+
+key_decoding:
+  rule: 条目键格式 = 「来源号_序号」
+  EP20170776591: 来源 EP 专利（2017 申请，号 …776591）
+  '1209': 该来源内第 1209 条 CAR 序列记录
+  含义: CARTiBASE 条目 = 从专利/文献抽取的 CAR 序列，不是原创实验数据
+
+
+# =========================================================
+# Part 1 — 原文取证
+# =========================================================
+raw_evidence:
+  - key: fasta_header
+    verbatim: '>EP20170776591_1209 | CHIMERIC ANTIGEN RECEPTORS TARGETING CANCER'
+    locator: FASTA 档第 1 行
+    note: 标题即来源专利名，条目本身不另给 CAR 名称
+  - key: sequence_length
+    verbatim: '969 aa（实测 wc）'
+    locator: FASTA 档序列行
+  - key: license
+    verbatim: >-
+      CARTiBASE may only be used for academic, non-commercial research.
+      All other uses, including commercial use, diagnostic use, and research
+      conducted in collaboration with industrial or commercial partners,
+      are strictly forbidden.
+    locator: 站点 ToS（README 摘录）
+  - key: developer
+    verbatim: AUDACIS / biomina / Adrem Data Lab（安特卫普大学）
+    locator: README
+  - key: access_block
+    verbatim: 'cartibase.org 是 SPA(Vue)，记录数据经动态 axios 后端加载，页面 HTML 仅空壳(3066B)，/api 端点 404'
+    locator: README
+
+
+# =========================================================
+# Part 2 — 序列逐模块拆解（本档核心产出）
+# =========================================================
+# 方法：对 969 aa 全序列做规范模块比对，逐段首尾相接、无缝覆盖（实算 969/969 = 100%）。
+# 置信度：高 = 与公认规范序列精确匹配；低 = 未能确认归属，留待比对。
+# 坐标为 1-based，闭区间，针对 FASTA 中的蛋白序列。
+
+sequence_module_map:
+  total_length_aa: 969
+  coverage: '969 / 969（无缝全覆盖）'
+  architecture: '多顺反子 ORF = CAR(1-517) — P2A — ORF2(未鉴定) — T2A — PuroR'
+
+  modules:
+    - n: 1
+      module_type: null                 # ★枚举缺「信号肽」档，见 R3
+      name: CD8α 信号肽
+      coords: '1-21'
+      length_aa: 21
+      confidence: 高
+      seq_head: MALPVTALLLPLALLLHAARP
+    - n: 2
+      module_type: null
+      name: 未鉴定 spacer
+      coords: '22-40'
+      length_aa: 19
+      confidence: 低
+      seq_head: INIYNAEPANPSEKNSPEF
+      note: 位于信号肽与 VL 之间，未匹配到已知规范模块，留待比对
+    - n: 3
+      module_type: 识别域
+      name: VL（κ 轻链可变区）
+      coords: '41-144'
+      length_aa: 104
+      confidence: 高
+      seq_head: QIVLTQSPATLSASPGEKATMTC...
+      seq_tail: ...HQRGSYTFGGGTKLEIK
+    - n: 4
+      module_type: linker
+      name: '(G4S)×3'
+      coords: '145-159'
+      length_aa: 15
+      confidence: 高
+      seq_head: GGGGSGGGGSGGGGS
+    - n: 5
+      module_type: 识别域
+      name: VH（重链可变区）
+      coords: '160-279'
+      length_aa: 120
+      confidence: 高
+      seq_head: QVQLEQPGAEVVKPGASVKVSC...
+      seq_tail: ...ARGSNPYYYAMDYWGQGTSVTVSS
+    - n: 6
+      module_type: 标签
+      name: myc 标签（EQKLISEEDL）
+      coords: '280-291'
+      length_aa: 12
+      confidence: 高
+      seq_head: TREQKLISEEDL
+      note: 表面检测/分选用表位标签，位于 scFv 与铰链之间
+    - n: 7
+      module_type: 铰链
+      name: CD8α 铰链
+      coords: '292-339'
+      length_aa: 48
+      confidence: 高
+      seq_head: AKPTTTPAPRPPTPAPTIASQPLSLRPEACRPAAGGAVHTRGLDFACD
+    - n: 8
+      module_type: 跨膜区
+      name: CD8α 跨膜区
+      coords: '340-363'
+      length_aa: 24
+      confidence: 高
+      seq_head: IYIWAPLAGTCGVLLLSLVITLYC
+    - n: 9
+      module_type: 共刺激域
+      name: 4-1BB（CD137/TNFRSF9）胞内域
+      coords: '364-405'
+      length_aa: 42
+      confidence: 高
+      seq_head: KRGRKKLLYIFKQPFMRPVQTTQEEDGCSCRFPEEEEGGCEL
+    - n: 10
+      module_type: CD3ζ
+      name: CD3ζ 胞内域
+      coords: '406-517'
+      length_aa: 112
+      confidence: 高
+      seq_head: RVKFSRSADAPAYQQGQNQLYNELNLGRRE...
+      seq_tail: ...TYDALHMQALPPR
+    - n: 11
+      module_type: 标签
+      name: GSG + P2A 自剪切肽
+      coords: '518-541'
+      length_aa: 24
+      confidence: 高
+      seq_head: SRGSGATNFSLLKQAGDVEENPGP
+      note: 枚举无「2A 自剪切肽」档，暂并入 标签，见 R3
+    - n: 12
+      module_type: null
+      name: ORF2（未鉴定，C 端带 FLAG 标签 DYKDDDDK）
+      coords: '542-746'
+      length_aa: 205
+      confidence: 低
+      seq_head: GIHMATYEVLCEVARKLGTDDREVVLFLLNVFIPQ...
+      seq_tail: ...HYRHTPLETDFYDYKDDDDK
+      note: 呈 DED 样重复结构，疑为凋亡相关安全开关，但未能与已知规范序列精确匹配→不下结论，见 R2
+    - n: 13
+      module_type: 标签
+      name: GSG + T2A 自剪切肽
+      coords: '747-769'
+      length_aa: 23
+      confidence: 高
+      seq_head: TSGSGEGRGSLLTCGDVEENPGP
+    - n: 14
+      module_type: null
+      name: PuroR（嘌呤霉素 N-乙酰转移酶 pac）
+      coords: '770-969'
+      length_aa: 200
+      confidence: 高
+      seq_head: HMTEYKPTVRLATRDDVPRAVRTLAAAFADYPATRH...
+      note: 筛选标记，非 CAR 模块；枚举无对应档，见 R3
+
+  derived_facts:
+    scfv_span: '41-279（VL-linker-VH，239 aa）'
+    scfv_orientation: VL→VH        # ★注意不是常见的 VH→VL
+    car_orf_span: '1-517（517 aa）'
+    generation: 二代（单共刺激域 4-1BB + CD3ζ）
+    hinge_tm_pair: CD8α/CD8α（同源配对）
+
+
+# =========================================================
+# Part 3 — A 库映射（binder.binder）
+# =========================================================
+targets_binder:
+  - table: binder.binder
+    record_per_source: one
+    entity_key: [source_id, vh_seq, vl_seq]     # 条目无克隆名，只能用序列做归并键
+    fields:
+      - target: source_type
+        method: constant
+        value: 公开库
+        note: 条目本体来自 CARTiBASE 库；其上游证据是专利，见 evidence_level
+      - target: evidence_level
+        method: constant
+        value: 专利预印本
+        note: |
+          条目是"从专利抽出的序列"，原始证据等级即专利，
+          core.weight_of('专利预印本') = 0.4。不得因为经数据库转录而升级为 同行评议。
+      - target: source_id
+        method: derived
+        value: EP20170776591
+        rule: 由条目键前半段取来源专利号
+      - target: name_code
+        method: derived
+        value: EP20170776591_1209
+        rule: 无克隆名，退化用条目键充当代号
+      - target: citation
+        method: derived
+        value: 'CARTiBASE entry EP20170776591_1209 (source patent EP20170776591, "CHIMERIC ANTIGEN RECEPTORS TARGETING CANCER").'
+      - target: format
+        method: constant
+        value: scFv
+        note: 实测 VL-(G4S)3-VH 单链结构
+      - target: vl_seq
+        method: derived
+        rule: 取 sequence_module_map 坐标 41-144
+        value: 'QIVLTQSPATLSASPGEKATMTCSASSGVNYMHWYQQKPGTSPKRWIYDTDKTASGVPARFSGSGSGTSYSLTISSMEAEDAATYYCHQRGSYTFGGGTKLEIK'
+      - target: vh_seq
+        method: derived
+        rule: 取坐标 160-279
+        value: 'QVQLEQPGAEVVKPGASVKVSCKTSGYTFTSNWMHWVKQTPGKGLEWIGEIDPSDSYTNYNQKFDGKAKLTVDKSSSTAYMEVSDLTAEDSATYYCARGSNPYYYAMDYWGQGTSVTVSS'
+      - target: scfv_seq
+        method: derived
+        rule: 取坐标 41-279（含内部 linker）
+      - target: linker
+        method: derived
+        value: '(G4S)×3 = GGGGSGGGGSGGGGS'
+      - target: germline
+        method: derived
+        value: 疑鼠源（VH/VL 框架呈鼠源特征）
+        confidence: 低
+        note: ★推断值。须跑 ANARCI/germline 比对确认后才可定稿，否则应改填 null，见 R4
+      - target: target_antigen
+        method: derived
+        value: null
+        note: |
+          ★序列本身不告诉你靶点。FASTA 标题只有专利名 "TARGETING CANCER"，
+          不含抗原名。须回读来源专利 EP20170776591 或导出 CARTiBASE CSV 的靶点列。
+          禁止由"CAR 序列存在"推断任何具体靶抗原。
+      - target: patent_status
+        method: derived
+        value: null
+        rule: 需以 EP20170776591 查 EPO/Google Patents 的 legal_status 后回填
+
+
+# =========================================================
+# Part 4 — B 库映射（car.module + car.construct）
+# =========================================================
+targets_car:
+
+  # ---------------------------------------------------------
+  # car.module —— 按 CAR 结构库字段规范逐栏对齐（25 栏，缺一不可）
+  # 本条是六个实例里模块级填得最实的一条：序列在手，坐标/长度全部实算。
+  # ---------------------------------------------------------
+  - table: car.module
+    record_per_source: many
+    iterate_over: sequence_module_map.modules
+    entity_key: [source_id, module_type, source_molecule]
+    rule: |
+      每个 module_type 非 null 的模块建一行；
+      sequence 取该模块坐标区间的子串，length_aa 即区间长度——两者均由 FASTA 实算，非估计。
+
+    # ===== 元数据 11 栏 =====
+    metadata_fields:
+      - target: uid
+        method: platform
+      - target: name_code
+        method: derived
+        rule: '"{module_name}@EP20170776591_1209"'
+        example: CD8α铰链@EP20170776591_1209
+      - target: source_type
+        method: constant
+        value: 公开库
+        note: 条目本体来自 CARTiBASE 库
+      - target: source_id
+        method: constant
+        value: EP20170776591
+        note: 规范要求"专利号"，取条目键前半段
+      - target: experiment_conditions
+        method: constant
+        value: null
+        note: ★纯序列条目，无实验；不适用而非漏抽
+      - target: evidence_level
+        method: constant
+        value: 专利预印本
+        note: |
+          上游证据是专利 → core.weight_of('专利预印本') = 0.4。
+          ★不得因经数据库转录而升级为 同行评议。
+      - target: version
+        method: derived
+        value: null
+        rule: CARTiBASE 为 snapshot 模式，导出日期即快照标识
+        note: 本条 FASTA 未记导出日期，须在下次取数时补记
+      - target: entry_date
+        method: platform
+      - target: citation
+        method: derived
+        value: 'CARTiBASE entry EP20170776591_1209 (source patent EP20170776591, "CHIMERIC ANTIGEN RECEPTORS TARGETING CANCER"), FASTA 坐标 {coords}.'
+        note: 引用精确到模块坐标区间，可回溯到序列具体位置
+      - target: applicable_scenario
+        method: derived
+        value: '二代 CAR（CD8α 铰链/跨膜 + 4-1BB + CD3ζ）规范模块，可作模块库的序列基准'
+      - target: contrary_evidence
+        method: constant
+        value: null
+
+    # ===== 标识 4 栏 =====
+    identity_fields:
+      - target: module_type
+        method: derived
+        rule_ref: map_car_modules_by_reference_match
+      - target: source_molecule
+        method: derived
+        note: 由规范序列比对判定（CD8α / 4-1BB / CD3ζ 等）；未匹配段落填 未鉴定
+      - target: sequence
+        method: derived
+        rule: 取 sequence_module_map 中该模块坐标区间的子串
+        note: ★本源唯一能直接给出模块序列的库（对比：文献源只给模块名）
+      - target: length_aa
+        method: derived
+        rule: 区间长度，实算
+        note: 规范的"长度（残基数）"
+
+    # ===== 逐模块取值（坐标与长度见 Part 2 sequence_module_map）=====
+    modules_summary:
+      - {module_type: 识别域, source_molecule: 'VL(κ)', coords: '41-144', length_aa: 104}
+      - {module_type: linker, source_molecule: '(G4S)×3', coords: '145-159', length_aa: 15}
+      - {module_type: 识别域, source_molecule: VH, coords: '160-279', length_aa: 120}
+      - {module_type: 标签, source_molecule: 'myc(EQKLISEEDL)', coords: '280-291', length_aa: 12}
+      - {module_type: 铰链, source_molecule: CD8α, coords: '292-339', length_aa: 48}
+      - {module_type: 跨膜区, source_molecule: CD8α, coords: '340-363', length_aa: 24}
+      - {module_type: 共刺激域, source_molecule: '4-1BB(CD137/TNFRSF9)', coords: '364-405', length_aa: 42}
+      - {module_type: CD3ζ, source_molecule: CD3ζ, coords: '406-517', length_aa: 112}
+      - {module_type: 标签, source_molecule: 'GSG+P2A', coords: '518-541', length_aa: 24}
+      - {module_type: 标签, source_molecule: 'GSG+T2A', coords: '747-769', length_aa: 23}
+    modules_without_enum_slot:
+      - {name: CD8α 信号肽, coords: '1-21', length_aa: 21, reason: 枚举无「信号肽」档}
+      - {name: 未鉴定 spacer, coords: '22-40', length_aa: 19, reason: 归属未定，见 R2}
+      - {name: 'ORF2（未鉴定，含 FLAG）', coords: '542-746', length_aa: 205, reason: 归属未定，见 R2}
+      - {name: PuroR (pac), coords: '770-969', length_aa: 200, reason: 枚举无「筛选标记」档}
+
+    # ===== 功能属性 7 栏 =====
+    functional_fields:
+      - target: [activation_speed, metabolic_state, expansion_capacity,
+                 memory_phenotype, persistence, exhaustion_risk, tonic_signaling]
+        method: constant
+        value: null
+        note: |
+          ★纯序列库，这 7 栏恒为空。且按设计属组合读出 → 归 DB1，
+          即便日后由文献取到也不回填本表。
+          注意：4-1BB 的"低耗竭风险/高持久性"是教科书常识，但★不得作为常识填入——
+          本表只存"本条来源给出的"值，常识性属性须另有可引证来源。
+
+    # ===== 铰链/跨膜几何属性 =====
+    geometry_fields:
+      - target: 几何长度
+        method: derived
+        value: 'CD8α 铰链 48 aa / CD8α 跨膜 24 aa（残基数已知，物理跨度未计算）'
+        status: ★schema 无对应列
+        note: |
+          规范把"长度（残基数）"与"几何长度"分列两栏。本条残基数实算已得，
+          但几何跨度（nm）需由结构模型换算，且 car.module 无该列 → 无处可落，见 R7。
+          ★这是本源少见地"有能力算但无处存"的字段：序列在手，缺的是列与换算规则。
+      - target: epitope_distance_effect
+        method: constant
+        value: null
+        note: 需构型对比实验才有（见 OpenAlex 实例的 CD8HTM vs CD28HTM）；单条序列给不出
+      - target: synapse_effect
+        method: constant
+        value: null
+      - target: tonic_effect
+        method: constant
+        value: null
+
+    # ===== 组合约束 3 栏 =====
+    assembly_fields:
+      - target: assembly_rules
+        method: derived
+        value: 'CD8α 信号肽(1-21) | spacer(22-40) | VL(41-144) | (G4S)×3(145-159) | VH(160-279) | myc(280-291) | CD8α 铰链(292-339) | CD8α 跨膜(340-363) | 4-1BB(364-405) | CD3ζ(406-517) | P2A(518-541) | ORF2(542-746) | T2A(747-769) | PuroR(770-969)'
+        note: |
+          ★assembly_rules 是 car.module 的列（04_car.sql 第 39 行），非 car.construct 的列。
+          本条的装配规则带精确坐标，是六个实例里可回溯性最强的一条。
+          另记两条结构事实：scFv 朝向 = VL→VH（非常见的 VH→VL）；铰链与跨膜同为 CD8α（同源配对）。
+      - target: compatible_modules
+        method: constant
+        value: null
+        note: |
+          单条记录给不出兼容性——兼容/不兼容需跨条目统计或实验验证。
+          待 CARTiBASE 批量 CSV 到手后，可由"哪些模块组合反复共现"反推兼容性。
+      - target: incompatible_modules
+        method: constant
+        value: null
+
+  # ---------------------------------------------------------
+  # car.construct —— 整装层
+  # ---------------------------------------------------------
+  - table: car.construct
+    record_per_source: one
+    fields:
+      - target: name_code
+        method: constant
+        value: EP20170776591_1209
+      - target: source_type
+        method: constant
+        value: 公开库
+      - target: source_id
+        method: constant
+        value: EP20170776591
+      - target: evidence_level
+        method: constant
+        value: 专利预印本
+      - target: experiment_conditions
+        method: constant
+        value: null
+      - target: version
+        method: derived
+        value: null
+        note: 导出日期即快照标识，本条未记
+      - target: citation
+        method: derived
+        value: 'CARTiBASE entry EP20170776591_1209 (source patent EP20170776591).'
+      - target: applicable_scenario
+        method: derived
+        value: '二代 CAR 整装序列基准；带 myc 标签便于表面检测，带 PuroR 便于筛选'
+      - target: contrary_evidence
+        method: constant
+        value: null
+      - target: binder_uid
+        method: derived
+        rule: 指向 Part 3 建立的 binder 实体（VH/VL 已切出）
+      - target: [scfv_module_uid, linker_module_uid, hinge_module_uid,
+                 tm_module_uid, costim_module_uid, cd3z_module_uid]
+        method: derived
+        rule: 指向 car.module 对应模块 uid
+        note: ★本条 6 个模块外键全部可填——六个实例里唯一一条无悬空外键的 construct
+      - target: full_sequence
+        method: derived
+        rule: FASTA 全 969 aa
+        note: ★这是多顺反子全 ORF，不只是 CAR；若本列语义限定为 CAR 本体应改存 1-517，见 R6
+      - target: vector_backbone
+        method: constant
+        value: null
+        note: 序列不含载体骨架信息
+      - target: logic
+        method: constant
+        value: 无
+      - target: validated_function
+        method: constant
+        value: null
+      - target: risk_tags
+        method: derived
+        value: '["license_forbids_commercial_use", "target_antigen_unknown", "orf2_unidentified"]'
+
+
+# =========================================================
+# Part 5 — C 库映射（process.process）
+# =========================================================
+targets_process:
+  decision: 不建行
+  reason: |
+    本条为纯序列条目，process.process 的 21 个业务列无一有值
+    （无细胞来源/激活/载体/MOI/培养/冻存/放行/杀伤）。
+    建空行只会污染 C 库计数，故本源不产出 process 记录。
+  only_hint:
+    note: 序列内含 PuroR 说明上游构建用嘌呤霉素筛选，但这属"来源专利的构建方式"，
+          非本项目工艺记录，不入 C 库。
+
+
+# =========================================================
+# Part 6 — 本条填不了的字段
+# =========================================================
+unmapped_target_columns:
+
+  binder_blocked_by_missing_record_body:
+    columns: [target_antigen, epitope_position, epitope_kind, binding_site,
+              cross_reactivity, species_reactivity, development_stage,
+              patent_status, in_vitro_readout]
+    note: 这些在条目页/导出 CSV 里可能有，但记录体未取到（SPA 阻断），本轮全空
+
+  binder_needs_computation:
+    columns: [cdr_h1, cdr_h2, cdr_h3, cdr_l1, cdr_l2, cdr_l3, cdr_lengths,
+              numbering, vdj_genes, somatic_mutations, humanization]
+    note: 序列已到手，跑 ANARCI 编号 + germline 比对即可补齐；属可执行的下一步，非死缺口
+
+  binder_not_available_at_all:
+    columns: [kd_nm, kon_m1s1, koff_s1, measure_method, measure_condition,
+              tm_celsius, viscosity, aggregation, solubility, hydrophobicity,
+              net_charge, glycosylation_sites, free_cysteine, immunogenicity_risk,
+              structure_template, complex_structure, prediction_confidence]
+    note: 序列库不含亲和力/成药性/结构，任何路径都补不到，须由 SAbDab/DOTAD/文献源补
+
+  car_gaps:
+    columns: [vector_backbone, validated_function, compatible_modules, incompatible_modules]
+
+  process_all:
+    note: 见 Part 5，本源不产出 process 行
+
+  platform_managed:
+    - uid
+    - version
+    - entry_date
+    - source_weight
+    - batch_id
+    - registry_id
+    - merged_into
+    - created_at
+    - updated_at
+
+
+# =========================================================
+# Part 7 — 派生规则标识
+# =========================================================
+rule_refs:
+  split_cartibase_key:
+    description: 拆条目键为来源号与序号
+    rule: '"{source_no}_{index}" → source_id = source_no, name_code = 全键'
+    example: 'EP20170776591_1209 → source_id=EP20170776591, index=1209'
+  map_car_modules_by_reference_match:
+    description: 对 CAR 全序列做规范模块比对，输出首尾相接的模块坐标表
+    inputs: 规范模块序列库（CD8α 信号肽/铰链/跨膜、4-1BB ICD、CD3ζ ICD、P2A/T2A、常见标签）
+    output: '[{name, coords, length_aa, confidence}]，要求无缝覆盖率 100% 方可采信'
+    guard: 未匹配段落一律标 confidence=低 且 module_type=null，禁止猜测归属
+  derive_scfv_orientation:
+    description: 由 VL/VH 在序列中的先后顺序判定 scFv 朝向
+    example: VL(41-144) 在 VH(160-279) 之前 → VL→VH
+
+
+# =========================================================
+# Part 8 — 已知风险
+# =========================================================
+risks:
+  - id: R1
+    severity: P0
+    desc: |
+      许可硬阻断。站点 ToS 原文：与工业/商业伙伴合作的研究 "strictly forbidden"。
+      复星×明度为商业合作项目，按字面完全禁止使用本源——不只是"商用前复核"，
+      而是连研究性使用都被条款覆盖。
+      → 本条实例应视为「结构示范」，在取得书面授权前不得入生产库。
+      建议动作：联系 AUDACIS / Adrem Data Lab（安特卫普大学）询商业授权，或直接改用
+      来源专利 EP20170776591 本身（专利文本无此限制），从专利侧重取同一序列。
+  - id: R2
+    severity: P1
+    desc: |
+      ORF2（542-746，205 aa）未能鉴定。其呈 DED 样重复结构且 C 端带 FLAG 标签，
+      疑为凋亡相关安全开关，但未与任何规范序列精确匹配，故本档不下结论。
+      影响：car.construct 的模块清单有一段语义空白；若该段确为安全开关，
+      则 car.module_type 的「安全开关」档应被填上，构建体分代/功能描述也需改写。
+      补齐动作：对 542-746 段跑 BLASTp / HMM 比对。
+  - id: R3
+    severity: P2
+    desc: |
+      car.module_type 枚举缺档，本条一次暴露三处：
+      「信号肽」(CD8α 信号肽)、「2A 自剪切肽」(P2A/T2A)、「筛选标记/报告基因」(PuroR)。
+      现状只能填 null 或勉强并入「标签」，导致 14 个模块里有 4 个落不进枚举。
+      与 Addgene 实例 R3 是同一问题，建议统一扩枚举后重灌。
+  - id: R4
+    severity: P1
+    desc: |
+      binder.germline 现填「疑鼠源」，是本档唯一的推断值。
+      若 QC 要求每值可回溯原文出处，此栏不合规，应改填 null 并留待 ANARCI 比对。
+  - id: R5
+    severity: P1
+    desc: |
+      靶抗原未知。序列到手不等于靶点到手——FASTA 标题只有专利名。
+      在回读来源专利或取得 CARTiBASE 靶点列之前，本条无法参与任何按靶点的筛选，
+      对 GCC/CDH17 项目的直接价值为零。
+  - id: R6
+    severity: P2
+    desc: |
+      full_sequence 存的是 969 aa 多顺反子全 ORF（CAR-P2A-ORF2-T2A-PuroR），
+      而非 CAR 本体（1-517）。若下游按 full_sequence 计算 CAR 长度或做序列比对，
+      会被 452 aa 的非 CAR 载荷污染。须先定义本列语义。
+  - id: R7
+    severity: P1
+    desc: |
+      ★schema 缺口：规范的「几何长度」无对应列。
+      规范把「长度（残基数）」与「几何长度」并列为两栏：前者是残基计数（= length_aa），
+      后者是铰链/跨膜的物理跨度（决定免疫突触间距，是铰链选型的核心依据）。
+      car.module 只有 length_aa，无几何长度列 → 该栏在全部六条实例上都无处可落。
+      建议：car.module 增 geometric_length_nm numeric 列，并定义由残基数换算的规则。
