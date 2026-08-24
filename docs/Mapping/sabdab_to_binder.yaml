@@ -25,7 +25,7 @@ last_verified: 2026-08-20
 # =========================================================
 # Part 1 — Source 字段清单（all_summary，45 栏）
 # =========================================================
-# 取样档：data/raw/sabdab/sabdab_antibody_instance_summary_20260818T091942.csv
+# 取样档：data/raw/sabdab/20260824/gucy2c_summary.csv
 # 全量实测 21,914 列 × 45 栏（GET /api/download/all-summary，v2.0.10）
 # 下面的 example 取自本项目靶点 GCC/GUCY2C 的真实行（PDB 8GHO / 8GHP）。
 
@@ -309,7 +309,7 @@ targets:
 # Part 4 — structures route（补 vh_seq / vl_seq）
 # =========================================================
 # summary 无序列，序列只能走这条 route。
-# 实测样本：data/raw/sabdab/search_structures_selected_2026-08-18/
+# 实测样本：data/raw/sabdab/20260824/gucy2c_structures.tgz
 #   pdb_00008gho_sabdab.cif、pdb_00008gho_H_L_abag.cif、pdb_00008gho_A_B_abag.cif
 #   pdb_00008ghp_sabdab.cif、pdb_00008ghp_H_L_abag.cif
 # 取数：GET /api/download/all-structures 或 POST /api/download/search-structures

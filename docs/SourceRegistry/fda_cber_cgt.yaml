@@ -43,7 +43,8 @@ source_url: https://www.fda.gov/vaccines-blood-biologics/cellular-gene-therapy-p
           批准函 ×6（2022-02-28 / 2023-02-22 / 2023-12-21 / 2024-04-05 / 2025-06-26 / 2025-10-10）
           Approval History, Letters, Reviews             /media/157051/download
     (3) 文档层：下载 Carvykti SBRA
-        （carvykti_SBRA_2022-02-28.pdf，425,803 bytes，23 页）
+        （data/raw/fda_cber/20260821/sbra/carvykti_february-28-2022-summary-basis-for-regulatory-action---carvykti.pdf，
+         425,803 bytes，23 页）
         确认真实存在的工艺内容（括号内为命中次数）：
           "Janssen Pharmaceuticals manufacturing facility using patient leukapheresis materials"
           "genetically modified by a lentiviral vector (LVV) to target cells expressing BCMA"
@@ -108,3 +109,42 @@ notes: >
   注意 Abecma 与 Aucatzyl 未出现在实测的 slug 清单里，接入前需再确认它们的页面位置。
 
   【授权】美国联邦政府公开资料，公共领域，无使用限制。
+
+# ---------------------------------------------------------------------------
+# 可执行下载配置 —— src/cart_db/downloaders 读的就是这一块。
+# ---------------------------------------------------------------------------
+下载配置:
+  downloader: fda_cber
+  source_dir: fda_cber
+  http:
+    # 必填。fda.gov 对非浏览器 UA 返回 404（不是 403），实测 WebFetch 直接 404。
+    user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    rate_limit_rps: 1
+    timeout_s: 60
+    read_timeout_s: 300
+
+  routes:
+    # SBRA = Summary Basis for Regulatory Action，工艺内容的载体。
+    # products 里列了 8 个，但 2026-08-20 实测清单页只有 6 个 CAR/TCR-T；
+    # abecma 与 aucatzyl 不在清单上，downloader 会把它们记进 _manifest.json 的
+    # skipped[reason=product_not_in_index]，而不是静默漏掉。
+    - route_id: sbra
+      index_url: https://www.fda.gov/vaccines-blood-biologics/cellular-gene-therapy-products/approved-cellular-and-gene-therapy-products
+      product_path_prefix: /vaccines-blood-biologics/cellular-gene-therapy-products/
+      products: [kymriah, yescarta, tecartus, breyanzi, carvykti, tecelra, abecma, aucatzyl]
+      document_title_contains: ["Summary Basis for Regulatory Action"]
+      output:
+        products_index: products_index.json
+        documents_index: documents_index_sbra.json
+        pdf_dir: sbra
+
+    # 说明书。给剂量与适应症，不给工艺；EMA 侧没有等价物。
+    - route_id: package_insert
+      index_url: https://www.fda.gov/vaccines-blood-biologics/cellular-gene-therapy-products/approved-cellular-and-gene-therapy-products
+      product_path_prefix: /vaccines-blood-biologics/cellular-gene-therapy-products/
+      products: [kymriah, yescarta, tecartus, breyanzi, carvykti, tecelra]
+      document_title_contains: ["Package Insert"]
+      output:
+        products_index: products_index.json
+        documents_index: documents_index_package_insert.json
+        pdf_dir: package_insert

@@ -30,12 +30,12 @@ source_url: https://sabdab.opig.stats.ox.ac.uk/
     (1) GET https://sabdab.opig.stats.ox.ac.uk/api/stats/summary
         → {"antibody_instances":21914,"PDB_entries":11458,"SAbDab2_entries":6780,
            "with_antigen":19560,"last_update":"Thu 06 Aug 2026 00:44:32"}
-    (2) summary CSV 实测 45 栏（表头见 data/raw/sabdab/sabdab_antibody_instance_summary_20260818T091942.csv）：
+    (2) summary CSV 实测 45 栏（表头见 data/raw/sabdab/20260824/gucy2c_summary.csv）：
         INSTANCE,PDB,SABDAB_ID,HEAVY_ID,LIGHT_ID,Hchain,Lchain,model,antigen_chain,antigen_type,
         antigen_name,short_header,date,SABDABdepo_date,SABDABupdate_date,compound,organism,...,
         method,resolution,r_free,r_factor,type,...,heavy_subclass,light_subclass,light_ctype
     (3) 靶点样本（GCC/GUCY2C）：PDB 8GHO / 8GHP，mmCIF 5 檔存于
-        data/raw/sabdab/search_structures_selected_2026-08-18/
+        data/raw/sabdab/20260824/gucy2c_structures.tgz
   verified_at: 2026-08-20
 
 # 该源能为下列三库填的字段（从各库要求字段里挑；不列=填不了）
@@ -80,3 +80,87 @@ notes: >
   暂留 null 等 Thera-SAbDab / 文献源回填。
 
   详细逐栏映射见 Specification/Mapping/sabdab_to_binder.yaml。
+
+  【2026-08-24 实测：本项目两个靶点在本库的覆盖情况】
+  下载全量 all-summary（21,914 行）后逐行核对：
+    GUCY2C —— 3 条 instance，2 个 PDB（8GHO / 8GHP），同属 1 个抗体
+               SABDAB_ID=sabdab2_H03VYL030Q，compound 写明
+               "GUCY2C-peptide bound to anti-GUCY2C-scFv antibody"。是 scFv，可直接用作 A。
+    CDH17  —— 0 条。全库 15 条 cadherin 相关记录经逐条查看，
+               分别是 Cadherin-1 / Cadherin-3 / Cadherin-6 与一条 "Cadherin derived peptide"，
+               没有任何一条是 Cadherin-17。这是空集，不是检索式写错。
+  => A 库在 CDH17 侧拿不到任何实验结构，binder.complex_structure /
+     structure_template 对 CDH17 只能留 null，或改由 AlphaFold-Multimer 预测（属模型预测级证据）。
+
+  【检索接口的坑，直接影响 registry 里 queries 怎么写】
+  POST /api/download/search-summary 的 binds_to_antigen 匹配的是 antigen_name 栏的文本，
+  不是基因符号。实测：
+    "guanylyl cyclase" → 3 行      "GUCY2C"      → 0 行
+    "cadherin-17"      → 0 行      "CDH17"       → 0 行      "LI-cadherin" → 0 行
+  所以必须写抗原全名并把别名都列上；用基因符号检索会得到「假空集」。
+  另注：该栏 maxLength 25，一次只能传一个字符串，多别名要拆成多条 query。
+
+  【零命中返回 404，不是空 CSV】search-summary 与 search-structures 在无结果时
+  回 HTTP 404，与「路径不存在」共用状态码，只能靠响应体区分：
+    零命中  {"detail":"No antibody instances matched the requested filters."}
+    路径错  {"detail":"Not Found"}
+  downloader 按这段文本判别；若 OPIG 日后改了这句话，CDH17 那三条 query 会从
+  「记为 no_hits」变成「抛错中断」——是显性失败，不会静默丢数据。
+
+# ---------------------------------------------------------------------------
+# 可执行下载配置 —— src/cart_db/downloaders 读的就是这一块。
+# 上面的散文是给人看的；代码只认这里的键。
+# ---------------------------------------------------------------------------
+下载配置:
+  downloader: sabdab
+  source_dir: sabdab
+  http:
+    rate_limit_rps: 2        # OPIG 未公布限速，自行克制
+    timeout_s: 60
+    read_timeout_s: 600
+
+  routes:
+    # 全量索引。不按靶点过滤——它本身就是「某靶点在不在库里」的判据，
+    # 不先有它就无法区分「空集」与「检索式写错」。11.7 MB，代价可忽略。
+    # 注意：summary 不含任何氨基酸序列，序列必须走 target_structures 的 mmCIF。
+    - route_id: all_summary
+      endpoint: https://sabdab.opig.stats.ox.ac.uk/api/download/all-summary
+      output:
+        summary: all_summary.csv
+
+    # 按本项目靶点取结构档。结构档体积大，只对 GCC/CDH17 下载。
+    #
+    # 三个布尔参数各自决定打包里出现什么档，2026-08-24 实测：
+    #   full_structure=true（默认）        → pdb_XXXX_sabdab.cif，整个 PDB 条目
+    #   antibody_instance_crops=true       → pdb_XXXX_<H>_<L>_abag.cif，逐 instance 的
+    #                                        抗体+抗原裁切档。算表位接触残基要的是这个。
+    #   include_antigen=true               → 让上面两者带上抗原链
+    # 只开 include_antigen 不开 crops，拿到的仍然只有整份结构（实测 2 档而非 5 档）。
+    # binder.epitope 无法由 antigen_name 顶替（见 notes），所以 crops 必须开。
+    - route_id: target_structures
+      search_summary_endpoint: https://sabdab.opig.stats.ox.ac.uk/api/download/search-summary
+      search_structures_endpoint: https://sabdab.opig.stats.ox.ac.uk/api/download/search-structures
+      queries:
+        - label: gucy2c
+          body:
+            binds_to_antigen: "guanylyl cyclase"   # 实测 3 行；写 "GUCY2C" 会得 0
+            include_antigen: true
+            antibody_instance_crops: true
+        # 下面三条 2026-08-24 实测均为 0 行，仍保留：
+        # 空集本身是要留档的结论，且上游 rolling，日后可能出现新结构。
+        # downloader 会把 0 行记成 skip(no_hits) 而不是报错。
+        - label: cdh17_cadherin17
+          body:
+            binds_to_antigen: "Cadherin-17"
+            include_antigen: true
+            antibody_instance_crops: true
+        - label: cdh17_licadherin
+          body:
+            binds_to_antigen: "LI-cadherin"
+            include_antigen: true
+            antibody_instance_crops: true
+        - label: cdh17_hpt1
+          body:
+            binds_to_antigen: "HPT-1"              # Q12864 的 AltName，见 NCBI GenPept
+            include_antigen: true
+            antibody_instance_crops: true

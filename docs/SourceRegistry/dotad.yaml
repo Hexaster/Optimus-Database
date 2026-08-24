@@ -27,7 +27,7 @@ source_url: https://i.uestc.edu.cn/DOTAD2.0/
 取样验证:                           # 证明字段清单真实存在
   verified: true                    # true / false
   verification_sample: |
-    2026-08-20 实测下载 4 个 v2.0 工作簿，存于 data/raw/dotad/v2.0/：
+    2026-08-20 实测下载 4 个 v2.0 工作簿，存于 data/raw/dotad/20260824/v2.0/：
       dotad_antibody_metadata_sequences_v2.0.xlsx
         [metadata]  4,100 列 × 16 栏：antibody_id, antibody_name, Format, hc_subtype, lc_subtype,
                     Highest_Clin_Trial, est_status_asof_feb2025, Target, Species,
@@ -101,3 +101,65 @@ notes: >
 
   【衍生资源】另有 dotad_affinity_benchmark_v2.0.zip 与 DOTAD2_benchmark_package_v1.1.zip
   （含 VH/VL、endpoint labels、split schemes），属模型评测用，不进 A 库实体表。
+
+# ---------------------------------------------------------------------------
+# 可执行下载配置 —— src/cart_db/downloaders 读的就是这一块。
+# 上面的散文是给人看的；代码只认这里的键。
+# ---------------------------------------------------------------------------
+下载配置:
+  downloader: bulk_files     # 无检索接口，下载中心就是一组固定 URL
+  source_dir: dotad
+  http:
+    timeout_s: 60
+    read_timeout_s: 900      # affinity benchmark 有 103 MB，读超时要给够
+
+  routes:
+    # 全量下载，不按靶点过滤 —— 业务侧 2026-08-24：
+    # 「对于 dotad 这种小数据库还是全部下载」。九档合计约 130 MB。
+    # 档名 2026-08-24 由 Download.html 实测抓取，大小由 Range 请求实测。
+    - route_id: all_files
+      base_url: https://i.uestc.edu.cn/DOTAD2.0/assets/data/
+      output_dir: v2.0
+      files:
+        # --- 核心四档：A 库实体与成药性证据的来源 ---
+        - name: dotad_antibody_metadata_sequences_v2.0.xlsx
+          expected_bytes: 777468
+          note: >-
+            [metadata] 4,100 × 16 栏（antibody_id / antibody_name / Target / PDB /
+            production_host / tag 等）；[sequences] 9,845 × 8 栏（VH / VL /
+            hc_protein_sequence / lc_protein_sequence / hc_dna / lc_dna）。
+            实测 production_host 与 tag 两栏填充率为 0.0%，勿据栏名假定有值。
+        - name: dotad_experimental_developability_v2.0.xlsx
+          expected_bytes: 332486
+          note: >-
+            6 分页，最宽 55 栏。tm1/tm2/tonset_nanodsf、hic_rt、sec_%monomer、
+            smac_rt、hac_rt、acsins、polyreactivity、titer、purity。阶段二成药性用。
+        - name: dotad_literature_developability_collection_v2.0.xlsx
+          expected_bytes: 949019
+          note: >-
+            30 分页 = 30 篇文献的抽取结果。含 Adams et al.（10,970 列，fit_KD_median [M]）、
+            Jain et al. 2024（Octet KD）。这是本源唯一的亲和力来源。
+        - name: dotad_data_dictionary_v2.0.xlsx
+          expected_bytes: 74776
+          note: >-
+            10 分页；[Field Dictionary] 461 × 17 栏，逐字段给 data_type / unit /
+            lower_bound / upper_bound / missing_value_rule。做字段映射时的权威依据。
+
+        # --- JSON 形态：与上面 xlsx 内容重叠，但便于程序读取 ---
+        - name: dotad_dataset.json
+          expected_bytes: 2825268
+          note: 站点前端用的数据集 JSON。与 metadata/sequences 的关系未验证，入库前须比对。
+        - name: entry_detail_by_id.json
+          expected_bytes: 19308835
+          note: 按 antibody_id 索引的逐条详情。与 xlsx 的关系未验证，入库前须比对。
+
+        # --- 衍生/历史资源：不进 A 库实体表，供阶段二模型评测与版本比对 ---
+        - name: dotad_affinity_benchmark_v2.0.zip
+          expected_bytes: 103137478
+          note: 亲和力预测基准（VH/VL + endpoint labels + split schemes）。模型评测用。
+        - name: DOTAD2_benchmark_package_v1.1.zip
+          expected_bytes: 1484306
+          note: DOTAD2 基准包 v1.1。模型评测用。
+        - name: DOTAD1.0.zip
+          expected_bytes: 1299635
+          note: 1.0 版全量档。仅供版本比对，不入库。

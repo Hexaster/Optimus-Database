@@ -28,7 +28,7 @@ source_url: https://opig.stats.ox.ac.uk/webapps/sabdab-sabpred/therasabdab/searc
   verified: true                    # true / false
   verification_sample: |
     实测 1,133 条 × 24 栏，档案存于
-    data/raw/therasabdab/TheraSAbDab_SeqStruc_OnlineDownload_2026-08-20.csv
+    data/raw/therasabdab/20260824/TheraSAbDab_SeqStruc_OnlineDownload.csv
     表头（24 栏）：
       Therapeutic, Format, CH1 Isotype, VD LC, Highest_Clin_Trial (Feb '25), Est. Status,
       HeavySequence, LightSequence, HeavySequence(ifbispec), LightSequence(ifbispec),
@@ -81,5 +81,33 @@ notes: >
   【授权】页面只给引用要求（Raybould et al. 2020, NAR 48(D1)），未见明确 license 声明。
   商用前需向 OPIG 确认——待决。
 
-  【另一个下载档】同目录另有 TheraSAbDab_INNwithnoSeq.csv / .xlsx，
-  收录「有 INN 但无公开序列」的治疗性抗体，可用于查缺，不能填序列字段。
+  【另一个下载档 —— 2026-08-24 更正】旧记载说同目录另有
+  TheraSAbDab_INNwithnoSeq.csv / .xlsx（「有 INN 但无公开序列」的治疗性抗体）。
+  实测该路径返回 404（content-length 207 的错误页），档案不在这个目录下。
+  故「下载配置」只收主档一个。若日后确需这份查缺清单，须先重新定位其真实 URL。
+
+# ---------------------------------------------------------------------------
+# 可执行下载配置 —— src/cart_db/downloaders 读的就是这一块。
+# 上面的散文是给人看的；代码只认这里的键。
+# ---------------------------------------------------------------------------
+下载配置:
+  downloader: bulk_files     # 无检索接口，全库就是一个静态 CSV
+  source_dir: therasabdab    # 沿用既有目录名（data/raw/therasabdab/），不带下划线
+  http:
+    timeout_s: 60
+    read_timeout_s: 300
+
+  routes:
+    # 不按靶点过滤：全库 1,133 条 / 636 KB，属「小数据库全部下载」那一类。
+    # 本项目靶点的筛选（Target 栏含 CDH17 / GUCY2C）留到 loader 阶段做——
+    # 注意 Target 用 ";" 分隔多靶点，且实测有 GCCR/NR3C1（糖皮质激素受体）
+    # 会被 "GCC" 子串误命中，筛选必须按分隔后的完整词匹配，不能用子串。
+    - route_id: seqstruc
+      base_url: https://opig.stats.ox.ac.uk/webapps/sabdab-sabpred/static/downloads/
+      files:
+        - name: TheraSAbDab_SeqStruc_OnlineDownload.csv
+          expected_bytes: 636357     # 2026-08-24 实测；Last-Modified 2025-03-18 起未变
+          note: >-
+            1,133 条 × 24 栏。含 Therapeutic(INN) / HeavySequence / LightSequence /
+            Target / Format / Highest_Clin_Trial (Feb '25)。
+            临床阶段栏资料截止 2025-02，已过时，须另行复核后方可入库。

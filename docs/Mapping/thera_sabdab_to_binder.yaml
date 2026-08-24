@@ -20,7 +20,7 @@ last_verified: 2026-08-20
 # Part 0 — 输入档案
 # =========================================================
 source_dataset:
-  file: data/raw/therasabdab/TheraSAbDab_SeqStruc_OnlineDownload_2026-08-20.csv
+  file: data/raw/therasabdab/20260824/TheraSAbDab_SeqStruc_OnlineDownload.csv
   encoding: utf-8-sig            # 档首有 BOM，必须用 utf-8-sig 读，否则首栏名会带乱码
   observed_rows: 1133
   observed_cols: 24

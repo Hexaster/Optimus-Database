@@ -47,3 +47,60 @@ update:
 
 validation:
   required_source_fields: [publication_number]
+
+# ---------------------------------------------------------------------------
+# 可执行下载配置 —— src/cart_db/downloaders 读的就是这一块。
+#
+# 【当前状态：跑不通，缺凭证】2026-08-21 实测本机：
+#   无 gcloud / bq CLI、无 google-cloud-bigquery、.env 里无任何 GCP 键。
+# BigQuery 即便查公开数据集也要一个启用计费的项目，且按扫描量计费。
+# downloader 会抛 MissingCredentials 并列出缺什么，不做静默降级。
+#
+# 【能力边界，接入前必须验证】BigQuery 的专利表给的是著录项与全文文本
+# （title / abstract / claims / description），不是 ST.25/ST.26 序列表。
+# 本项目要的是 VH/VL 氨基酸序列，能否从这里拿到尚未验证。
+# 对照：NCBI Protein 的专利分区（gbdiv_pat[PROP]）已实测能直出序列，
+# 检索 CDH17 得 238 条、GUCY2C 得 848 条，见 ncbi.yaml。
+# ---------------------------------------------------------------------------
+下载配置:
+  downloader: google_patents
+  source_dir: google_patents
+  auth:
+    credential_env: GOOGLE_APPLICATION_CREDENTIALS   # 服务账号 JSON 的绝对路径
+    billing_project_env: GCP_BILLING_PROJECT         # 启用计费的项目 id
+
+  routes:
+    # 先只扫 title + abstract。description/claims 是 TB 级列，
+    # 全表扫一次就是可观的费用，等这条跑通、确认能拿到想要的东西再说。
+    - route_id: cart_binder_patents
+      sql: |
+        SELECT
+          p.publication_number,
+          p.country_code,
+          p.kind_code,
+          p.application_number,
+          p.filing_date,
+          p.publication_date,
+          p.grant_date,
+          (SELECT t.text FROM UNNEST(p.title_localized)    AS t
+             WHERE t.language = 'en' LIMIT 1) AS title_en,
+          (SELECT a.text FROM UNNEST(p.abstract_localized) AS a
+             WHERE a.language = 'en' LIMIT 1) AS abstract_en,
+          ARRAY(SELECT DISTINCT x.name FROM UNNEST(p.assignee_harmonized) AS x) AS assignees,
+          ARRAY(SELECT DISTINCT c.code FROM UNNEST(p.cpc)                 AS c) AS cpc_codes
+        FROM `patents-public-data.patents.publications` AS p
+        WHERE EXISTS (
+                SELECT 1 FROM UNNEST(p.title_localized) AS t
+                WHERE t.language = 'en'
+                  AND REGEXP_CONTAINS(UPPER(t.text),
+                        r'GUCY2C|CDH17|GUANYLYL CYCLASE|GUANYLATE CYCLASE|CADHERIN[ -]?17|LI[ -]?CADHERIN')
+              )
+           OR EXISTS (
+                SELECT 1 FROM UNNEST(p.abstract_localized) AS a
+                WHERE a.language = 'en'
+                  AND REGEXP_CONTAINS(UPPER(a.text),
+                        r'GUCY2C|CDH17|CADHERIN[ -]?17|LI[ -]?CADHERIN')
+              )
+      output:
+        rows: cart_binder_patents.jsonl
+        sql: cart_binder_patents_query.sql

@@ -27,12 +27,12 @@ last_verified: 2026-08-20
 # =========================================================
 # Part 0 — 输入档案与连接关系
 # =========================================================
-# 全部为 2026-08-20 实测，档案存于 data/raw/dotad/v2.0/
+# 全部为 2026-08-20 实测，档案存于 data/raw/dotad/20260824/v2.0/
 
 source_datasets:
 
   metadata:
-    file: data/raw/dotad/v2.0/dotad_antibody_metadata_sequences_v2.0.xlsx
+    file: data/raw/dotad/20260824/v2.0/dotad_antibody_metadata_sequences_v2.0.xlsx
     sheet: metadata
     header_row: 1
     record_key: [antibody_id]
@@ -40,7 +40,7 @@ source_datasets:
     observed_unique_id: 4100
 
   sequences:
-    file: data/raw/dotad/v2.0/dotad_antibody_metadata_sequences_v2.0.xlsx
+    file: data/raw/dotad/20260824/v2.0/dotad_antibody_metadata_sequences_v2.0.xlsx
     sheet: sequences
     header_row: 1
     record_key: [antibody_id]
@@ -55,7 +55,7 @@ source_datasets:
         无 Target 的记录不得只凭序列相似性推断靶点，target_antigen 留 null。
 
   experimental:
-    file: data/raw/dotad/v2.0/dotad_experimental_developability_v2.0.xlsx
+    file: data/raw/dotad/20260824/v2.0/dotad_experimental_developability_v2.0.xlsx
     sheets: ['Assay Data - average ', 'Assay Data - average （2）', 'Assay Data - average（3）',
              'Assay Data - tidy format', 'Assay Data - tidy format(2)', 'Assay Data - tidy format（3）']
     record_key: [antibody_id]
@@ -65,13 +65,13 @@ source_datasets:
       两者都灌会造成同一测量重复计数。
 
   literature:
-    file: data/raw/dotad/v2.0/dotad_literature_developability_collection_v2.0.xlsx
+    file: data/raw/dotad/20260824/v2.0/dotad_literature_developability_collection_v2.0.xlsx
     sheets: 30 个分页，每分页 = 一篇文献的抽取结果
     record_key: [antibody_id]
     index_sheet: link          # 30 列 × 3 栏：name / PMID / address，用于组装 citation
 
   data_dictionary:
-    file: data/raw/dotad/v2.0/dotad_data_dictionary_v2.0.xlsx
+    file: data/raw/dotad/20260824/v2.0/dotad_data_dictionary_v2.0.xlsx
     note: |
       不入库，但 parser 必须读：
       [Field Dictionary] 461 列 × 17 栏，逐字段给 unit / lower_bound / upper_bound /

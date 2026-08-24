@@ -125,3 +125,50 @@ notes: >
   且额外提供全文与 OA 标记，功能上覆盖 PubMed。
   => 建议 PubMed 不单独接入，避免重复。OpenAlex 的价值在引用网络与机构消歧，
   与本源不重叠，另行评估。
+
+# ---------------------------------------------------------------------------
+# 可执行下载配置 —— src/cart_db/downloaders 读的就是这一块。
+# 上面的散文是给人看的；代码只认这里的键。
+# ---------------------------------------------------------------------------
+下载配置:
+  downloader: europe_pmc
+  source_dir: europe_pmc
+  http:
+    rate_limit_rps: 5          # EBI 未公布硬限速，自行克制
+    timeout_s: 60
+    read_timeout_s: 300
+
+  routes:
+    # C 库主力语料。工艺与靶点无关，
+    # 所以按工艺关键词检索，而不是按 GUCY2C/CDH17 检索。
+    # 检索式里的 MOI / vector copy number / multiplicity of infection
+    # 正是 EMA EPAR 与 FDA SBRA 都拿不到的那几个定量字段。
+    - route_id: process_corpus
+      search_endpoint: https://www.ebi.ac.uk/europepmc/webservices/rest/search
+      query: >-
+        ("CAR-T" OR "chimeric antigen receptor")
+        AND (MOI OR "vector copy number" OR "multiplicity of infection")
+        AND OPEN_ACCESS:y
+      result_type: core        # lite 不给 license / inEPMC，抽取用途必须 core
+      page_size: 100
+      max_records: 2210        # 2026-08-21 实测 hitCount；上游 rolling，会变
+      # 正确形态是 /{pmcid}/fullTextXML；/PMC/{pmcid}/fullTextXML 实测 404
+      fulltext_endpoint: https://www.ebi.ac.uk/europepmc/webservices/rest/{pmcid}/fullTextXML
+      output:
+        search_results: search_process_corpus.json
+        fulltext_dir: fulltext
+
+    # 靶点侧语料。工艺用不上，留给 A/B 库与靶点背景调研。
+    - route_id: target_corpus
+      search_endpoint: https://www.ebi.ac.uk/europepmc/webservices/rest/search
+      query: >-
+        ("GUCY2C" OR "CDH17")
+        AND ("CAR-T" OR "chimeric antigen receptor")
+        AND OPEN_ACCESS:y
+      result_type: core
+      page_size: 100
+      max_records: 276         # 2026-08-21 实测
+      fulltext_endpoint: https://www.ebi.ac.uk/europepmc/webservices/rest/{pmcid}/fullTextXML
+      output:
+        search_results: search_target_corpus.json
+        fulltext_dir: fulltext_target

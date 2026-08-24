@@ -9,3 +9,5 @@ lxml>=5.2
 pypdf>=4.2
 tenacity>=8.3
 rich>=13.7
+pyyaml>=6.0                  # downloaders 读 SourceRegistry/*.yaml 的「下载配置」块
+google-cloud-bigquery>=3.25  # 仅 google_patents downloader 需要；另需 GCP 服务账号凭证

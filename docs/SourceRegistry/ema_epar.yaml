@@ -44,7 +44,7 @@ source_url: https://www.ema.europa.eu/en/medicines
           assessment-report 7、overview 7、orphan-maintenance-report-post 6、rmp 5、rmp-summary 2
         => 每个 CAR-T 产品都有且只有 1 份 assessment-report，那是工艺内容的载体。
     (2) 文档层（PDF）：下载 Carvykti EPAR public assessment report
-        （carvykti-epar-public-assessment-report_en.pdf，5,574,046 bytes，146 页）
+        （data/raw/ema_epar/20260821/assessment_reports/carvykti_assessment-report.pdf，5,574,046 bytes，146 页）
         全文检索确认下列工艺内容真实存在（括号内为命中次数）：
           "2.4.3.2. Manufacture of the product and process controls"（章节标题）
           leukapheresis — "autologous PBMCs are obtained from the patients by leukapheresis"
@@ -120,3 +120,39 @@ notes: >
   必须强制 HTTP/1.1（curl --http1.1）才能拿到完整的 29.1 MB。
 
   【授权】EMA 版权与有限复制声明，需署名，第三方内容除外。本项目非商用，无障碍。
+
+# ---------------------------------------------------------------------------
+# 可执行下载配置 —— src/cart_db/downloaders 读的就是这一块。
+# ---------------------------------------------------------------------------
+下载配置:
+  downloader: ema_epar
+  source_dir: ema_epar
+  http:
+    timeout_s: 60
+    read_timeout_s: 600        # 清单 JSON 有 29 MB
+    # 不设 user_agent：ema.europa.eu 不挑 UA，用默认的项目标识即可。
+    # HTTP/2 断流的坑由 base.Fetcher 固定 http2=False 处理，此处无需配置。
+
+  routes:
+    - route_id: assessment_reports
+      manifest_endpoint: https://www.ema.europa.eu/en/documents/report/documents-output-epar_documents_json-report_en.json
+      filter:
+        medicine_name_in: [Kymriah, Yescarta, Tecartus, Abecma, Breyanzi, Carvykti, Aucatzyl]
+        type_in: [assessment-report]
+      expected_records: 7      # 每个产品有且只有 1 份 assessment-report（2026-08-20 实测）
+      output:
+        manifest: epar_documents_all.json
+        subset: epar_documents_CART_assessment_reports.json
+        pdf_dir: assessment_reports
+
+    # 变更类文档里也可能有工艺变更信息。第一轮不跑，跑通 7 份再说。
+    - route_id: variation_reports
+      manifest_endpoint: https://www.ema.europa.eu/en/documents/report/documents-output-epar_documents_json-report_en.json
+      filter:
+        medicine_name_in: [Kymriah, Yescarta, Tecartus, Abecma, Breyanzi, Carvykti, Aucatzyl]
+        type_in: [variation-report]
+      expected_records: 19
+      output:
+        manifest: epar_documents_all.json
+        subset: epar_documents_CART_variation_reports.json
+        pdf_dir: variation_reports
