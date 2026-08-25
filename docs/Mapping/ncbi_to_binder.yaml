@@ -8,7 +8,7 @@
 mapping_id: ncbi_to_binder
 source_name: NCBI E-utilities (Protein / Nucleotide)
 route_id: eutils_protein
-target_schema: sql/03_binder.sql → binder.binder（仅作参考数据，不产生行）
+target_schema: sql/03_binder.sql → binder.binder + binder.binder_evidence（仅作参考数据，不产生行）
 source_format: genpept_record + json
 record_grain: 一条 NCBI Protein 记录（一个蛋白登录号）
 
@@ -116,7 +116,7 @@ source_field_inventory:
       靶抗原的参考序列。用途：
       (a) 与 binder 的复合物结构比对，定位表位
       (b) 跨物种序列比对，判断 binder 是否可能跨物种结合
-      【注意】(b) 只能给出「可能性」，不能直接填 binder.binder.species_reactivity——
+      【注意】(b) 只能给出「可能性」，不能直接填 binder.binder_evidence.species_reactivity——
       那一列的值必须来自实测证据。见 Part 3 R2。
 
   - source: [FEATURES, REFERENCE, COMMENT]
@@ -162,7 +162,7 @@ risks:
       若阶段四「靶点发现与优先级」要做，迟早需要一张靶点表，届时并入。
   - id: R2
     desc: |
-      最容易犯的错：用 NCBI 的跨物种序列相似度直接填 binder.binder.species_reactivity。
+      最容易犯的错：用 NCBI 的跨物种序列相似度直接填 binder.binder_evidence.species_reactivity。
       序列同源只说明「抗原在该物种存在且相似」，不等于「该 binder 结合该物种抗原」。
       species_reactivity 必须来自实测（SAbDab2 的 antigen_species 是单点观察，
       文献的交叉反应性实验才是真证据）。

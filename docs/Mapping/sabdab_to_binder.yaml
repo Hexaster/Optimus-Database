@@ -1,20 +1,14 @@
 # =========================
-# Mapping: SAbDab2 -> binder.binder
+# Mapping: SAbDab2 -> binder.binder + binder.binder_evidence
 # =========================
 # 只回答一件事：SAbDab2 的字段如何变成数据库字段。
 # 不描述如何获取数据（见 docs/SourceRegistry/sabdab.yaml），
 # 不描述目标库结构、类型、约束（见 sql/03_binder.sql）。
-#
-# 【目标 schema 变更（2026-08-20）】
-# 本档原先映射到 docs/Schema/Schema_A.yaml 的 binder + binder_evidence 两表。
-# 现改以 sql/03_binder.sql 的 binder.binder 单表为准（业务侧 2026-08-20 确认）。
-# 差异：单表已把实体与证据合并，故不再有 parent / 外键；
-# 列名亦不同（vh_sequence→vh_seq、kd→kd_nm、tm→tm_celsius、germline_origin→germline）。
 
 mapping_id: sabdab2_to_binder
 source_name: SAbDab2
 route_id: [all_summary, structures]
-target_schema: sql/03_binder.sql → binder.binder
+target_schema: sql/03_binder.sql → binder.binder + binder.binder_evidence
 source_format: csv_row + mmcif_record
 record_grain: 一条 SAbDab2 antibody instance（某 PDB 条目中的一组 H/L 配对或单域链）
 
@@ -35,14 +29,14 @@ source_field_inventory:
   - source: INSTANCE
     example: pdb_00008gho-H-L
     description: 实例 ID，格式 <PDB>-<Hchain>-<Lchain>；每列唯一
-    target: binder.binder.source_id
+    target: binder.binder_evidence.source_id
   - source: PDB
     example: pdb_00008gho
     target: binder.binder.structure_template
   - source: SABDAB_ID
     example: sabdab2_H03VYL030Q
     description: SAbDab2 内部抗体 ID；同一抗体的多个 PDB 实例共用
-    target: binder.binder.name_code
+    target: binder.binder.name
     note: 非抗体名称，只是内部 ID。真名待 Thera-SAbDab / DOTAD 回填
   - source: [HEAVY_ID, LIGHT_ID, Hchain, Lchain, model]
     target: null
@@ -56,7 +50,7 @@ source_field_inventory:
     rule: 去除 " peptide" / " ECD" 等构建体后缀后归一化；'NA' 视为 data_absent
   - source: antigen_type
     example: PROTEIN | PEPTIDE
-    target: binder.binder.epitope_kind
+    target: binder.binder_evidence.epitope
     method: derived
     value_map: {PEPTIDE: 线性, PROTEIN: 构象, NA: 未知}
     note: |
@@ -69,7 +63,7 @@ source_field_inventory:
     rule: PDB + ":" + antigen_chain；antigen_chain 为 NA 时该实例无抗原，填 null
   - source: antigen_species
     example: homo sapiens
-    target: binder.binder.species_reactivity
+    target: binder.binder_evidence.species_reactivity
     method: derived
     rule: 只说明「本结构里结合的抗原来自哪个物种」，不是跨物种反应性谱
   - source: agtaxid
@@ -78,33 +72,30 @@ source_field_inventory:
   # ---- 结构与实验条件 ----
   - source: method
     example: XRAY
-    target: binder.binder.experiment_conditions
+    target: binder.binder_evidence.experimental_conditions
     method: derived
     rule: 与 resolution / r_free / r_factor 合成一句，如 "XRAY, 1.6 Å, Rfree 0.21"
   - source: [resolution, r_free, r_factor]
     example: '1.6'
-    target: binder.binder.experiment_conditions
+    target: binder.binder_evidence.experimental_conditions
     method: derived
   - source: type
     example: FV
-    target: binder.binder.format
-    method: derived
-    value_map: {Fab: Fab, VHH: VHH, scFv: scFv, FV: 其他}
+    target: null
+    method: not_mapped
     note: |
       实测 8GHO/8GHP 的 type 均为 "FV"，而 compound 明写 "anti-GUCY2C-scFv antibody"。
-      => type 栏不足以判定 format，FV 只能落到 其他。
-      若要拿到真正的 scFv/IgG 判定，须解析 compound 文本或看 mmCIF 实体数。
-    rule_ref: derive_binder_format
+      => type 栏可供来源审计，但最新 binder schema 不再存储 format，故不入库。
   - source: [short_header, compound]
     example: GUCY2C-ECD bound to anti-GUCY2C-scFv antibody
-    target: binder.binder.citation
+    target: binder.binder_evidence.citation
     method: derived
     note: compound 同时是 format 判定的输入，见上
 
   # ---- 物种与表达 ----
   - source: [heavy_species, light_species]
     example: homo sapiens
-    target: binder.binder.germline
+    target: binder.binder.germline_origin
     method: derived
     rule: 只记来源物种。不得据此填 humanization——物种 ≠ 人源化程度
   - source: [organism, organism_taxid, heavy_taxid, light_taxid,
@@ -132,14 +123,14 @@ source_field_inventory:
   # ---- 日期与作者 ----
   - source: [date, SABDABdepo_date, SABDABupdate_date]
     example: 2023/03/10
-    target: binder.binder.citation
+    target: binder.binder_evidence.citation
     method: derived
     note: |
       date 为结构发表日，用于组装 citation。源格式 YYYY/MM/DD，需转 ISO。
       切勿填 entry_date —— 那是我方录入日，由 DEFAULT current_date 管理。
   - source: authors
     example: Mosyak, L.
-    target: binder.binder.citation
+    target: binder.binder_evidence.citation
     method: derived
 
   # ---- 构象共享 ----
@@ -156,57 +147,42 @@ source_field_inventory:
 unmapped_target_columns:
 
   not_available_in_all_summary:
-    - vh_seq            # summary 无任何氨基酸序列；改由 structures route 取，见 Part 4
-    - vl_seq
-    - scfv_seq
+    - vh_sequence            # summary 无任何氨基酸序列；改由 structures route 取，见 Part 4
+    - vl_sequence
+    - scfv_sequence
   not_available_at_all:
     - linker            # 须从结构或原文抽取
-    - cdr_h1            # SAbDab2 支援 CDR 检索（/api/sequence-similarity-search 的 region 参数
-    - cdr_h2            #   支援 CDRH1/H2/H3、CDRL1/L2/L3、Framework），但 summary 不输出区域序列
-    - cdr_h3
-    - cdr_l1
-    - cdr_l2
-    - cdr_l3
+    - fr_cdr_regions     # API 支援 CDR/Framework 检索，但 summary 不输出区域序列
     - cdr_lengths
     - vdj_genes         # 见 Part 1 的 heavy_subclass 说明
     - somatic_mutations
-    - numbering         # summary 本身未编号。若我方自行对结构序列编号，
+    - numbering_scheme         # summary 本身未编号。若我方自行对结构序列编号，
                         # 该值由我方 pipeline 决定而非由 source 决定，不得写死 constant IMGT
-    - humanization
+    - humanization_level
     - glycosylation_sites
-    - free_cysteine
-    - kd_nm             # 当前 45 栏不含 affinity / delta_g / affinity_method / temperature
-    - kon_m1s1          #   （旧版 SAbDab 有，v2.0.10 已移除）
-    - koff_s1
-    - measure_method
-    - measure_condition
-    - tm_celsius
+    - free_cysteines
+    - kd             # 当前 45 栏不含 affinity / delta_g / affinity_method / temperature
+    - kon          #   （旧版 SAbDab 有，v2.0.10 已移除）
+    - koff
+    - measurement_method
+    - measurement_conditions
+    - tm
     - viscosity
-    - aggregation
+    - aggregation_tendency
     - solubility
     - hydrophobicity
-    - net_charge
-    - immunogenicity_risk
-    - cross_reactivity
-    - development_stage
-    - patent_status
-    - in_vitro_readout
-    - prediction_confidence
+    - charge
+    - immunogenicity_ada_risk
+    - cross_reactivity_protein
+    - cross_reactivity_cell
   epitope_gap:
-    columns: [epitope_position, binding_site]
+    columns: [binding_site]
     note: |
-      antigen_chain / antigen_name 只说明「结合了哪条抗原链」，不是表位，不得挪用。
-      表位需从 mmCIF 计算接触残基后 derived，属 structures route 的延伸工作，本轮未做。
+      当前 epitope 仅由 antigen_type 作粗粒度推断；精确表位与 binding_site
+      需从 mmCIF 计算接触残基后 derived，属 structures route 的延伸工作，本轮未做。
   platform_managed:
-    - uid               # 由实体归一化键生成，见 entity_key
     - version
     - entry_date        # DEFAULT current_date
-    - source_weight     # GENERATED ALWAYS AS core.weight_of(evidence_level)
-    - batch_id
-    - registry_id
-    - merged_into
-    - created_at
-    - updated_at
 
 
 # =========================================================
@@ -220,93 +196,37 @@ targets:
     iterate_over:
 
     # 实体归一化键：同一 SABDAB_ID 的多个 PDB 实例视为同一 binder。
-    # uid 由此键生成；不同实例先各自入库，
-    # 再由 core.merge_log 按 rule 归并（保留原记录，写 merged_into）。
     entity_key: [SABDAB_ID]
 
     fields:
+      - {target: binder_id, method: platform}
+      - {target: name, source: SABDAB_ID, method: direct}
+      - {target: target_antigen, source: antigen_name, method: derived, rule_ref: normalize_antigen_name}
+      - {target: complex_structure, source: [PDB, antigen_chain], method: derived}
+      - {target: structure_template, source: PDB, method: direct}
+      - {target: germline_origin, source: [heavy_species, light_species], method: derived}
 
-      - target: source_type
-        method: constant
-        value: 公开库
-        note: core.source_type 枚举取值之一
-
-      - target: evidence_level
-        method: constant
-        value: 同行评议
-        note: |
-          【业务侧 2026-08-20 决定：按源定固定值】
-          理由：SAbDab2 收录的是 RCSB PDB 的实验解析结构，每条结构都对应一篇
-          经同行评议的发表（本档已把 authors/date 组装进 citation）。
-          core.evidence_level 四个取值里，「同行评议」是唯一贴合的一档
-          （「内部实验」属我方湿实验，「专利预印本」「模型预测」均不符）。
-          注意 core.weight_of('同行评议') = 0.7，
-          与 CLAUDE.md 权重(1) 阶梯（文献 0.4）不是同一套分级——以 sql 为准。
-
-      - target: source_id
-        source: INSTANCE
-        method: direct
-        required: true
-
-      - target: name_code
-        source: SABDAB_ID
-        method: direct
-
-      - target: citation
-        source: [authors, compound, date, PDB]
-        method: derived
-        rule: '"{authors} ({date:%Y}). {compound}. PDB {PDB}."'
-
-      - target: experiment_conditions
-        source: [method, resolution, r_free, r_factor]
-        method: derived
-        rule: '"{method}, {resolution} Å, Rfree {r_free}, Rfactor {r_factor}"；NA 项省略'
-
-      - target: contrary_evidence
-        method: constant
-        value: null
-        note: 结构数据库不带相反证据标记；该列在 sql 中为 text 而非 boolean，留空
-
-      - target: target_antigen
-        source: antigen_name
-        method: derived
-        rule_ref: normalize_antigen_name
-        note: "'NA' → null，原因记 data_absent"
-
-      - target: epitope_kind
-        source: antigen_type
-        method: derived
-        value_map: {PEPTIDE: 线性, PROTEIN: 构象, NA: 未知}
-        note: 推断值，见 Part 1 的告警与 Part 6 R2
-
-      - target: complex_structure
-        source: [PDB, antigen_chain]
-        method: derived
-        rule: 'antigen_chain 非 NA 时填 "{PDB}:{antigen_chain}"，否则 null'
-
-      - target: structure_template
-        source: PDB
-        method: direct
-
-      - target: germline
-        source: [heavy_species, light_species]
-        method: derived
-        rule: 两者相同则取其一，不同则填 "H:{heavy_species}/L:{light_species}"
-
+  - table: binder.binder_evidence
+    record_per_source: one
+    entity_key: [SABDAB_ID, INSTANCE]
+    fields:
+      - {target: evidence_id, method: platform}
+      - {target: binder_id, method: parent, references: binder.binder_id}
+      - {target: source_type, method: constant, value: public_database}
+      - {target: source_id, source: INSTANCE, method: direct, required: true}
+      - {target: evidence_level, method: constant, value: 同行评议}
+      - {target: citation, source: [authors, compound, date, PDB], method: derived}
+      - {target: experimental_conditions, source: [method, resolution, r_free, r_factor], method: derived}
+      - {target: contrary_evidence, method: constant, value: false}
+      - {target: epitope, source: antigen_type, method: derived, value_map: {PEPTIDE: 线性, PROTEIN: 构象, NA: 未知}}
       - target: species_reactivity
         source: antigen_species
         method: derived
-        note: 单点观察，非反应性谱；'NA' → null
-
-      - target: format
-        source: [type, compound]
-        method: derived
-        rule_ref: derive_binder_format
-        value_map: {Fab: Fab, VHH: VHH, scFv: scFv, FV: 其他}
+        rule: '写为 JSON 单点观察，例如 {"observed_antigen_species": "homo sapiens"}'
 
 
 # =========================================================
-# Part 4 — structures route（补 vh_seq / vl_seq）
+# Part 4 — structures route（补 vh_sequence / vl_sequence）
 # =========================================================
 # summary 无序列，序列只能走这条 route。
 # 实测样本：data/raw/sabdab/20260824/gucy2c_structures.tgz
@@ -328,14 +248,23 @@ structures_route:
       record_per_source: one
       entity_key: [SABDAB_ID]
       fields:
-        - target: vh_seq
+        - target: vh_sequence
           source: entity_poly.pdbx_seq_one_letter_code
           method: derived
           rule: 取 Hchain 所属 entity 的一字母序列，去除换行与转义
-        - target: vl_seq
+        - target: vl_sequence
           source: entity_poly.pdbx_seq_one_letter_code
           method: derived
           rule: 取 Lchain 所属 entity 的一字母序列
+    - table: binder.binder_evidence
+      record_per_source: one
+      entity_key: [SABDAB_ID, PDB]
+      fields:
+        - {target: evidence_id, method: platform}
+        - {target: binder_id, method: parent, references: binder.binder_id}
+        - {target: source_type, method: constant, value: public_database}
+        - {target: source_id, source: PDB, method: direct, required: true}
+        - {target: evidence_level, method: constant, value: 同行评议}
         - target: citation
           source: [citation.journal_abbrev, citation.title, citation.year,
                    citation.pdbx_database_id_DOI, citation.pdbx_database_id_PubMed]
@@ -355,12 +284,6 @@ rule_refs:
     description: 去除 " peptide" / " ECD" / " ectodomain" 等构建体后缀，保留抗原本名
     example: '"Guanylyl cyclase C peptide" → "Guanylyl cyclase C"'
     note: 本项目靶点 GCC/GUCY2C 与 CDH17 的别名表另行维护，不在本档
-  derive_binder_format:
-    description: 由 type 与 compound 文本共同判定 binder.binder_format
-    priority: compound 文本中的显式 format 词 > type 栏
-    fallback: 其他
-
-
 # =========================================================
 # Part 6 — 已知风险
 # =========================================================
@@ -370,7 +293,7 @@ risks:
       21,914 条 instance 只对应 6,780 个 SAbDab2_entries。
       按 entity_key=[SABDAB_ID] 归一化后，同一 binder 会有多条来源记录
       （不同 PDB、不同分辨率、不同抗原构建体）。
-      单表结构下这些会成为多行，必须靠 core.merge_log 归并，否则 A 库会虚胖约 3 倍。
+      最新两表结构下，同一 binder 只保留一条实体，不同 PDB 实例作为多条 evidence 关联。
   - id: R2
     desc: |
       epitope_kind 由 antigen_type 推断而来，是本档唯一「推断而非实测」的字段。
@@ -378,6 +301,6 @@ risks:
       建议届时改填 未知。
   - id: R3
     desc: |
-      本源无任何亲和力数据（kd_nm / kon_m1s1 / koff_s1 全空）。
+      本源无任何亲和力数据（kd / kon / koff 全空）。
       A 库若只灌 SAbDab2，推荐算法拿不到亲和力特征。
       亲和力须由 DOTAD 2.0（Adams / Jain 分页）与文献源补齐。

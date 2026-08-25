@@ -58,7 +58,7 @@ CREATE INDEX IF NOT EXISTS patent_selected_idx ON patent.patent (selected);
 -- 抽取证据：每条结构化数据回溯到源文档的具体位置（Day14 可追溯性检查依赖这张表）
 CREATE TABLE IF NOT EXISTS core.evidence (
   id             bigserial PRIMARY KEY,
-  entity_kind    text NOT NULL,        -- binder / car_module / car_construct / process
+  entity_kind    text NOT NULL,        -- binder / car / manufacturing
   entity_uid     text NOT NULL,
   field_name     text NOT NULL,        -- 该证据支撑的字段
   doc_kind       text NOT NULL,        -- lit / patent

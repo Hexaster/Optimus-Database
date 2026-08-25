@@ -21,9 +21,9 @@ instance_id: uspto_US9156915B2_to_abc
 source_name: Google Patents
 route_id: [bigquery_structured, pdf_fulltext]
 target_schema:
-  - sql/03_binder.sql  → binder.binder
-  - sql/04_car.sql     → car.module / car.construct
-  - sql/05_process.sql → process.process
+  - sql/03_binder.sql  → binder.binder + binder.binder_evidence
+  - sql/04_car.sql     → car.car + car.car_evidence
+  - sql/05_process.sql → manufacturing.manufacturing + manufacturing.manufacturing_evidence
 source_format: pdf（全文）+ bigquery_table（结构字段）
 record_grain: 一件授权专利（US 9,156,915 B2）
 
@@ -134,24 +134,25 @@ raw_evidence:
 # 按 Binder 字段规范 47 栏逐栏对齐。
 # ★本源在 A 库是 S 级正样本：VH/VL 全序列 + 专利状态齐全，且靶点 GCC 正是本项目靶点。
 targets_binder:
-  - table: binder.binder
+  - tables: [binder.binder, binder.binder_evidence]
+    field_routing: "entity fields -> binder.binder; source/measurement fields -> binder.binder_evidence; IDs linked by binder_id"
     record_per_source: two              # MS7 与 MS20 各一行
-    entity_key: [name_code, target_antigen]
+    entity_key: [name, target_antigen]
     records:
-      - {name_code: MS7,  vh: 'SEQ ID NO:1', vl: 'SEQ ID NO:2', isotype: IgG1κ}
-      - {name_code: MS20, vh: 'SEQ ID NO:3', vl: 'SEQ ID NO:4', isotype: IgG2aκ}
+      - {name: MS7,  vh: 'SEQ ID NO:1', vl: 'SEQ ID NO:2', isotype: IgG1κ}
+      - {name: MS20, vh: 'SEQ ID NO:3', vl: 'SEQ ID NO:4', isotype: IgG2aκ}
 
     # ===== 公共元数据 11 栏 =====
     metadata_fields:
-      - {target: uid, method: platform}
-      - {target: name_code, method: derived, value: 'MS7 / MS20', note: ★不得把被排除的 B10/4D7/C8 并入本栏，见档头更正 1}
-      - {target: source_type, method: constant, value: 专利}
+      - {platform_primary_key: true, method: platform}
+      - {target: name, method: derived, value: 'MS7 / MS20', note: ★不得把被排除的 B10/4D7/C8 并入本栏，见档头更正 1}
+      - {target: source_type, method: constant, value: patent}
       - {target: source_id, method: constant, value: US9156915B2, note: 规范要求"专利号"}
-      - target: experiment_conditions
+      - target: experimental_conditions
         method: constant
         value: null
         note: ★专利不披露实验条件（无 SPR/BLI/流式条件）；不适用而非漏抽
-      - {target: evidence_level, method: constant, value: 专利预印本, note: 'core.weight_of = 0.4；★即便是授权专利也不升级为 同行评议'}
+      - {target: evidence_level, method: constant, value: 专利预印本, note: 'evidence_level 以文本保存；★即便是授权专利也不升级为 同行评议'}
       - target: version
         method: derived
         value: 'B2（授权公告本）；另有 A1 申请公开本 US 2013/0315923'
@@ -166,62 +167,62 @@ targets_binder:
 
     # ===== 序列 4 栏 =====
     sequence_fields:
-      - target: vh_seq
+      - target: vh_sequence
         method: direct
         source: ['SEQ ID NO:1（MS7）', 'SEQ ID NO:3（MS20）']
         note: ★PDF 文本层有 OCR 混淆（Q↔O、V↔W），入库前须以官方 SEQ 列表或 BQ 序列数据集校核，见 R3
-      - {target: vl_seq, method: direct, source: ['SEQ ID NO:2（MS7）', 'SEQ ID NO:4（MS20）']}
-      - target: scfv_seq
+      - {target: vl_sequence, method: direct, source: ['SEQ ID NO:2（MS7）', 'SEQ ID NO:4（MS20）']}
+      - target: scfv_sequence
         method: constant
         value: null
         note: |
           ★claim 14 覆盖 scFv 实施形态，但说明书未给 scFv 全序列，也未给 VH/VL 朝向。
           由 VH/VL 拼接 scFv 属我方构造，不是来源数据，不得填入本栏。
       - {target: linker, method: constant, value: null, note: 未给 linker 序列}
-      - {target: format, method: constant, value: IgG, note: 'MS7/MS20 本体是完整单抗（IgG1κ / IgG2aκ）；claim 14 另覆盖 scFv 形态但无序列，故不另建行'}
+      - {unmapped_legacy_field: format, method: constant, value: IgG, note: 'MS7/MS20 本体是完整单抗（IgG1κ / IgG2aκ）；claim 14 另覆盖 scFv 形态但无序列，故不另建行'}
 
     # ===== 编号 / 注释 7 栏 =====
     annotation_fields:
-      - target: numbering
+      - target: numbering_scheme
         method: constant
         value: null
         note: ★编号体系由我方 pipeline 决定（跑 ANARCI），不得因专利用某体系描述就写死
-      - target: 'FR 区'
+      - target: 'fr_cdr_regions'
         method: constant
         value: null
-        status: ★schema 无对应列
-        note: 规范列出「FR/CDR 区」，binder.binder 只有 cdr_h1-h3 / cdr_l1-l3，无 FR 列，见 R6
-      - target: [cdr_h1, cdr_h2, cdr_h3, cdr_l1, cdr_l2, cdr_l3, cdr_lengths]
+        status: 待计算
+        note: VH/VL 已到手；跑 ANARCI 后按 JSON 键保存 FR/CDR 区域
+      - target: cdr_lengths
         method: constant
         value: null
         note: ★VH/VL 已到手 → 跑 ANARCI 即可算出，属可执行的下一步而非死缺口
       - {target: vdj_genes, method: constant, value: null, note: 同上，可由序列比对推得}
-      - {target: germline, method: derived, value: 鼠源（BALB/c 杂交瘤）, source_ref: hybridoma_origin}
+      - {target: germline_origin, method: derived, value: 鼠源（BALB/c 杂交瘤）, source_ref: hybridoma_origin}
       - {target: somatic_mutations, method: constant, value: null}
 
     # ===== 靶点 / 表位 4 栏 =====
     target_fields:
       - {target: target_antigen, method: constant, value: 'GCC / GUCY2C（human guanylyl cyclase C）'}
-      - target: epitope_position
+      - target: epitope
         method: constant
         value: null
         note: |
           ★说明书未给 MS7/MS20 的表位残基。见档头更正 1——
           "前 63 aa" 属 GCC:B10、"491-568" 属 GCC:4D7，两者均为被本专利排除的第三方抗体，
           其表位绝不可挪用到本条记录。
-      - {target: epitope_kind, method: constant, value: 未知, note: 原文无线性/构象判定依据}
+      - {target: epitope, method: constant, value: 未知, note: 原文无线性/构象判定依据}
       - {target: binding_site, method: derived, value: 'GCC 胞外域（extracellular domain）；说明书明述不结合 kinase homology 域与 guanylyl cyclase 域', source_ref: [hybridoma_origin, domain_exclusion]}
 
     # ===== 亲和力 5 栏 =====
     affinity_fields:
-      - target: [kd_nm, kon_m1s1, koff_s1, measure_method, measure_condition]
+      - target: [kd, kon, koff, measurement_method, measurement_conditions]
         method: constant
         value: null
         note: ★通篇无数值亲和力、无 SPR/BLI 测定描述——这是专利源的典型缺口（专利给序列，不给数值）
 
     # ===== 特异性 2 栏 =====
     specificity_fields:
-      - target: cross_reactivity
+      - target: cross_reactivity_protein
         method: derived
         value: '蛋白水平：说明书明述与大鼠/小鼠 GCC 无实质交叉反应。细胞水平：未做。'
         note: ★规范要求区分蛋白水平与细胞水平；本件只有蛋白/分子层面陈述，且是"无交叉"的阴性陈述
@@ -229,68 +230,69 @@ targets_binder:
 
     # ===== 成药性 10 栏 =====
     developability_fields:
-      - target: [tm_celsius, viscosity, aggregation, solubility, hydrophobicity,
-                 net_charge, glycosylation_sites, free_cysteine, immunogenicity_risk]
+      - target: [tm, viscosity, aggregation_tendency, solubility, hydrophobicity,
+                 charge, glycosylation_sites, free_cysteines, immunogenicity_ada_risk]
         method: constant
         value: null
         note: 专利不披露成药性表征
-      - target: humanization
+      - target: humanization_level
         method: derived
         value: 未人源化（SEQ ID NO:1-4 为鼠源序列）
         note: ★说明书另述人源化方法，但未给出人源化后的序列，故只记鼠源事实，不得记为"已人源化"
 
     # ===== 结构 3 栏 =====
     structure_fields:
-      - {target: [structure_template, complex_structure, prediction_confidence], method: constant, value: null, note: 无结构数据}
+      - {target: [structure_template, complex_structure], method: constant, value: null, note: 无结构数据}
 
     # ===== 状态 / 功能 3 栏 =====
     status_fields:
-      - {target: development_stage, method: constant, value: 专利申请阶段（无临床阶段标注）}
-      - {target: patent_status, method: constant, value: granted, note: '以 BQ legal_status 为准；★维持费/失效状态需另查实时法律状态，见 R4'}
-      - {target: in_vitro_readout, method: derived, value: 'GCC agonist（说明书"实施方式"表述并引外部文献 US2004/0258687，非本件实测数据）', confidence: 低}
+      - {unmapped_legacy_field: development_stage, method: constant, value: 专利申请阶段（无临床阶段标注）}
+      - {unmapped_legacy_field: patent_status, method: constant, value: granted, note: '以 BQ legal_status 为准；★维持费/失效状态需另查实时法律状态，见 R4'}
+      - {unmapped_legacy_field: in_vitro_readout, method: derived, value: 'GCC agonist（说明书"实施方式"表述并引外部文献 US2004/0258687，非本件实测数据）', confidence: 低}
 
 
 # =========================================================
-# Part 3 — B 库映射（car.module + car.construct）
+# Part 3 — B 库映射（car.car + car.car）
 # =========================================================
 # 按 CAR 结构库字段规范 25 栏逐栏对齐。
 # ★本源在 B 库很弱："纸面 CAR"——claim 17 只限定识别域，25 栏里过半是"权利要求根本没写"。
 targets_car:
-  - table: car.module
+  - analysis_scope: [car.car.modules, car.car_evidence]
+    analysis_only: true
     record_per_source: one              # 只有识别域一个模块
     entity_key: [source_id, module_type, source_molecule]
 
     # ===== 元数据 11 栏 =====
     metadata_fields:
-      - {target: uid, method: platform}
-      - {target: name_code, method: derived, value: 'MS7-识别域@US9156915B2 / MS20-识别域@US9156915B2'}
-      - {target: source_type, method: constant, value: 专利}
+      - {platform_primary_key: true, method: platform}
+      - {target: name, method: derived, value: 'MS7-识别域@US9156915B2 / MS20-识别域@US9156915B2'}
+      - {target: source_type, method: constant, value: patent}
       - {target: source_id, method: constant, value: US9156915B2}
-      - {target: experiment_conditions, method: constant, value: null, note: 专利无实验条件}
+      - {target: experimental_conditions, method: constant, value: null, note: 专利无实验条件}
       - {target: evidence_level, method: constant, value: 专利预印本}
       - {target: version, method: constant, value: 'B2（授权公告本）'}
       - {target: entry_date, method: platform}
       - {target: citation, method: derived, value: 'US 9,156,915 B2, claim 17 与 SEQ ID NO:1-4。'}
       - {target: applicable_scenario, method: derived, value: '为 GCC CAR 提供有法律保护的识别域序列；使用前须做 FTO 分析'}
-      - {target: contrary_evidence, method: constant, value: null}
+      - {target: contrary_evidence, method: constant, value: false}
 
     # ===== 标识 4 栏 =====
     identity_fields:
-      - {target: module_type, method: constant, value: 识别域}
-      - {target: source_molecule, method: derived, value: 'MS7（VH=SEQ1/VL=SEQ2）或 MS20（VH=SEQ3/VL=SEQ4）'}
-      - {target: sequence, method: derived, rule: 取 Part 2 的 vh_seq / vl_seq, note: ★专利源的强项——识别域序列齐全}
-      - {target: length_aa, method: derived, rule: 由序列实算, note: 规范的"长度（残基数）"}
+      - {target: modules, method: constant, value: 识别域}
+      - {target: modules, method: derived, value: 'MS7（VH=SEQ1/VL=SEQ2）或 MS20（VH=SEQ3/VL=SEQ4）'}
+      - {target: modules, method: derived, rule: 取 Part 2 的 vh_sequence / vl_sequence, note: ★专利源的强项——识别域序列齐全}
+      - {target: modules, method: derived, rule: 由序列实算, note: 规范的"长度（残基数）"}
 
     absent_modules:
       note: |
-        ★claim 17 未限定下列任何模块，故本源不产出对应 car.module 行：
+        ★claim 17 未限定下列任何模块，故本源不产出对应 car.car 行：
         信号肽、linker、铰链、跨膜区、共刺激域、CD3ζ、标签、安全开关。
         这是"claimed only"的典型形态——法律上覆盖，技术上无骨架可入库。
 
     # ===== 功能属性 7 栏 =====
     functional_fields:
       - target: [activation_speed, metabolic_state, expansion_capacity,
-                 memory_phenotype, persistence, exhaustion_risk, tonic_signaling]
+                 memory_phenotype, persistence, exhaustion_risk, tonic_signaling_tendency]
         method: constant
         value: null
         status: 权利要求未写
@@ -301,12 +303,12 @@ targets_car:
 
     # ===== 铰链/跨膜几何属性 =====
     geometry_fields:
-      - target: 几何长度
+      - target: geometric_length
         method: constant
         value: null
-        status: ★schema 无对应列 + 本件无铰链/跨膜模块
-        note: 双重缺口：既无列可落，本件也无相关模块
-      - target: [epitope_distance_effect, synapse_effect, tonic_effect]
+        status: 不适用
+        note: 最新 schema 有此列，但本件未披露铰链/跨膜模块或物理长度
+      - target: [epitope_distance_effect, immune_synapse_effect, tonic_signaling_effect]
         method: constant
         value: null
         status: 权利要求未写
@@ -318,7 +320,7 @@ targets_car:
         method: derived
         value: 'claim 17 仅限定「识别域(VH+VL) + 结合人 GCC」；无骨架模块顺序可记'
         note: |
-          ★assembly_rules 是 car.module 的列（04_car.sql 第 39 行），非 car.construct 的列。
+          ★assembly_rules 是 car.car 的列（04_car.sql 第 39 行），非 car.car 的列。
           本件此栏的内容实质是"限定范围声明"而非真正的装配顺序。
       - target: compatible_modules
         method: constant
@@ -328,36 +330,38 @@ targets_car:
           但那是权利范围而非技术验证，绝不可填入 compatible_modules（会被下游误读为已验证兼容）。
       - {target: incompatible_modules, method: constant, value: null}
 
-  - table: car.construct
-    record_per_source: two              # MS7-CAR / MS20-CAR（claim 17 的 a) 与 b) 两支）
-    caveat: 是否为"纸面 CAR"建 construct 行由业务侧定，见 R2
-    fields:
-      - {target: name_code, method: derived, value: 'US9156915B2-CAR-MS7 / US9156915B2-CAR-MS20'}
-      - {target: source_type, method: constant, value: 专利}
+  - tables: [car.car, car.car_evidence]
+    field_routing: "name/modules/version/entry_date -> car.car; source/performance/constraint fields -> car.car_evidence; IDs linked by car_id"
+    record_per_source: zero
+    decision: 不建行
+    caveat: claim 17 只给 binder、未给任何合法 backbone module；modules 为 NOT NULL，故最新 schema 下不能建占位 CAR
+    legacy_placeholder_fields:
+      - {target: name, method: derived, value: 'US9156915B2-CAR-MS7 / US9156915B2-CAR-MS20'}
+      - {target: source_type, method: constant, value: patent}
       - {target: source_id, method: constant, value: US9156915B2}
       - {target: evidence_level, method: constant, value: 专利预印本}
-      - {target: experiment_conditions, method: constant, value: null}
+      - {target: experimental_conditions, method: constant, value: null}
       - {target: version, method: constant, value: 'B2（授权公告本）'}
       - {target: entry_date, method: platform}
       - {target: citation, method: derived, value: 'US 9,156,915 B2, claim 17。'}
       - {target: applicable_scenario, method: derived, value: 'FTO / 专利布局分析用；不具备可实施的构建体信息'}
-      - {target: contrary_evidence, method: constant, value: null}
-      - {target: binder_uid, method: derived, rule: 指向 Part 2 的 MS7 / MS20 binder 实体}
-      - {target: scfv_module_uid, method: derived, rule: 指向识别域模块}
-      - target: [linker_module_uid, hinge_module_uid, tm_module_uid,
+      - {target: contrary_evidence, method: constant, value: false}
+      - {unmapped_legacy_field: binder_uid, method: derived, rule: 指向 Part 2 的 MS7 / MS20 binder 实体}
+      - {target: modules, method: constant, value: null, note: 识别域不属于最新 car.car.modules，无法满足 NOT NULL}
+      - unmapped_legacy_fields: [linker_module_uid, hinge_module_uid, tm_module_uid,
                  costim_module_uid, cd3z_module_uid]
         method: constant
         value: null
-        note: ★car.construct 共 6 个模块外键，本条 5 个悬空——只有识别域槽位有值
-      - {target: full_sequence, method: constant, value: null}
-      - {target: vector_backbone, method: constant, value: null}
-      - {target: logic, method: constant, value: 无}
-      - {target: validated_function, method: constant, value: null, note: 无任何 CAR 层面功能验证数据}
-      - {target: risk_tags, method: derived, value: '["paper_car_claimed_only", "no_backbone_modules", "no_functional_data"]'}
+        note: ★car.car 共 6 个模块外键，本条 5 个悬空——只有识别域槽位有值
+      - {unmapped_legacy_field: full_sequence, method: constant, value: null}
+      - {unmapped_legacy_field: vector_backbone, method: constant, value: null}
+      - {unmapped_legacy_field: logic, method: constant, value: 无}
+      - {unmapped_legacy_field: validated_function, method: constant, value: null, note: 无任何 CAR 层面功能验证数据}
+      - {unmapped_legacy_field: risk_tags, method: derived, value: '["paper_car_claimed_only", "no_backbone_modules", "no_functional_data"]'}
 
 
 # =========================================================
-# Part 4 — C 库映射（process.process）
+# Part 4 — C 库映射（manufacturing.manufacturing）
 # =========================================================
 # 按制造工艺字段规范逐栏对齐——逐栏核对的结果是：全部为空。
 targets_process:
@@ -367,29 +371,29 @@ targets_process:
     元数据11栏: '若建行则可填 source_type/source_id/evidence_level/citation 等，但业务列全空，元数据齐全无意义'
     t_cell_source: null
     cd4_cd8_ratio: null
-    starting_quality: null
+    starting_cell_quality: null
     activation_method: null
-    activation_reagents: null
+    reagents: null
     vector: null
     moi: null
-    transduction_condition: null
+    transduction_transfection_conditions: null
     culture_system: null
-    cytokines: null
-    culture_days: null
-    cryo_condition: null
+    cytokine_combination: null
+    culture_duration: null
+    cryopreservation_conditions: null
     formulation: null
-    viability_pct: null
-    transduction_efficiency_pct: null
+    cell_viability: null
+    transduction_efficiency: null
     vcn: null
-    cd3_positive_pct: null
+    cd3_positive_ratio: null
     phenotype: null
     sterility: null
     mycoplasma: null
     endotoxin: null
-    cytotoxicity: null
+    killing_activity: null
     cytokine_release: null
     car_construct_uid: '（可指向 Part 3，但无工艺内容可载）'
-    product_name: null
+    corresponding_car_product: null
   reason: |
     实测本件专利 22 个工艺业务列无一有值。C 库产出为 0。
     与 1_数据源登记/GooglePatents.yaml 的"工艺 ≈ 0"结论一致。
@@ -403,18 +407,18 @@ targets_process:
 unmapped_target_columns:
 
   binder_needs_computation:
-    columns: [scfv_seq, linker, cdr_h1, cdr_h2, cdr_h3, cdr_l1, cdr_l2, cdr_l3,
-              cdr_lengths, numbering, vdj_genes, somatic_mutations]
+    columns: [scfv_sequence, linker, fr_cdr_regions,
+              cdr_lengths, numbering_scheme, vdj_genes, somatic_mutations]
     note: |
       VH/VL 已到手 → 跑 ANARCI 编号即可算出 FR/CDR 与 cdr_lengths；
-      属可执行的下一步，不是死缺口。numbering 由我方 pipeline 决定，
+      属可执行的下一步，不是死缺口。numbering_scheme 由我方 pipeline 决定，
       不得因"专利用 Kabat 描述"就写死 Kabat。
 
   binder_not_available_at_all:
-    columns: [kd_nm, kon_m1s1, koff_s1, measure_method, measure_condition,
-              epitope_position, tm_celsius, viscosity, aggregation, solubility,
-              hydrophobicity, net_charge, glycosylation_sites, free_cysteine,
-              immunogenicity_risk, structure_template, complex_structure,
+    columns: [kd, kon, koff, measurement_method, measurement_conditions,
+              epitope, tm, viscosity, aggregation_tendency, solubility,
+              hydrophobicity, charge, glycosylation_sites, free_cysteines,
+              immunogenicity_ada_risk, structure_template, complex_structure,
               prediction_confidence]
     note: 专利不披露数值亲和力、成药性与结构；须由 SAbDab / DOTAD / 文献源补
 
@@ -427,15 +431,8 @@ unmapped_target_columns:
     note: 见 Part 4，本源不产出 process 行
 
   platform_managed:
-    - uid
     - version
     - entry_date
-    - source_weight
-    - batch_id
-    - registry_id
-    - merged_into
-    - created_at
-    - updated_at
 
 
 # =========================================================
@@ -476,11 +473,11 @@ risks:
   - id: R2
     severity: P1
     desc: |
-      "纸面 CAR" 入库口径未定。claim 17 只限定识别域，若为其建 car.construct 行，
+      "纸面 CAR" 入库口径未定。claim 17 只限定识别域，若为其建 car.car 行，
       则该行 5 个模块外键有 4 个悬空、full_sequence 与 validated_function 全空，
       在 B 库里与 CARTiBASE/文献那种"模块齐全"的构建体混排会拉低整体可用性。
       建议：为 construct 增 completeness 标（claimed_only / modules_named / full_sequence），
-      或专利 CAR 只入 car.module 的识别域行，不建 construct。
+      或专利 CAR 只入 car.car 的识别域行，不建 construct。
   - id: R3
     severity: P1
     desc: |
@@ -500,12 +497,9 @@ risks:
       靶点 GCC/GUCY2C 正是本项目靶点，且 VH/VL 全序列齐全 →
       本条是 A 库最有价值的正样本之一（S 级）。
       但同一靶点的另一条实例（OpenAlex/GUCY2C 文献）用的是 Clone 5F9，与 MS7/MS20 不同源，
-      两者不可归并；entity_key 按 name_code 区分，注意勿被"同靶点"误合并。
+      两者不可归并；entity_key 按 name 区分，注意勿被"同靶点"误合并。
   - id: R6
     severity: P1
     desc: |
-      ★schema 缺口：规范的「FR/CDR 区」只实现了一半。
-      binder.binder 有 cdr_h1-h3 / cdr_l1-l3 六列，但无 FR（框架区）列。
-      FR 对人源化改造、稳定性评估与嵌合设计都必需，且跑 ANARCI 时 FR 与 CDR 是一并产出的，
-      丢弃 FR 等于每次都要重算。
-      建议：增 fr_h1-h4 / fr_l1-l4 八列，或用一个 regions jsonb 统一承载 FR+CDR。
+      最新 schema 已用 binder.binder.fr_cdr_regions JSON 统一承载 FR/CDR。
+      本条 VH/VL 齐全，跑 ANARCI 后须按区域名写 JSON，不能恢复成旧版六个标量列。

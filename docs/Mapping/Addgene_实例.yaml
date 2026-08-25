@@ -16,9 +16,9 @@ instance_id: addgene_135992_to_abc
 source_name: Addgene
 route_id: [web_metadata, sequences]
 target_schema:
-  - sql/03_binder.sql  → binder.binder
-  - sql/04_car.sql     → car.module / car.construct
-  - sql/05_process.sql → process.process
+  - sql/03_binder.sql  → binder.binder + binder.binder_evidence
+  - sql/04_car.sql     → car.car + car.car_evidence
+  - sql/05_process.sql → manufacturing.manufacturing + manufacturing.manufacturing_evidence
 source_format: html_page（+ genbank，需登录另取）
 record_grain: 一条 Addgene 质粒记录（plasmid #135992）
 
@@ -115,25 +115,26 @@ raw_evidence:
 # 本条是质粒记录，binder 只是 CAR 内含的识别域 → A 库填得很浅，仅够建"占位实体+指针"。
 
 targets_binder:
-  - table: binder.binder
+  - tables: [binder.binder, binder.binder_evidence]
+    field_routing: "entity fields -> binder.binder; source/measurement fields -> binder.binder_evidence; IDs linked by binder_id"
     record_per_source: one
-    entity_key: [target_antigen, name_code]     # FMC63 是公认克隆名，跨源归并键
+    entity_key: [target_antigen, name]     # FMC63 是公认克隆名，跨源归并键
     fields:
       - target: source_type
         method: constant
-        value: 公开库
+        value: public_database
       - target: evidence_level
         method: constant
         value: 同行评议
         note: |
           质粒有对应同行评议发表（Bloemberg et al, Mol Ther Methods Clin Dev 2020，
-          PubMed 32083149），core.evidence_level 取「同行评议」，weight_of = 0.7。
+          PubMed 32083149），evidence_level 取「同行评议」，weight_of = 0.7。
       - target: source_id
         source: plasmid_name
         method: derived
         rule: '"Addgene " + 质粒号 → "Addgene 135992"'
         required: true
-      - target: name_code
+      - target: name
         source: gene_insert_altname_2
         method: derived
         rule: '从 "Contains: FMC63-scFV" 取克隆名'
@@ -144,10 +145,10 @@ targets_binder:
         rule: 从 "CD19(FMC63)-CAR" 取括号外抗原名
         value: CD19
         note: 页面直给，非推断；1_数据源登记 中此栏不应再标 ◐
-      - target: format
+      - unmapped_legacy_field: format
         method: constant
         value: scFv
-        note: 'binder.binder_format 枚举取值；依据 "FMC63-scFV" 原文'
+        note: '依据 "FMC63-scFV" 原文保留作来源注释；最新 schema 无对应列'
       - target: citation
         source: publication
         method: derived
@@ -159,10 +160,10 @@ targets_binder:
         note: |
           这是"插入基因的来源物种"，不是跨物种反应性谱。
           按 sabdab_to_binder 同款口径记入，但须在 QC 标注为单点观察。
-      - target: development_stage
+      - unmapped_legacy_field: development_stage
         method: constant
         value: 临床前（质粒工具，未标注临床阶段）
-      - target: vh_seq / vl_seq / scfv_seq
+      - target: [vh_sequence, vl_sequence, scfv_sequence]
         method: derived
         value: null
         rule: 需从 GenBank 插入序列按 features 坐标切出 scFv，再拆 VH/VL
@@ -170,44 +171,45 @@ targets_binder:
 
 
 # =========================================================
-# Part 3 — B 库映射（car.module + car.construct）
+# Part 3 — B 库映射（car.car + car.car）
 # =========================================================
 # 本源的核心价值在 B：Alt name 明确给出模块清单，GenBank features 可给模块坐标。
 
 targets_car:
 
   # ---------------------------------------------------------
-  # car.module —— 按 CAR 结构库字段规范逐栏对齐（25 栏，缺一不可）
+  # 来源组件分析 —— 汇总后写入单条 car.car.modules，不按模块建实体行
   # ---------------------------------------------------------
-  - table: car.module
-    record_per_source: many              # 每模块一行
+  - analysis_scope: [car.car.modules, car.car_evidence]
+    analysis_only: true
+    record_per_source: many              # 来源层逐模块分析；落库时汇总为一个 modules 数组
     iterate_over: gene_insert_altname_2 拆出的模块清单
     entity_key: [source_id, module_type, source_molecule]
 
     # ===== 元数据 11 栏 =====
     metadata_fields:
-      - target: uid
+      - platform_primary_key: true
         method: platform
         note: 由 source_id + module_type + source_molecule 归一化生成
-      - target: name_code
+      - target: name
         method: derived
         rule: '"{source_molecule}-{module_type}@Addgene135992"'
         example: FMC63-识别域@Addgene135992
       - target: source_type
         method: constant
-        value: 公开库
+        value: public_database
       - target: source_id
         method: constant
         value: Addgene 135992
         note: 规范要求"登录号"，质粒号即本源的登录号
-      - target: experiment_conditions
+      - target: experimental_conditions
         method: constant
         value: null
         note: ★质粒库不做实验，无实验条件可记；非"漏抽"而是"不适用"
       - target: evidence_level
         method: constant
         value: 同行评议
-        note: 对应发表 Bloemberg et al 2020（PubMed 32083149）；core.weight_of = 0.7
+        note: 对应发表 Bloemberg et al 2020（PubMed 32083149）；evidence_level 以文本保存
       - target: version
         method: derived
         value: null
@@ -227,21 +229,23 @@ targets_car:
         note: ★这一栏本源真有值——"Modular" 的具体含义即在此
       - target: contrary_evidence
         method: constant
-        value: null
+        value: false
 
     # ===== 标识 4 栏 =====
     identity_fields:
-      - target: module_type
+      - target: modules
         method: derived
         rule_ref: parse_addgene_altname_modules
-      - target: source_molecule
+      - target: modules
         method: derived
         note: 只取原文明写者；未写来源的模块填 未指明
-      - target: sequence
-        method: constant
-        value: null
+      - target: modules
+        method: derived
+        rule: >-
+          汇总前述组件，仅保留最新枚举允许的 hinge/transmembrane_region/
+          costimulatory_domain/CD3zeta/tag；识别域由 binder 实体独立管理
         note: 需 GenBank 插入序列 + features 坐标切出（R2）
-      - target: length_aa
+      - target: modules
         method: constant
         value: null
         note: 规范的"长度（残基数）"；由 sequence 实算，无序列则不得估计
@@ -288,7 +292,7 @@ targets_car:
     # ===== 功能属性 7 栏（规范：激活速度/代谢状态/扩增能力/记忆表型/持久性/耗竭风险/tonic 倾向）=====
     functional_fields:
       - target: [activation_speed, metabolic_state, expansion_capacity,
-                 memory_phenotype, persistence, exhaustion_risk, tonic_signaling]
+                 memory_phenotype, persistence, exhaustion_risk, tonic_signaling_tendency]
         method: constant
         value: null
         note: |
@@ -296,27 +300,26 @@ targets_car:
           且按本项目设计，这些是"CAR × 细胞 × 靶细胞"的组合读出，归 DB1，
           即便日后从文献取到也不回填本表——本表只存模块固有属性。
 
-    # ===== 铰链/跨膜几何属性（规范：几何长度 + 对表位距离/免疫突触/tonic 的影响）=====
+    # ===== 铰链/跨膜几何属性（规范：geometric_length + 对表位距离/免疫突触/tonic 的影响）=====
     geometry_fields:
-      - target: 几何长度
+      - target: geometric_length
         method: constant
         value: null
-        status: ★schema 无对应列
+        status: 本源无可入库数值
         note: |
-          规范把"长度（残基数）"与"几何长度"列为两栏：前者是残基计数（length_aa），
-          后者是铰链/跨膜的物理跨度（决定免疫突触间距）。
-          car.module 只有 length_aa，无几何长度列 → 本栏无处可落，见 R6。
+          模块残基数应写入 modules[].length；geometric_length 是 car.car_evidence 的数值字段。
+          页面没有物理长度测量值，故留空。
       - target: epitope_distance_effect
         method: constant
         value: null
         note: 本源无任何铰链/跨膜几何效应数据（需对比实验才有，见 OpenAlex 实例）
-      - target: synapse_effect
+      - target: immune_synapse_effect
         method: constant
         value: null
-      - target: tonic_effect
+      - target: tonic_signaling_effect
         method: constant
         value: null
-        note: ★注意与 tonic_signaling 区分——前者是"该模块对 tonic 的影响"，后者是"该模块自身的 tonic 倾向"
+        note: ★注意与 tonic_signaling_tendency 区分——前者是"该模块对 tonic 的影响"，后者是"该模块自身的 tonic 倾向"
 
     # ===== 组合约束 3 栏 =====
     assembly_fields:
@@ -325,8 +328,7 @@ targets_car:
         value: '模块顺序：FMC63 scFv → Hinge domain → CD28 跨膜 → 4-1BB → CD3ζ →（P2A-EGFP 报告）'
         source_ref: gene_insert_altname_2
         note: |
-          ★assembly_rules 是 car.module 的列（04_car.sql 第 39 行），不是 car.construct 的列。
-          按规范"可兼容或不兼容模块及装配规则"三者同组，均落在模块级。
+          assembly_rules 是 car.car_evidence 的 JSONB 字段，用于保存有来源证据的装配约束。
       - target: compatible_modules
         method: derived
         value: '识别域槽位开放：经 BpiI 单管酶切连接可换成任意特异性的抗原结合域'
@@ -334,33 +336,33 @@ targets_car:
         note: |
           ★本源少见地真给出了兼容性规则——"Modifications to backbone" 明写该骨架
           设计为可换识别域。这正是规范"可兼容模块"想捕捉的信息。
-          落库时 compatible_modules 为 jsonb，须待其他识别域模块入库后填其 uid 数组；
-          本轮先以文本记于 assembly_rules，jsonb 留空待二次关联。
+          落库时 compatible_modules 直接保存带来源说明的 JSON 描述，不使用旧版模块 UID 数组。
       - target: incompatible_modules
         method: constant
         value: null
         note: 页面未记载任何不兼容组合
 
   # ---------------------------------------------------------
-  # car.construct —— 整装层
+  # car.car —— 整装层
   # ---------------------------------------------------------
-  - table: car.construct
+  - tables: [car.car, car.car_evidence]
+    field_routing: "name/modules/version/entry_date -> car.car; source/performance/constraint fields -> car.car_evidence; IDs linked by car_id"
     record_per_source: one
     fields:
-      - target: name_code
+      - target: name
         source: plasmid_name
         method: direct
         value: pSLCAR-CD19-BBz
       - target: source_type
         method: constant
-        value: 公开库
+        value: public_database
       - target: source_id
         method: constant
         value: Addgene 135992
       - target: evidence_level
         method: constant
         value: 同行评议
-      - target: experiment_conditions
+      - target: experimental_conditions
         method: constant
         value: null
       - target: version
@@ -376,67 +378,68 @@ targets_car:
         source_ref: purpose
       - target: contrary_evidence
         method: constant
-        value: null
-      - target: binder_uid
+        value: false
+      - unmapped_legacy_field: binder_uid
         method: derived
         rule: 指向 Part 2 建立的 FMC63 binder 实体
-      - target: [scfv_module_uid, hinge_module_uid, tm_module_uid,
+      - unmapped_legacy_fields: [scfv_module_uid, hinge_module_uid, tm_module_uid,
                  costim_module_uid, cd3z_module_uid]
         method: derived
-        rule: 指向 car.module 中本条拆出的对应模块 uid
-        note: ★car.construct 共 6 个模块外键；本条 linker_module_uid 为空（页面未记载 linker）
-      - target: linker_module_uid
+        rule: 指向 car.car 中本条拆出的对应模块 uid
+        note: ★car.car 共 6 个模块外键；本条 linker_module_uid 为空（页面未记载 linker）
+      - target: modules
         method: constant
         value: null
-      - target: full_sequence
+      - unmapped_legacy_field: full_sequence
         method: derived
         value: null
         rule: GenBank 全序列；本轮未取（R2）
-      - target: vector_backbone
+      - unmapped_legacy_field: vector_backbone
         source: [vector_backbone, backbone_manufacturer, vector_type]
         method: derived
         value: 'pSL（Heavily modified from LentiCRISPR v1）；Mammalian Expression, Lentiviral'
-      - target: logic
+      - unmapped_legacy_field: logic
         method: constant
         value: 无
-      - target: validated_function
+      - unmapped_legacy_field: validated_function
         method: constant
         value: null
         note: 页面无功能验证数据
-      - target: risk_tags
+      - unmapped_legacy_field: risk_tags
         method: derived
         value: '["not_available_to_industry", "sequence_requires_login", "hinge_source_unspecified"]'
 
 
 # =========================================================
-# Part 4 — C 库映射（process.process）
+# Part 4 — C 库映射（manufacturing.manufacturing）
 # =========================================================
 # 质粒记录几乎不含制造工艺；只有"载体类型"一栏可靠。
 
 targets_process:
-  - table: process.process
+  - tables: [manufacturing.manufacturing, manufacturing.manufacturing_evidence]
+    field_routing: "process definition fields -> manufacturing.manufacturing; source/outcome fields -> manufacturing.manufacturing_evidence; IDs linked by manufacturing_id"
     record_per_source: one
     caveat: 只有 vector 一栏有值，其余全空——是否值得单独建 process 行由业务侧定（见 R4）
     fields:
       - target: source_type
         method: constant
-        value: 公开库
+        value: public_database
       - target: evidence_level
         method: constant
         value: 同行评议
       - target: source_id
         method: constant
         value: Addgene 135992
-      - target: vector
+      - target: vector_type
         source: vector_type
         method: derived
         value: 慢病毒
         value_map: {'Mammalian Expression, Lentiviral': 慢病毒}
         note: process.vector_type 枚举取值
-      - target: product_name
+      - target: corresponding_car_product
         method: constant
         value: null
-      - target: car_construct_uid
+      - unmapped_legacy_field: car_construct_uid
         method: derived
         rule: 指向 Part 3 建立的 pSLCAR-CD19-BBz construct
 
@@ -447,68 +450,61 @@ targets_process:
 unmapped_target_columns:
 
   binder_not_available_without_genbank:
-    - vh_seq            # 需 GenBank 插入序列 + features 坐标切出
-    - vl_seq
-    - scfv_seq
+    - vh_sequence            # 需 GenBank 插入序列 + features 坐标切出
+    - vl_sequence
+    - scfv_sequence
     - linker
-    - cdr_h1            # 取到 scFv 后须再跑 ANARCI 编号才有
-    - cdr_h2
-    - cdr_h3
-    - cdr_l1
-    - cdr_l2
-    - cdr_l3
+    - fr_cdr_regions       # 取到 scFv 后须再跑 ANARCI 编号才有
     - cdr_lengths
-    - numbering
+    - numbering_scheme
     - vdj_genes
-    - germline
+    - germline_origin
     - somatic_mutations
 
   binder_not_available_at_all:
-    - kd_nm             # 质粒库无任何亲和力数据
-    - kon_m1s1
-    - koff_s1
-    - measure_method
-    - measure_condition
-    - epitope_position  # 页面只给靶抗原 CD19，不给表位
-    - epitope_kind
+    - kd             # 质粒库无任何亲和力数据
+    - kon
+    - koff
+    - measurement_method
+    - measurement_conditions
+    - epitope              # 页面只给靶抗原 CD19，不给表位
     - binding_site
-    - cross_reactivity
-    - tm_celsius        # 成药性整组无
+    - cross_reactivity_protein
+    - tm        # 成药性整组无
     - viscosity
-    - aggregation
+    - aggregation_tendency
     - solubility
     - hydrophobicity
-    - net_charge
+    - charge
     - glycosylation_sites
-    - free_cysteine
-    - humanization      # 页面 Species 只说人源基因，≠ 人源化程度，不得挪用
-    - immunogenicity_risk
+    - free_cysteines
+    - humanization_level      # 页面 Species 只说人源基因，≠ 人源化程度，不得挪用
+    - immunogenicity_ada_risk
     - structure_template
     - complex_structure
-    - prediction_confidence
-    - patent_status
-    - in_vitro_readout
 
   process_not_available:
     - t_cell_source     # 质粒记录无任何细胞/培养/放行信息
-    - starting_quality
+    - starting_cell_quality
     - activation_method
-    - activation_reagents
+    - reagents
     - moi
-    - transduction_condition
+    - transduction_transfection_conditions
     - culture_system
-    - cytokines
-    - culture_days
-    - cryo_condition
+    - cytokine_combination
+    - culture_duration
+    - cryopreservation_conditions
     - formulation
-    - viability_pct
-    - transduction_efficiency_pct
+    - cell_viability
+    - transduction_efficiency
     - vcn
-    - phenotype
+    - memory_phenotype
+    - exhaustion_phenotype
+    - treg_phenotype
     - sterility
     - mycoplasma
     - endotoxin
-    - cytotoxicity
+    - killing_activity
     - cytokine_release
 
   no_column_but_has_value:
@@ -521,15 +517,8 @@ unmapped_target_columns:
       ★promoter 与筛选抗性对工艺复现有用，建议在 process 侧补列，见 R4。
 
   platform_managed:
-    - uid
     - version
     - entry_date
-    - source_weight
-    - batch_id
-    - registry_id
-    - merged_into
-    - created_at
-    - updated_at
 
 
 # =========================================================
@@ -537,7 +526,7 @@ unmapped_target_columns:
 # =========================================================
 rule_refs:
   parse_addgene_altname_modules:
-    description: '从 Gene/Insert 的 "Contains: ..." 逗号清单拆出 CAR 模块，映射到 car.module_type'
+    description: '从 Gene/Insert 的 "Contains: ..." 逗号清单拆出 CAR 模块，映射到 car.car_type'
     input: 'Contains: FMC63-scFV, Hinge domain, CD28-transmembrane domain, 41BB-ITD, CD3z-ITD'
     value_map:
       scFV: 识别域
@@ -570,22 +559,22 @@ risks:
     severity: P1
     desc: |
       本轮只取到免登录的元数据 HTML，未取 GenBank。
-      后果：Part 2 的 vh_seq/vl_seq/scfv_seq 与 Part 3 的全部 sequence/length_aa 均为空，
+      后果：Part 2 的 vh_sequence/vl_sequence/scfv_sequence 与 Part 3 的全部 sequence/length_aa 均为空，
       本源"能精确切出模块+全序列"的核心价值尚未兑现。
       补齐动作：免费注册 → 接受 Affinity Reagent Sequence Policy → /135992/sequences/ 取 GenBank。
   - id: R3
     severity: P2
     desc: |
-      car.module_type 枚举（识别域/linker/铰链/跨膜区/共刺激域/CD3ζ/标签/安全开关）
+      car.car_type 枚举（识别域/linker/铰链/跨膜区/共刺激域/CD3ζ/标签/安全开关）
       缺「信号肽」「2A 自剪切肽」「报告基因」三档。
       本条的 P2A-EGFP 只能勉强并入「标签」，语义失真；
       同样问题在 CARTiBASE / EuropePMC / OpenAlex 三条实例上重复出现，建议统一扩枚举。
   - id: R4
     severity: P2
     desc: |
-      本条 process.process 只有 vector 一栏有值，其余 20 栏全空，接近空行。
+      本条 manufacturing.manufacturing 只有 vector 一栏有值，其余 20 栏全空，接近空行。
       且 promoter (EF1a-short) 与筛选抗性 (Ampicillin) 明明有值却无列可落。
-      建议：要么不为质粒源建 process 行（改由 car.construct.vector_backbone 承载），
+      建议：不为只提供质粒信息的源建 manufacturing 行，载体详情保留在源登记与原始记录中，
       要么在 process 侧补 promoter / selection_marker 两列。
   - id: R5
     severity: P1
@@ -596,8 +585,5 @@ risks:
   - id: R6
     severity: P1
     desc: |
-      ★schema 缺口：规范的「几何长度」无对应列。
-      规范把「长度（残基数）」与「几何长度」并列为两栏：前者是残基计数（= length_aa），
-      后者是铰链/跨膜的物理跨度（决定免疫突触间距，是铰链选型的核心依据）。
-      car.module 只有 length_aa，无几何长度列 → 该栏在全部六条实例上都无处可落。
-      建议：car.module 增 geometric_length_nm numeric 列，并定义由残基数换算的规则。
+      最新 schema 已提供 car.car_evidence.geometric_length numeric，但尚未声明单位。
+      modules[].length 的 aa 残基数不得直接写入该列；统一单位与换算规则确定前保持 null。

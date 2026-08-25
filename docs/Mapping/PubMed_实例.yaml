@@ -14,9 +14,9 @@ instance_id: pubmed_40487639_to_abc
 source_name: PubMed
 route_id: [efetch_abstract]
 target_schema:
-  - sql/03_binder.sql  → binder.binder
-  - sql/04_car.sql     → car.module / car.construct
-  - sql/05_process.sql → process.process
+  - sql/03_binder.sql  → binder.binder + binder.binder_evidence
+  - sql/04_car.sql     → car.car + car.car_evidence
+  - sql/05_process.sql → manufacturing.manufacturing + manufacturing.manufacturing_evidence
 source_format: pubmed_xml（题录 + 摘要）
 record_grain: 一条 PubMed 题录（PMID 40487639）
 
@@ -47,11 +47,11 @@ source_field_inventory:
   # ---- 识别类 ----
   - source: PMID
     example: '40487639'
-    target: binder.binder.source_id
+    target: binder.binder_evidence.source_id
     note: 本源唯一稳定主键
   - source: 'ArticleId[IdType=doi]'
     example: 10.1016/j.apsb.2025.03.039
-    target: binder.binder.source_id
+    target: binder.binder_evidence.source_id
     note: ★优先用 DOI 作 source_id，PMID 作辅助键——跨源归并时 DOI 覆盖面更广
   - source: 'ArticleId[IdType=pmc]'
     example: PMC12144966
@@ -62,11 +62,11 @@ source_field_inventory:
   # ---- 书目 ----
   - source: ArticleTitle
     example: CDH17-targeting CAR-NK cells synergize with CD47 blockade for potent suppression of gastrointestinal cancers.
-    target: binder.binder.citation
+    target: binder.binder_evidence.citation
     method: derived
   - source: [Journal/Title, ISOAbbreviation, Volume, Issue, MedlinePgn, PubDate]
     example: 'Acta pharmaceutica Sinica. B | Acta Pharm Sin B | 15 | 5 | 2559-2574 | 2025 May'
-    target: binder.binder.citation
+    target: binder.binder_evidence.citation
     method: derived
   - source: ArticleDate
     example: '2025-03-19'
@@ -74,7 +74,7 @@ source_field_inventory:
     note: 电子首发日，与 PubDate（2025 May）不同；组装 citation 时取 PubDate，勿混用
   - source: Author（17 位）
     example: 'Zheng Liuhai; Ding Youbing; Xu Xiaolong; ... Li Zhijie'
-    target: binder.binder.citation
+    target: binder.binder_evidence.citation
     method: derived
   - source: Affiliation
     example: Shenzhen People's Hospital ... Shenzhen 518020, China.
@@ -82,7 +82,7 @@ source_field_inventory:
     note: 本库无机构列
   - source: PublicationType
     example: Journal Article
-    target: binder.binder.evidence_level
+    target: binder.binder_evidence.evidence_level
     method: derived
     note: Journal Article + 期刊同行评议 → 同行评议；若为 Preprint/Review 须另判
 
@@ -100,7 +100,7 @@ source_field_inventory:
     note: ★本条 MeSH 未标引（2025 年新文常见滞后）→ 不能依赖 MeSH 做靶点筛选，须回退到 Keyword
   - source: AbstractText
     example: 'we engineered nanobody-based chimeric antigen receptor (CAR) natural killer (NK) cells targeting cadherin 17 (CDH17) ...'
-    target: [binder.binder.target_antigen, binder.binder.in_vitro_readout]
+    target: [binder.binder.target_antigen, binder.binder_evidence.applicable_scenario]
     method: derived
     note: 无结构化 Label（非分段摘要），只能整段做 NER/规则抽取
 
@@ -119,54 +119,50 @@ source_field_inventory:
 # Part 2 — A 库映射（binder.binder）
 # =========================================================
 # 按 Binder 字段规范 47 栏逐栏对齐。
-# ★结论先行：47 栏里只有 4 栏有值（name_code 为 null）。这就是摘要级的天花板。
+# ★结论先行：47 栏里只有 4 栏有值（name 为 null）。这就是摘要级的天花板。
 targets_binder:
-  - table: binder.binder
+  - tables: [binder.binder, binder.binder_evidence]
+    field_routing: "entity fields -> binder.binder; source/measurement fields -> binder.binder_evidence; IDs linked by binder_id"
     record_per_source: one
     entity_key: [source_id]
     caveat: ★本条只够建"占位实体 + 全文路由指针"，不够支撑任何序列/亲和力建模
 
     # ===== 公共元数据 11 栏（本源唯一填得动的一组）=====
     metadata_fields:
-      - {target: uid, method: platform}
-      - target: name_code
+      - {platform_primary_key: true, method: platform}
+      - target: name
         method: constant
         value: null
         note: |
           ★摘要只说 "nanobody-based CAR"，未给克隆名（全文才有 NbCDH17 / NbC9）。
           旧版本此栏填 "(标题)" —— 用文章标题充当 binder 名称是伪值，会在 A 库里
           造出一个名字是句子的实体，且无法与全文抽取的 NbCDH17 归并。已改为 null。
-      - {target: source_type, method: constant, value: 文献}
+      - {target: source_type, method: constant, value: literature}
       - {target: source_id, method: derived, value: '10.1016/j.apsb.2025.03.039', rule: 优先取 DOI；PMID 40487639 作辅助键}
-      - target: experiment_conditions
+      - target: experimental_conditions
         method: constant
         value: null
         note: 摘要不含任何实验条件
-      - {target: evidence_level, method: constant, value: 同行评议, note: 'PublicationType = Journal Article + 期刊同行评议；core.weight_of = 0.7'}
+      - {target: evidence_level, method: constant, value: 同行评议, note: 'PublicationType = Journal Article + 期刊同行评议；evidence_level 以文本保存'}
       - {target: version, method: constant, value: 正式发表版（非预印本）}
       - {target: entry_date, method: platform, note: 不得用 PubDate(2025 May) 或 ArticleDate(2025-03-19) 冒充}
       - {target: citation, method: derived, value: 'Zheng L, Ding Y, Xu X, et al. (2025). CDH17-targeting CAR-NK cells synergize with CD47 blockade for potent suppression of gastrointestinal cancers. Acta Pharm Sin B 15(5):2559-2574. doi:10.1016/j.apsb.2025.03.039. PMID 40487639.'}
       - {target: applicable_scenario, method: derived, value: '胃肠道肿瘤 CDH17 靶向（摘要级，仅够做靶点粗筛）'}
-      - {target: contrary_evidence, method: constant, value: null}
+      - {target: contrary_evidence, method: constant, value: false}
 
     # ===== 序列 4 栏 =====
     sequence_fields:
-      - target: [vh_seq, vl_seq, scfv_seq, linker]
+      - target: [vh_sequence, vl_sequence, scfv_sequence, linker]
         method: constant
         value: null
         status: 本粒度缺失（全文有）
         note: ★不是"本源永久缺失"——同文全文层的情况见 EuropePMC_实例.yaml
-      - {target: format, method: derived, value: VHH, confidence: 中, note: '依据 Keyword "Nanobody" + 摘要 "nanobody-based CAR"；★文本推断，未见序列证实，见 R4'}
+      - {unmapped_legacy_field: format, method: derived, value: VHH, confidence: 中, note: '依据 Keyword "Nanobody" + 摘要 "nanobody-based CAR"；★文本推断，未见序列证实，见 R4'}
 
     # ===== 编号 / 注释 7 栏 =====
     annotation_fields:
-      - target: 'FR 区'
-        method: constant
-        value: null
-        status: ★schema 无对应列
-        note: 规范列出「FR/CDR 区」，binder.binder 无 FR 列，见 R6
-      - target: [numbering, cdr_h1, cdr_h2, cdr_h3, cdr_l1, cdr_l2, cdr_l3,
-                 cdr_lengths, vdj_genes, germline, somatic_mutations]
+      - target: [numbering_scheme, fr_cdr_regions,
+                 cdr_lengths, vdj_genes, germline_origin, somatic_mutations]
         method: constant
         value: null
         status: 本粒度缺失
@@ -180,11 +176,11 @@ targets_binder:
         confidence: 高
         source_ref: [Keyword, AbstractText]
         note: ★本条唯一高置信的专属字段；Keyword 与摘要双重确认
-      - {target: [epitope_position, epitope_kind, binding_site], method: constant, value: null, status: 本粒度缺失}
+      - {target: [epitope, binding_site], method: constant, value: null, status: 本粒度缺失}
 
     # ===== 亲和力 5 栏 =====
     affinity_fields:
-      - target: [kd_nm, kon_m1s1, koff_s1, measure_method, measure_condition]
+      - target: [kd, kon, koff, measurement_method, measurement_conditions]
         method: constant
         value: null
         status: 本粒度缺失（全文亦无数值）
@@ -192,7 +188,7 @@ targets_binder:
 
     # ===== 特异性 2 栏 =====
     specificity_fields:
-      - target: [cross_reactivity, species_reactivity]
+      - target: [cross_reactivity_protein, species_reactivity]
         method: constant
         value: null
         status: 本粒度缺失（全文有）
@@ -200,9 +196,9 @@ targets_binder:
 
     # ===== 成药性 10 栏 =====
     developability_fields:
-      - target: [tm_celsius, viscosity, aggregation, solubility, hydrophobicity,
-                 net_charge, glycosylation_sites, free_cysteine, humanization,
-                 immunogenicity_risk]
+      - target: [tm, viscosity, aggregation_tendency, solubility, hydrophobicity,
+                 charge, glycosylation_sites, free_cysteines, humanization_level,
+                 immunogenicity_ada_risk]
         method: constant
         value: null
         status: 永久缺失
@@ -210,25 +206,26 @@ targets_binder:
 
     # ===== 结构 3 栏 =====
     structure_fields:
-      - {target: [structure_template, complex_structure, prediction_confidence], method: constant, value: null, status: 永久缺失}
+      - {target: [structure_template, complex_structure], method: constant, value: null, status: 永久缺失}
 
     # ===== 状态 / 功能 3 栏 =====
     status_fields:
-      - {target: development_stage, method: constant, value: 临床前}
-      - {target: patent_status, method: constant, value: null}
-      - {target: in_vitro_readout, method: derived, value: '摘要述及 CDH17 依赖性清除 GI 肿瘤细胞（定性，无数值、无测定方法）', confidence: 中}
+      - {unmapped_legacy_field: development_stage, method: constant, value: 临床前}
+      - {unmapped_legacy_field: patent_status, method: constant, value: null}
+      - {unmapped_legacy_field: in_vitro_readout, method: derived, value: '摘要述及 CDH17 依赖性清除 GI 肿瘤细胞（定性，无数值、无测定方法）', confidence: 中}
 
 
 # =========================================================
-# Part 3 — B 库映射（car.module / car.construct）
+# Part 3 — B 库映射（car.car / car.car）
 # =========================================================
 # 按 CAR 结构库字段规范 25 栏逐栏对齐——结论：模块级 25 栏全部填不了。
 targets_car:
-  - table: car.module
+  - tables: [car.car, car.car_evidence]
+    field_routing: "name/modules/version/entry_date -> car.car; source/performance/constraint fields -> car.car_evidence; IDs linked by car_id"
     decision: 不建行
     spec_checklist:
       note: 逐栏核对，标识栏起全部无值（★这是结论而非略过）
-      元数据11栏: 'uid/name_code/source_type/source_id/experiment_conditions/evidence_level/version/entry_date/citation/applicable_scenario/contrary_evidence —— 技术上可填，但只有元数据而无标识栏，行本身无意义'
+      元数据11栏: 'uid/name/source_type/source_id/experimental_conditions/evidence_level/version/entry_date/citation/applicable_scenario/contrary_evidence —— 技术上可填，但只有元数据而无标识栏，行本身无意义'
       module_type: '★NOT NULL 约束，而摘要不含任何模块名 → 无从填起，这一条即决定不建行'
       source_molecule: null
       sequence: null
@@ -239,43 +236,45 @@ targets_car:
       memory_phenotype: null
       persistence: null
       exhaustion_risk: null
-      tonic_signaling: null
-      几何长度: 'null（且 car.module 无此列）'
+      tonic_signaling_tendency: null
+      geometric_length: 'null（且 car.car 无此列）'
       epitope_distance_effect: null
-      synapse_effect: null
-      tonic_effect: null
+      immune_synapse_effect: null
+      tonic_signaling_effect: null
       compatible_modules: null
       incompatible_modules: null
-      assembly_rules: 'null（★该列属 car.module，非 car.construct）'
+      assembly_rules: 'null（★该列属 car.car，非 car.car）'
     reason: |
       摘要只出现 "chimeric antigen receptor (CAR)" 与 "nanobody-based" 两个词，
       不含任何模块名（无信号肽/铰链/跨膜/共刺激/CD3ζ）。
-      car.module.module_type 为 NOT NULL，无从填起 → 不建行。
+      car.car.modules 为 NOT NULL，且无法给出任何合法 module_type → 不建行。
 
-  - table: car.construct
+  - tables: [car.car, car.car_evidence]
+    field_routing: "name/modules/version/entry_date -> car.car; source/performance/constraint fields -> car.car_evidence; IDs linked by car_id"
     decision: 可选建占位行
     caveat: 仅当业务侧要求"每篇文献都有 construct 占位"时才建；否则跳过
     fields_if_built:
-      - {target: name_code, method: derived, value: 'CDH17-CAR-NK（摘要级，模块未知）'}
-      - {target: source_type, method: constant, value: 文献}
+      - {target: name, method: derived, value: 'CDH17-CAR-NK（摘要级，模块未知）'}
+      - {target: source_type, method: constant, value: literature}
       - {target: source_id, method: constant, value: '10.1016/j.apsb.2025.03.039'}
       - {target: evidence_level, method: constant, value: 同行评议}
-      - {target: [experiment_conditions, applicable_scenario, contrary_evidence], method: constant, value: null}
+      - {target: [experimental_conditions, applicable_scenario], method: constant, value: null}
+      - {target: contrary_evidence, method: constant, value: false}
       - {target: version, method: constant, value: 正式发表版}
       - {target: entry_date, method: platform}
       - {target: citation, method: derived, value: 'Zheng L, et al. (2025). Acta Pharm Sin B 15(5):2559-2574. PMID 40487639.'}
-      - target: [binder_uid, scfv_module_uid, linker_module_uid, hinge_module_uid,
+      - unmapped_legacy_fields: [binder_uid, scfv_module_uid, linker_module_uid, hinge_module_uid,
                  tm_module_uid, costim_module_uid, cd3z_module_uid]
         method: constant
         value: null
-        note: ★6 个模块外键全部悬空 + binder_uid 亦无（binder 无 name_code）
-      - {target: [full_sequence, vector_backbone], method: constant, value: null}
-      - {target: logic, method: constant, value: 无}
-      - {target: validated_function, method: derived, value: '摘要：CDH17 依赖性杀伤；与 CD47 阻断协同（定性）'}
+        note: ★6 个模块外键全部悬空 + binder_uid 亦无（binder 无 name）
+      - {unmapped_legacy_fields: [full_sequence, vector_backbone], method: constant, value: null}
+      - {unmapped_legacy_field: logic, method: constant, value: 无}
+      - {unmapped_legacy_field: validated_function, method: derived, value: '摘要：CDH17 依赖性杀伤；与 CD47 阻断协同（定性）'}
 
 
 # =========================================================
-# Part 4 — C 库映射（process.process）
+# Part 4 — C 库映射（manufacturing.manufacturing）
 # =========================================================
 # 按制造工艺字段规范逐栏对齐——结论：22 个业务列全部为空。
 targets_process:
@@ -284,29 +283,29 @@ targets_process:
     note: 逐栏核对，无一有值（★这是结论而非略过）
     t_cell_source: null
     cd4_cd8_ratio: null
-    starting_quality: null
+    starting_cell_quality: null
     activation_method: null
-    activation_reagents: null
+    reagents: null
     vector: null
     moi: null
-    transduction_condition: null
+    transduction_transfection_conditions: null
     culture_system: null
-    cytokines: null
-    culture_days: null
-    cryo_condition: null
+    cytokine_combination: null
+    culture_duration: null
+    cryopreservation_conditions: null
     formulation: null
-    viability_pct: null
-    transduction_efficiency_pct: null
+    cell_viability: null
+    transduction_efficiency: null
     vcn: null
-    cd3_positive_pct: null
+    cd3_positive_ratio: null
     phenotype: null
     sterility: null
     mycoplasma: null
     endotoxin: null
-    cytotoxicity: null
+    killing_activity: null
     cytokine_release: null
     car_construct_uid: '（可指向 Part 3 占位行）'
-    product_name: 'CDH17-CAR-NK（★仅此一栏有值）'
+    corresponding_car_product: 'CDH17-CAR-NK（★仅此一栏有值）'
   reason: |
     旧版本此处填 {对应CAR产品: 'CDH17-CAR-NK(◐摘要)'} —— 22 个业务列里只有产品名一栏有值，
     建这样的行只会虚增 C 库计数、拉低完整度统计。改为不建行；
@@ -320,15 +319,15 @@ targets_process:
 unmapped_target_columns:
 
   binder_blocked_by_abstract_only:
-    columns: [name_code, vh_seq, vl_seq, scfv_seq, linker, cdr_h1, cdr_h2, cdr_h3,
-              cdr_l1, cdr_l2, cdr_l3, cdr_lengths, numbering, vdj_genes, germline,
-              somatic_mutations, epitope_position, epitope_kind, binding_site,
-              kd_nm, kon_m1s1, koff_s1, measure_method, measure_condition,
-              cross_reactivity, species_reactivity, tm_celsius, viscosity,
-              aggregation, solubility, hydrophobicity, net_charge,
-              glycosylation_sites, free_cysteine, humanization, immunogenicity_risk,
-              structure_template, complex_structure, prediction_confidence,
-              patent_status, experiment_conditions, applicable_scenario,
+    columns: [name, vh_sequence, vl_sequence, scfv_sequence, linker, fr_cdr_regions,
+              cdr_lengths, numbering_scheme, vdj_genes, germline_origin,
+              somatic_mutations, epitope, binding_site,
+              kd, kon, koff, measurement_method, measurement_conditions,
+              cross_reactivity_protein, species_reactivity, tm, viscosity,
+              aggregation_tendency, solubility, hydrophobicity, charge,
+              glycosylation_sites, free_cysteines, humanization_level, immunogenicity_ada_risk,
+              structure_template, complex_structure,
+              patent_status, experimental_conditions, applicable_scenario,
               contrary_evidence]
     note: |
       ★这不是"本源永久缺失"，而是"本粒度缺失"——
@@ -341,15 +340,8 @@ unmapped_target_columns:
     note: 见 Part 4
 
   platform_managed:
-    - uid
     - version
     - entry_date
-    - source_weight
-    - batch_id
-    - registry_id
-    - merged_into
-    - created_at
-    - updated_at
 
 fill_rate_vs_fulltext:
   note: 同一篇文章两种粒度的产出对比（本档 vs EuropePMC_实例.yaml）
@@ -359,7 +351,7 @@ fill_rate_vs_fulltext:
     car_construct_行数: '0（或 1 个空壳占位）'
     process_行数: 0
   fulltext_level:
-    binder_专属字段: 'target_antigen / format / species_reactivity / cross_reactivity / measure_method / in_vitro_readout 等多项有值'
+    binder_专属字段: 'target_antigen / format / species_reactivity / cross_reactivity_protein / measurement_method / in_vitro_readout 等多项有值'
     car_module_行数: 7
     car_construct_行数: 2
     process_行数: '1（含培养体系/细胞因子/转导筛选/杀伤测定等）'
@@ -398,11 +390,11 @@ risks:
       若两条 route 各自建 binder 实体而不归并，A 库会出现
       "一个空壳 CDH17 binder + 一个完整 NbCDH17 binder" 两行，
       且空壳行会稀释该文献的证据权重、污染去重统计。
-      → 必须以 DOI 为归并键，全文记录覆盖摘要记录（core.merge_log 写 merged_into）。
+      → 必须以 DOI 作为来源归并键：复用同一实体 ID，并分别保留摘要与全文证据记录，不相互覆盖。
   - id: R2
     severity: P1
     desc: |
-      旧版本把 name_code 填成 "(标题)"、把 process 行填成只有一个产品名。
+      旧版本把 name 填成 "(标题)"、把 process 行填成只有一个产品名。
       两者都是"为了让字段非空而填"的伪值，会让完整度统计虚高、让实体名不可用。
       本轮已改为 null / 不建行。原则：宁可空，不可伪。
   - id: R3
@@ -426,8 +418,5 @@ risks:
   - id: R6
     severity: P1
     desc: |
-      ★schema 缺口：规范的「FR/CDR 区」只实现了一半。
-      binder.binder 有 cdr_h1-h3 / cdr_l1-l3 六列，但无 FR（框架区）列。
-      FR 对人源化改造、稳定性评估与嵌合设计都必需，且跑 ANARCI 时 FR 与 CDR 是一并产出的，
-      丢弃 FR 等于每次都要重算。
-      建议：增 fr_h1-h4 / fr_l1-l4 八列，或用一个 regions jsonb 统一承载 FR+CDR。
+      最新 schema 已用 binder.binder.fr_cdr_regions JSON 统一承载 FR/CDR。
+      摘要没有 binder 序列，因此仍为空；全文补到序列后须按区域名写 JSON。

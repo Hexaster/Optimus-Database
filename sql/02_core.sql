@@ -1,5 +1,5 @@
--- 公共元数据、来源登记、批次、归并留痕、用量计费
--- 每条业务记录都以这组字段开头（字段规范：公共元数据）
+-- 平台支撑表：来源登记、批次、归并留痕与用量计费。
+-- Binder/CAR/Manufacturing 的业务字段以 docs/Schema 中的 YAML 为准。
 
 -- 数据源登记：Day3 建立，Day4 下载时逐条写入，支撑 Day14 引用可追溯性检查
 CREATE TABLE IF NOT EXISTS core.source_registry (
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS core.source_registry (
 CREATE TABLE IF NOT EXISTS core.batch_run (
   batch_id     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   stage        text NOT NULL,                 -- parse / extract / load / qc / merge
-  target       text NOT NULL,                 -- binder / car / process / lit / patent / db1
+  target       text NOT NULL,                 -- binder / car / manufacturing / lit / patent / db1
   started_at   timestamptz NOT NULL DEFAULT now(),
   finished_at  timestamptz,
   ok_count     integer DEFAULT 0,
@@ -60,7 +60,7 @@ FROM core.llm_usage GROUP BY 1 ORDER BY 1;
 CREATE TABLE IF NOT EXISTS core.merge_log (
   id            bigserial PRIMARY KEY,
   merged_at     timestamptz NOT NULL DEFAULT now(),
-  entity_kind   text NOT NULL,                -- binder / car_module / process
+  entity_kind   text NOT NULL,                -- binder / car / manufacturing
   kept_uid      text NOT NULL,                -- 归并后保留的主记录
   merged_uid    text NOT NULL,                -- 被并入的记录（原记录不删除）
   rule          text NOT NULL,                -- 判定依据：序列相似度阈值 / ID 对齐 / 人工

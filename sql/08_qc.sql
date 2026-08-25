@@ -27,15 +27,15 @@ FROM qc.finding;
 -- 数量指标：与「5.数量指标KPI」对齐，一条 SQL 拿到全部当前值
 CREATE OR REPLACE VIEW qc.kpi AS
 SELECT
-  (SELECT count(*) FROM binder.binder WHERE merged_into IS NULL
-     AND target_antigen ~* '(GCC|GUCY2C|CDH17)')                       AS binder_gcc_cdh17,
-  (SELECT count(*) FROM binder.binder WHERE merged_into IS NULL
-     AND source_type='公开库')                                          AS binder_public,
-  (SELECT count(*) FROM binder.binder WHERE merged_into IS NULL
-     AND source_type IN ('文献','专利'))                                AS binder_extracted,
-  (SELECT count(*) FROM car.construct WHERE merged_into IS NULL)        AS car_construct,
-  (SELECT count(*) FROM car.module   WHERE merged_into IS NULL)         AS car_module,
-  (SELECT count(*) FROM process.process WHERE merged_into IS NULL)      AS process_total,
+  (SELECT count(*) FROM binder.binder
+     WHERE target_antigen ~* '(GCC|GUCY2C|CDH17)')                     AS binder_gcc_cdh17,
+  (SELECT count(DISTINCT binder_id) FROM binder.binder_evidence
+     WHERE source_type = 'public_database')                            AS binder_public,
+  (SELECT count(DISTINCT binder_id) FROM binder.binder_evidence
+     WHERE source_type IN ('literature', 'patent'))                    AS binder_extracted,
+  (SELECT count(*) FROM car.car)                                       AS car_total,
+  (SELECT COALESCE(sum(jsonb_array_length(modules)), 0) FROM car.car)  AS module_total,
+  (SELECT count(*) FROM manufacturing.manufacturing)                   AS manufacturing_total,
   (SELECT count(*) FROM lit.article)                                    AS lit_downloaded,
   (SELECT count(*) FROM lit.article WHERE selected)                     AS lit_selected,
   (SELECT count(*) FROM patent.patent)                                  AS patent_downloaded,

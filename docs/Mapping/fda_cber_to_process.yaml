@@ -1,5 +1,5 @@
 # =========================
-# Mapping: FDA CBER (SBRA) -> process.process
+# Mapping: FDA CBER (SBRA) -> manufacturing.manufacturing + manufacturing.manufacturing_evidence
 # =========================
 # 只回答一件事：FDA CBER 的审批文档内容如何变成数据库字段。
 # 不描述如何获取数据（见 docs/SourceRegistry/fda_cber_cgt.yaml），
@@ -8,7 +8,7 @@
 mapping_id: fda_cber_to_process
 source_name: FDA CBER — Approved Cellular and Gene Therapy Products
 route_id: [product_page_html, sbra_pdf]
-target_schema: sql/05_process.sql → process.process
+target_schema: sql/05_process.sql → manufacturing.manufacturing + manufacturing.manufacturing_evidence
 source_format: parsed_document
 record_grain: 一个已批准 CAR-T 产品的一份 Summary Basis for Regulatory Action
 
@@ -24,7 +24,7 @@ hard_ceiling: |
 
   Carvykti SBRA 全文 23 页，"(b) (4)"（美国 FOIA 商业机密豁免的涂黑标记）出现 123 次，
   且恰好压在我们最需要的定量字段上：
-    "After ___ of culture"          → culture_days 拿不到
+    "After ___ of culture"          → culture_duration 拿不到
     "Sterility (b) (4) No growth"   → 检测方法与限度拿不到，只知道结论
     "Endotoxin (b) (4) (b) (4)"     → 限度值完全拿不到
   再加上 VCN(0) / MOI(0) / CD3+(0) / CD4(0) / CD8(0) 全文 0 命中。
@@ -86,48 +86,20 @@ manifest:
 
 targets:
 
-  - table: process.process
+  - table: manufacturing.manufacturing
     record_per_source: one
     entity_key: [product_slug, sbra_date]
     fields:
 
-      # ---- 公共元数据 ----
-      - target: source_type
-        method: constant
-        value: 公开库
-        note: 同 EMA EPAR —— 监管文件不落在 core.source_type 四值任何一档，公开库为最优近似
-      - target: evidence_level
-        method: constant
-        value: 同行评议
-        note: |
-          【业务侧 2026-08-20 决定：按源定固定值】
-          SBRA 是 FDA CBER 对 BLA 的正式审评结论。
-          与 EMA EPAR 同理，core.evidence_level 无「监管文件」一档，取「同行评议」
-          => source_weight = 0.7。
-          【但请注意一个不对称】本源的信息完整度远低于 EMA（见 Part 0），
-          却拿到相同的 source_weight。若下游打分对两者一视同仁，会高估 FDA 记录的价值。
-          建议在 experiment_conditions 中标注涂黑比例，供筛选智能体参考。
-      - target: source_id
-        source: [product_slug, media_id]
-        method: derived
-        rule: '"fda-cber/{product_slug}/media-{media_id}"'
-        required: true
-      - target: product_name
+      - {target: manufacturing_id, method: platform}
+      - target: corresponding_car_product
         source: 产品页标题
         method: direct
         example: CARVYKTI
-      - target: name_code
+      - target: name
         source: [product_slug, sbra_date]
         method: derived
         rule: '"{product_slug}-SBRA-{sbra_date}"'
-      - target: citation
-        source: [锚文本, sbra_date, media_url, 页码]
-        method: derived
-        required: true
-        rule: '"FDA CBER SBRA: {product_name}, {sbra_date}, p.{page}. {media_url}"'
-      - target: contrary_evidence
-        method: constant
-        value: null
 
       # ---- 起始材料 ----
       - target: t_cell_source
@@ -138,7 +110,7 @@ targets:
         evidence: '"Janssen Pharmaceuticals manufacturing facility using patient leukapheresis materials"'
 
       # ---- 基因导入 ----
-      - target: vector
+      - target: vector_type
         source: 产品描述段
         method: llm
         rule_ref: extract_vector_type
@@ -146,7 +118,7 @@ targets:
         evidence: '"genetically modified by a lentiviral vector (LVV) to target cells expressing BCMA"'
 
       # ---- 冻存 / 配方 ----
-      - target: cryo_condition
+      - target: cryopreservation_conditions
         source: 制剂段
         method: llm
         rule_ref: extract_cryo_condition
@@ -158,7 +130,17 @@ targets:
         rule_ref: extract_formulation
         evidence: '"quantity, dose and potency) is performed on samples taken from the final formulated DP"'
 
-      # ---- 放行指标（仅「有此项」，值多被涂黑）----
+  - table: manufacturing.manufacturing_evidence
+    record_per_source: one
+    entity_key: [product_slug, sbra_date, media_id]
+    fields:
+      - {target: evidence_id, method: platform}
+      - {target: manufacturing_id, method: parent, references: manufacturing.manufacturing_id}
+      - {target: source_type, method: constant, value: public_database}
+      - {target: source_id, source: [product_slug, media_id], method: derived, required: true}
+      - {target: evidence_level, method: constant, value: 同行评议}
+      - {target: citation, source: [锚文本, sbra_date, media_url, 页码], method: derived, required: true}
+      - {target: contrary_evidence, method: constant, value: false}
       - target: sterility
         source: 章节 "b. Testing Specifications"
         method: llm
@@ -184,16 +166,16 @@ targets:
         rule_ref: extract_release_spec_redacted
         evidence: '"Endotoxin (b) (4) (b) (4)"（命中 1 次）'
         note: 限度值完全涂黑，只能记录「有此检测项」
-      - target: viability_pct
+      - target: cell_viability
         source: 放行与表征段
         method: llm
         rule_ref: extract_release_spec_redacted
         unit_from: '%'
         evidence: '". T cell viability, T cell purity, and NK ..."（命中 1 次）'
-        note: 只提到检测项名称，未见数值。多半只能填 null 并在 experiment_conditions 说明
+        note: 只提到检测项名称，未见数值。多半只能填 null 并在 experimental_conditions 说明
 
       # ---- 溯源 ----
-      - target: experiment_conditions
+      - target: experimental_conditions
         source: [章节号, 页码, 原文片段, redaction_flag, rule_ref]
         method: derived
         required: true
@@ -211,9 +193,9 @@ targets:
 not_available_redacted:
   # 有对应内容，但被 (b)(4) 涂黑
   columns:
-    - column: culture_days
+    - column: culture_duration
       evidence: '"After ___ of culture" —— 时长被涂黑'
-    - column: transduction_condition
+    - column: transduction_transfection_conditions
       evidence: '"transduced with lentiviral vector in ___. After ___ of culture" —— 条件被涂黑'
   note: 这类字段应填 null，reason 记 redacted，与 data_absent 区分开
 
@@ -221,33 +203,26 @@ not_available_verified_absent:
   # 全文 0 命中
   - {column: moi,              searched: ['MOI', 'multiplicity of infection'], hits: 0}
   - {column: vcn,              searched: ['vector copy number', 'VCN'],        hits: 0}
-  - {column: cd3_positive_pct, searched: ['CD3+'],                             hits: 0}
+  - {column: cd3_positive_ratio, searched: ['CD3+'],                             hits: 0}
   - {column: cd4_cd8_ratio,    searched: ['CD4', 'CD8'],                       hits: 0}
 
 not_available:
-  - starting_quality
+  - starting_cell_quality
   - activation_method       # 工序链在 SBRA 中未展开到 EMA 那种细度
-  - activation_reagents
+  - reagents
   - culture_system
   - cytokines               # IL-2 命中 3 次但全在 CRS 不良反应语境
                             #（"IL-10, IFN-γ, and IL-2RA with the incidence of CRS"），不得挪用
-  - transduction_efficiency_pct
+  - transduction_efficiency
   - phenotype
-  - cytotoxicity
+  - killing_activity
   - cytokine_release
   - applicable_scenario
   - car_construct_uid
 
 platform_managed:
-  - uid
   - version
   - entry_date
-  - source_weight
-  - batch_id
-  - registry_id
-  - merged_into
-  - created_at
-  - updated_at
 
 
 # =========================================================
@@ -305,7 +280,7 @@ risks:
       同一个关键词在两个源里语义不同 —— 不可复用同一套提示词。
   - id: R3
     desc: |
-      本源与 EMA 会对同一产品产生两条 process.process 记录（Carvykti 两边都有）。
+      本源与 EMA 会对同一产品产生两条 manufacturing.manufacturing 记录（Carvykti 两边都有）。
       这是期望行为，便于交叉验证，但归并时不可简单取并集：
       涂黑导致的 null 与真实的 data_absent 含义不同，
       合并规则须以 EMA 值优先、FDA 值作补充，并保留两条原始记录。

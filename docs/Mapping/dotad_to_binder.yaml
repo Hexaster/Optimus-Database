@@ -1,5 +1,5 @@
 # =========================
-# Mapping: DOTAD 2.0 -> binder.binder
+# Mapping: DOTAD 2.0 -> binder.binder + binder.binder_evidence
 # =========================
 # 只回答一件事：DOTAD 2.0 的字段如何变成数据库字段。
 # 不描述如何获取数据（见 docs/SourceRegistry/dotad.yaml），
@@ -14,7 +14,7 @@
 mapping_id: dotad2_to_binder
 source_name: DOTAD 2.0
 route_id: release_center
-target_schema: sql/03_binder.sql → binder.binder
+target_schema: sql/03_binder.sql → binder.binder + binder.binder_evidence
 source_format: xlsx_workbooks
 record_grain: >-
   metadata 分页的一条抗体记录，按 antibody_id 连接 sequences 分页；
@@ -92,21 +92,20 @@ source_field_inventory:
     - source: antibody_id
       fill: 100.0%
       example: DOTAD-001
-      target: binder.binder.source_id
+      target: binder.binder_evidence.source_id
     - source: antibody_name
       fill: 28.4%
       uniq: 1165
       example: abagovomab
-      target: binder.binder.name_code
+      target: binder.binder.name
       note: 只有 1,165 个抗体有名字；其余 2,935 条只有 ID
     - source: Format
       fill: 97.8%
       uniq: 103
       example: Whole mAb
-      target: binder.binder.format
-      method: derived
-      rule_ref: derive_binder_format
-      note: 103 个取值，须映射到 binder.binder_format 五值枚举
+      target: null
+      method: not_mapped
+      note: 最新 binder schema 不存储 format；保留作来源审计，不入库
     - source: hc_subtype
       fill: 29.5%
       example: G1
@@ -120,16 +119,16 @@ source_field_inventory:
     - source: Highest_Clin_Trial
       fill: 28.2%
       example: Phase-III
-      target: binder.binder.development_stage
+      target: binder.binder_evidence.applicable_scenario
       method: derived
     - source: est_status_asof_feb2025
       fill: 27.7%
       example: Discontinued
-      target: binder.binder.development_stage
+      target: binder.binder_evidence.applicable_scenario
       method: derived
       note: |
         栏名自带截止日 feb2025 —— 该状态截至 2025-02，已过时约 18 个月。
-        与 Highest_Clin_Trial 合并成一句，并在 experiment_conditions 注明截止日。
+        与 Highest_Clin_Trial 合并成一句，并在 experimental_conditions 注明截止日。
     - source: Target
       fill: 28.2%
       uniq: 540
@@ -140,13 +139,13 @@ source_field_inventory:
     - source: Species
       fill: 26.9%
       example: Murine
-      target: binder.binder.germline
+      target: binder.binder.germline_origin
       method: derived
       note: 亦可作 humanization 的粗略参考，但 Murine≠人源化程度，不直接填 humanization
     - source: Clinical indication
       fill: 13.2%
       example: Cancers, ovarian
-      target: binder.binder.applicable_scenario
+      target: binder.binder_evidence.applicable_scenario
     - source: PDB
       fill: 4.4%
       example: "<TAB>6v4p"
@@ -156,17 +155,17 @@ source_field_inventory:
     - source: PDB_reference
       fill: 4.4%
       example: https://www.rcsb.org/structure/6v4p
-      target: binder.binder.citation
+      target: binder.binder_evidence.citation
       method: derived
     - source: ADAs_rate
       fill: 5.6%
       example: '68.1'
-      target: binder.binder.immunogenicity_risk
+      target: binder.binder_evidence.immunogenicity_ada_risk
       method: derived
       rule: 数值为 ADA 阳性率百分比，入库写成 "ADA {value}%" 并保留原值
     - source: ADAs_reference
       fill: 5.6%
-      target: binder.binder.citation
+      target: binder.binder_evidence.citation
       method: derived
     - source: production_host
       fill: 0.0%
@@ -183,7 +182,7 @@ source_field_inventory:
   sequences:
     - source: antibody_id
       fill: 100.0%
-      target: binder.binder.source_id
+      target: binder.binder_evidence.source_id
     - source: antibody_name
       fill: 11.8%
       target: null
@@ -191,17 +190,17 @@ source_field_inventory:
     - source: VH
       fill: 99.9%
       uniq: 7125
-      target: binder.binder.vh_seq
+      target: binder.binder.vh_sequence
     - source: VL
       fill: 92.0%
       uniq: 3298
-      target: binder.binder.vl_seq
+      target: binder.binder.vl_sequence
       note: 8% 无 VL。可能是 VHH/单域，也可能是缺失——不得默认当作 VHH，
-            须与 Format 交叉判断后再定 binder.binder.format
+            须与 Format 交叉判断序列语义；最新 binder schema 不再存储 format
     - source: hc_protein_sequence
       fill: 2.5%
       target: null
-      note: 含信号肽的全长重链（例中以 MRAWIFFLLCLAGRALA 开头）。全长≠可变区，不得填 vh_seq
+      note: 含信号肽的全长重链（例中以 MRAWIFFLLCLAGRALA 开头）。全长≠可变区，不得填 vh_sequence
     - source: lc_protein_sequence
       fill: 2.5%
       target: null
@@ -216,50 +215,34 @@ source_field_inventory:
 # =========================================================
 unmapped_target_columns:
   not_available:
-    - scfv_seq          # 有 VH/VL 但无 scFv 构建体序列
+    - scfv_sequence          # 有 VH/VL 但无 scFv 构建体序列
     - linker
-    - numbering         # 未编号
-    - cdr_h1            # 无区域切分
-    - cdr_h2
-    - cdr_h3
-    - cdr_l1
-    - cdr_l2
-    - cdr_l3
+    - numbering_scheme         # 未编号
+    - fr_cdr_regions       # 无区域切分
     - cdr_lengths
     - vdj_genes
     - somatic_mutations
-    - epitope_position
-    - epitope_kind
+    - epitope
     - binding_site
     - glycosylation_sites
-    - free_cysteine
-    - humanization      # Species 只说来源物种，不得替代
+    - free_cysteines
+    - humanization_level      # Species 只说来源物种，不得替代
     - viscosity
     - solubility
-    - net_charge
-    - cross_reactivity
+    - charge
+    - cross_reactivity_protein
+    - cross_reactivity_cell
     - species_reactivity
-    - patent_status
     - complex_structure # 只有 PDB ID（structure_template），无复合物链信息
-    - prediction_confidence   # 例外见 Part 3 (3) 的 Hebditch/Bailly 说明
   platform_managed:
-    - uid
     - version
     - entry_date
-    - source_weight
-    - batch_id
-    - registry_id
-    - merged_into
-    - created_at
-    - updated_at
 
 
 # =========================================================
 # Part 3 — 可执行映射
 # =========================================================
-# 单表结构下，一个抗体的每一条成药性测量都会成为 binder.binder 的独立一行
-# （各自带 source_id / evidence_level / experiment_conditions），
-# 再由 core.merge_log 按 entity_key 归并。见 Part 5 R1。
+# metadata + sequences 产生一条 binder 实体；每个来源/测量产生独立 evidence。
 
 targets:
 
@@ -268,110 +251,97 @@ targets:
     record_per_source: one
     entity_key: [antibody_id]
     fields:
-      - target: source_type
-        method: constant
-        value: 公开库
-      - target: evidence_level
-        method: constant
-        value: 同行评议
-        note: |
-          【业务侧 2026-08-20 决定：按源定固定值】
-          DOTAD 的 metadata/sequences 由已发表文献与 PDB/IMGT/UniProt 整编而来，归「同行评议」。
-          例外：literature 工作簿的预测分页必须改填「模型预测」，见下方 (3)。
-      - target: source_id
-        source: metadata.antibody_id
-        method: direct
-        required: true
-      - target: name_code
+      - {target: binder_id, method: platform}
+      - target: name
         source: metadata.antibody_name
         method: direct
-      - target: vh_seq
+      - target: vh_sequence
         source: sequences.VH
         method: direct
-      - target: vl_seq
+      - target: vl_sequence
         source: sequences.VL
         method: direct
-      - target: format
-        source: [metadata.Format, sequences.VL]
-        method: derived
-        rule_ref: derive_binder_format
       - target: target_antigen
         source: metadata.Target
         method: derived
         rule_ref: normalize_antigen_name
-      - target: germline
+      - target: germline_origin
         source: metadata.Species
         method: direct
       - target: structure_template
         source: metadata.PDB
         method: derived
         rule: strip 前导制表符
-      - target: development_stage
-        source: [metadata.Highest_Clin_Trial, metadata.est_status_asof_feb2025]
-        method: derived
-        rule: '"{Highest_Clin_Trial} / {est_status} (as of 2025-02)"'
+
+  - table: binder.binder_evidence
+    record_per_source: one
+    entity_key: [antibody_id, metadata]
+    fields:
+      - {target: evidence_id, method: platform}
+      - {target: binder_id, method: parent, references: binder.binder_id}
+      - {target: source_type, method: constant, value: public_database}
+      - {target: source_id, source: metadata.antibody_id, method: direct, required: true}
+      - {target: evidence_level, method: constant, value: 同行评议}
       - target: applicable_scenario
-        source: metadata.Clinical indication
-        method: direct
-      - target: immunogenicity_risk
-        source: metadata.ADAs_rate
+        source: [metadata.Clinical indication, metadata.Highest_Clin_Trial,
+                 metadata.est_status_asof_feb2025]
         method: derived
-        rule: '"ADA {ADAs_rate}%"'
+      - {target: immunogenicity_ada_risk, source: metadata.ADAs_rate, method: derived}
       - target: citation
         source: [metadata.PDB_reference, metadata.ADAs_reference]
         method: derived
 
   # ---------- (2) 证据行：experimental（实测成药性）----------
-  - table: binder.binder
+  - table: binder.binder_evidence
     record_per_source: many
     iterate_over: experimental 的 tidy format 三个分页，每行 × 每个指标栏
     entity_key: [antibody_id]
     fields:
-      - target: source_type
-        method: constant
-        value: 公开库
-      - target: evidence_level
-        method: constant
-        value: 同行评议
+      - {target: evidence_id, method: platform}
+      - {target: binder_id, method: parent, references: binder.binder_id}
+      - {target: source_type, method: constant, value: public_database}
+      - {target: evidence_level, method: constant, value: 同行评议}
       - target: source_id
         source: [antibody_id, sheet_name, metric_name, technical_replicate]
         method: derived
         rule: '"{antibody_id}|{sheet}|{metric}|rep{n}"，保证行内唯一'
-      - target: tm_celsius
+      - target: tm
         source: [tm1_nanodsf, tm2_nanodsf, tm3_nanodsf, tonset_nanodsf]
         method: derived
         rule: |
           取 tm1_nanodsf 为主值；tonset 是起始温度不是 Tm，不得混填。
-          单位已是 °C，与 tm_celsius 一致，无需换算。
+          单位已是 °C，与 tm 一致，无需换算。
       - target: hydrophobicity
         source: [hic_rt, smac_rt, hac_rt]
         method: derived
         unit_from: min（色谱保留时间）
         note: |
           【单位不一致告警】hic_rt 等是保留时间（分钟），
-          而 binder.binder.hydrophobicity 是 numeric 无量纲。
+          而 binder.binder_evidence.hydrophobicity 是 numeric 无量纲。
           直接灌入会让不同色谱条件的值不可比。
           须先按 Assay Endpoint Dictionary 的 Harmonized_Endpoint 归一化，
-          并把原始指标名与单位写进 experiment_conditions。
-      - target: aggregation
+          并把原始指标名与单位写进 experimental_conditions。
+      - target: aggregation_tendency
         source: ['sec_%monomer', 'acsins_dLmax_ph7.4', 'acsins_dLmax_ph6.0']
         method: derived
         rule: 'sec_%monomer 越低聚集越强；acsins_dLmax 反映自缔合。合成描述串'
-      - target: experiment_conditions
+      - target: experimental_conditions
         source: [sheet_name, metric_name, production_batch, run, technical_replicate]
         method: derived
         required: true
         note: 必填。缺了就无法区分同一抗体的多次测量
 
   # ---------- (3) 证据行：literature（文献抽取的成药性与亲和力）----------
-  - table: binder.binder
+  - table: binder.binder_evidence
     record_per_source: many
     iterate_over: literature 的 30 个分页 × 每行 × 每个指标栏
     entity_key: [antibody_id]
     fields:
+      - {target: evidence_id, method: platform}
+      - {target: binder_id, method: parent, references: binder.binder_id}
       - target: source_type
         method: constant
-        value: 文献
+        value: literature
         note: 与 (1)(2) 不同——这批的原始出处是具体文献，不是公开库整编
       - target: evidence_level
         method: derived
@@ -381,7 +351,7 @@ targets:
           绝大多数分页为「同行评议」，但下列分页是计算预测值，必须填「模型预测」：
             Hebditch et al.  —— 全部 13 个指标栏名以 .pred 结尾
             Bailly et al.    —— HIC.pred.15
-          填错会让 source_weight 从 0.2 变成 0.7，直接污染下游打分。
+          填错会让 evidence_level 分类被误改，直接污染下游打分。
       - target: source_id
         source: [link.PMID, antibody_id, metric_name]
         method: derived
@@ -389,7 +359,7 @@ targets:
         source: [link.name, link.PMID, link.address]
         method: derived
         rule: 由 literature 工作簿的 [link] 分页按 sheet 名连接取得
-      - target: kd_nm
+      - target: kd
         source: ['Adams et al..fit_KD_median [M]', 'Jain et al.(2024) 的 Octet KD (M)']
         method: derived
         unit_from: M
@@ -398,15 +368,15 @@ targets:
           【2.0 新增能力】1.0 时代本源填不了亲和力。
           Adams et al. 分页 10,970 列带 fit_KD_median/mean/min/max [M]，
           Jain et al.(2024) 带 Octet KD (M)。
-          源单位是 M，目标列 kd_nm 是 nM，必须换算，且 unit_from 必填。
-      - target: tm_celsius
+          源单位是 M，目标列 kd 是 nM，必须换算，且 unit_from 必填。
+      - target: tm
         source: 各分页的 Tm / Tm1 (C) / Fab Tm by DSF (°C) 等
         method: derived
         rule_ref: harmonize_endpoint
-      - target: immunogenicity_risk
+      - target: immunogenicity_ada_risk
         source: 'marks et al. 分页的 %ADA response'
         method: derived
-      - target: experiment_conditions
+      - target: experimental_conditions
         source: [sheet_name, metric_name, Harmonized_Endpoint, Endpoint_Unit, Condition]
         method: derived
         required: true
@@ -416,19 +386,6 @@ targets:
 # Part 4 — 派生规则标识
 # =========================================================
 rule_refs:
-  derive_binder_format:
-    description: 由 metadata.Format（103 个取值）判定 binder.binder_format 五值枚举
-    value_map:
-      Whole mAb: IgG
-      Whole mAb ADC: IgG
-      Fab: Fab
-      scFv: scFv
-      VHH: VHH
-      Nanobody: VHH
-    fallback: 其他
-    note: |
-      双特异（Bispecific *）一条记录含两组可变区，会展开成两个 binder 实体，非 one-to-one。
-      展开规则待定——本轮先落 其他 并标记待处理。
   normalize_antigen_name:
     description: 靶点名归一化；"/" 分隔的按别名处理而非多靶点
   harmonize_endpoint:
@@ -446,9 +403,9 @@ rule_refs:
 risks:
   - id: R1
     desc: |
-      单表结构 + literature 的 Adams et al. 分页有 10,970 列，
-      全量灌入会让 binder.binder 出现上万条同一 binder 的证据行。
-      必须先确认归并策略（core.merge_log）再灌，否则 A 库规模失控。
+      实体/证据两表结构下，literature 的 Adams et al. 分页有 10,970 列，
+      全量灌入会在 binder.binder_evidence 中产生上万条测量记录。
+      它们应按 binder_id 关联单一实体，不应当成重复实体归并。
       建议第一轮只灌 metadata + sequences 实体行，证据行按靶点筛选后再灌。
   - id: R2
     desc: |
@@ -460,5 +417,5 @@ risks:
       未经 Harmonized_Endpoint 归一化就入库会产生不可比的数值。这是本档最易出错处。
   - id: R4
     desc: |
-      Hebditch / Bailly 两个预测分页若误判为「同行评议」，source_weight 会从 0.2 抬到 0.7。
+      Hebditch / Bailly 两个预测分页若误判为「同行评议」，evidence_level 分类会被误改。
       建议在 QC 加一条断言：source_id 含 .pred 的行，evidence_level 必须为 模型预测。

@@ -9,9 +9,9 @@ EXCEPTION WHEN OTHERS THEN
 END $$;
 
 CREATE SCHEMA IF NOT EXISTS core;     -- 来源登记、批次、归并留痕、LLM 用量
-CREATE SCHEMA IF NOT EXISTS binder;   -- 1.1 结合域库
-CREATE SCHEMA IF NOT EXISTS car;      -- 1.2 CAR 结构库（模块级 + 整装级）
-CREATE SCHEMA IF NOT EXISTS process;  -- 1.3 制造工艺库
+CREATE SCHEMA IF NOT EXISTS binder;        -- 1.1 Binder 实体与证据
+CREATE SCHEMA IF NOT EXISTS car;           -- 1.2 CAR 实体与证据
+CREATE SCHEMA IF NOT EXISTS manufacturing; -- 1.3 制造工艺实体与证据
 CREATE SCHEMA IF NOT EXISTS lit;      -- 1.4 文献库
 CREATE SCHEMA IF NOT EXISTS patent;   -- 1.5 专利库
 CREATE SCHEMA IF NOT EXISTS db1;      -- 1.6 ABC 组合库

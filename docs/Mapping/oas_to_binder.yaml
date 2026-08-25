@@ -1,5 +1,5 @@
 # =========================
-# Mapping: OAS (paired) -> binder.binder
+# Mapping: OAS (paired) -> binder.binder + binder.binder_evidence
 # =========================
 # 只回答一件事：OAS paired data-unit 的字段如何变成数据库字段。
 # 不描述如何获取数据（见 docs/SourceRegistry/oas.yaml），
@@ -8,7 +8,7 @@
 mapping_id: oas_paired_to_binder
 source_name: OAS (Observed Antibody Space) — paired
 route_id: paired_bulk
-target_schema: sql/03_binder.sql → binder.binder
+target_schema: sql/03_binder.sql → binder.binder + binder.binder_evidence
 source_format: csv_row（.csv.gz 内，首行为 data-unit metadata）
 record_grain: 一条天然配对的 VH/VL B 细胞受体序列
 
@@ -71,16 +71,16 @@ source_field_inventory:
 
   # ---- data-unit metadata（.csv.gz 第一行）----
   - source: metadata.Author
-    target: binder.binder.citation
+    target: binder.binder_evidence.citation
     method: derived
     note: 第一作者 + 年份，如 Alsoiussi_2020
   - source: metadata.Species
-    target: binder.binder.germline
+    target: binder.binder.germline_origin
     method: derived
     note: 与 v_call 的胚系基因合并
   - source: [metadata.Disease, metadata.Vaccine, metadata.BType,
              metadata.BSource, metadata.Longitudinal, metadata.Age, metadata.Subject]
-    target: binder.binder.experiment_conditions
+    target: binder.binder_evidence.experimental_conditions
     method: derived
     note: |
       这是本源唯一的「上下文」信息。Disease=SARS-COV-2 只说明供者当时患病，
@@ -90,32 +90,32 @@ source_field_inventory:
 
   # ---- 序列 ----
   - source: sequence_alignment_aa_heavy
-    target: binder.binder.vh_seq
+    target: binder.binder.vh_sequence
   - source: sequence_alignment_aa_light
-    target: binder.binder.vl_seq
+    target: binder.binder.vl_sequence
   - source: [sequence_heavy, sequence_light]
     target: null
     note: 核酸序列，本库只存氨基酸
 
   # ---- CDR / FR ----
   - source: cdr1_aa_heavy
-    target: binder.binder.cdr_h1
+    target: binder.binder.fr_cdr_regions
   - source: cdr2_aa_heavy
-    target: binder.binder.cdr_h2
+    target: binder.binder.fr_cdr_regions
   - source: cdr3_aa_heavy
-    target: binder.binder.cdr_h3
+    target: binder.binder.fr_cdr_regions
   - source: cdr1_aa_light
-    target: binder.binder.cdr_l1
+    target: binder.binder.fr_cdr_regions
   - source: cdr2_aa_light
-    target: binder.binder.cdr_l2
+    target: binder.binder.fr_cdr_regions
   - source: cdr3_aa_light
-    target: binder.binder.cdr_l3
+    target: binder.binder.fr_cdr_regions
   - source: [fwr1_aa_heavy, fwr2_aa_heavy, fwr3_aa_heavy, fwr4_aa_heavy,
              fwr1_aa_light, fwr2_aa_light, fwr3_aa_light, fwr4_aa_light]
     target: null
     note: |
       框架区。binder.binder 只有六条 cdr_* 列，没有 fwr_* 列。
-      FR 序列可由 vh_seq 减去 CDR 还原，故不单独入库。
+      FR 序列可由 vh_sequence 减去 CDR 还原，故不单独入库。
   - source: [cdr1_start_heavy, cdr1_end_heavy, fwr1_start_heavy, ...]
     target: binder.binder.cdr_lengths
     method: derived
@@ -143,7 +143,7 @@ source_field_inventory:
 
   # ---- 编号 ----
   - source: [ANARCI_numbering_heavy, ANARCI_numbering_light]
-    target: binder.binder.numbering
+    target: binder.binder.numbering_scheme
     method: constant
     value: IMGT
     note: |
@@ -151,7 +151,7 @@ source_field_inventory:
       这与 SAbDab2 的情况不同 —— 那里编号由我方 pipeline 决定，故不得写死；
       本源的编号是 source 自带的，可以 constant IMGT。
   - source: [ANARCI_status_heavy, ANARCI_status_light]
-    target: binder.binder.experiment_conditions
+    target: binder.binder_evidence.experimental_conditions
     method: derived
     note: |
       ANARCI 的质控标记（Unusual residue / Shorter than IMGT defined /
@@ -193,82 +193,35 @@ targets:
       天然重复（不同供者出现同一序列）会因此自动归并，这是期望行为。
 
     fields:
-      - target: source_type
-        method: constant
-        value: 公开库
-
-      - target: evidence_level
-        method: constant
-        value: 同行评议
-        note: |
-          【业务侧 2026-08-20 决定：按源定固定值】
-          OAS 收录的每个 study 都对应一篇已发表的免疫组库测序论文
-          （metadata.Author 即该文第一作者），归「同行评议」。
-          注意语义边界：这里的「同行评议」指「序列本身的来源可信」，
-          不代表「该抗体的功能已被验证」—— 本源没有任何功能数据。
-
-      - target: source_id
-        source: [study, SRR_ID, sequence_id_heavy]
-        method: derived
-        rule: '"{study}/{SRR_ID}/{sequence_id_heavy}"'
-        required: true
-        note: 三段拼接才唯一，缺一不可
-
-      - target: name_code
-        method: constant
-        value: null
-        note: 天然序列无名称
-
-      - target: target_antigen
-        method: constant
-        value: null
-        note: |
-          【本源恒为 null，不是遗漏】见 Part 1。
-          OAS 无任何抗原字段，Disease / Vaccine 不能替代。
-
-      - target: vh_seq
+      - {target: binder_id, method: platform}
+      - {target: name, method: constant, value: null}
+      - {target: target_antigen, method: constant, value: null}
+      - target: vh_sequence
         source: sequence_alignment_aa_heavy
         method: direct
-      - target: vl_seq
+      - target: vl_sequence
         source: sequence_alignment_aa_light
         method: direct
-      - target: format
-        method: constant
-        value: 其他
-        note: |
-          天然配对 VH/VL 不是任何一种构建体格式：
-          既非 scFv（无 linker）亦非 IgG（无恒定区）。落 其他。
-      - target: cdr_h1
-        source: cdr1_aa_heavy
-        method: direct
-      - target: cdr_h2
-        source: cdr2_aa_heavy
-        method: direct
-      - target: cdr_h3
-        source: cdr3_aa_heavy
-        method: direct
-      - target: cdr_l1
-        source: cdr1_aa_light
-        method: direct
-      - target: cdr_l2
-        source: cdr2_aa_light
-        method: direct
-      - target: cdr_l3
-        source: cdr3_aa_light
-        method: direct
+      - target: fr_cdr_regions
+        source: [fwr1_aa_heavy, fwr2_aa_heavy, fwr3_aa_heavy, fwr4_aa_heavy,
+                 cdr1_aa_heavy, cdr2_aa_heavy, cdr3_aa_heavy,
+                 fwr1_aa_light, fwr2_aa_light, fwr3_aa_light, fwr4_aa_light,
+                 cdr1_aa_light, cdr2_aa_light, cdr3_aa_light]
+        method: derived
+        rule: '按 H/L 链与 FR/CDR 区域写成 JSON'
       - target: cdr_lengths
         source: [cdr1_aa_heavy, cdr2_aa_heavy, cdr3_aa_heavy,
                  cdr1_aa_light, cdr2_aa_light, cdr3_aa_light]
         method: derived
         rule: '{"H1":len,"H2":len,"H3":len,"L1":len,"L2":len,"L3":len}（jsonb）'
-      - target: numbering
+      - target: numbering_scheme
         method: constant
         value: IMGT
       - target: vdj_genes
         source: [v_call_heavy, d_call_heavy, j_call_heavy, v_call_light, j_call_light]
         method: derived
         rule: '"H:{v}/{d}/{j} L:{v}/{j}"；多候选基因以 "," 分隔时取第一个并保留全串'
-      - target: germline
+      - target: germline_origin
         source: [metadata.Species, v_call_heavy, v_call_light]
         method: derived
       - target: somatic_mutations
@@ -277,10 +230,19 @@ targets:
                  v_identity_heavy, v_identity_light]
         method: derived
         rule_ref: diff_against_germline
+  - table: binder.binder_evidence
+    record_per_source: one
+    entity_key: [study, SRR_ID, sequence_id_heavy]
+    fields:
+      - {target: evidence_id, method: platform}
+      - {target: binder_id, method: parent, references: binder.binder_id}
+      - {target: source_type, method: constant, value: public_database}
+      - {target: source_id, source: [study, SRR_ID, sequence_id_heavy], method: derived, required: true}
+      - {target: evidence_level, method: constant, value: 同行评议}
       - target: citation
         source: [metadata.Author, study]
         method: derived
-      - target: experiment_conditions
+      - target: experimental_conditions
         source: [metadata.Disease, metadata.Vaccine, metadata.BType, metadata.BSource,
                  metadata.Longitudinal, metadata.Age, metadata.Subject,
                  ANARCI_status_heavy, ANARCI_status_light]
@@ -288,7 +250,7 @@ targets:
         required: true
       - target: contrary_evidence
         method: constant
-        value: null
+        value: false
 
 
 # =========================================================
@@ -297,46 +259,35 @@ targets:
 unmapped_target_columns:
   by_design_null:
     - target_antigen    # 见 Part 1
-    - epitope_position
-    - epitope_kind
+    - epitope
     - binding_site
   not_available:
-    - scfv_seq
+    - scfv_sequence
     - linker
-    - kd_nm
-    - kon_m1s1
-    - koff_s1
-    - measure_method
-    - measure_condition
-    - tm_celsius
+    - kd
+    - kon
+    - koff
+    - measurement_method
+    - measurement_conditions
+    - tm
     - viscosity
-    - aggregation
+    - aggregation_tendency
     - solubility
     - hydrophobicity
-    - net_charge
+    - charge
     - glycosylation_sites   # 可由序列 N-X-S/T 基序预测，但那是预测不是 source 值
-    - free_cysteine         # 同上
-    - humanization
-    - immunogenicity_risk
-    - cross_reactivity
+    - free_cysteines         # 同上
+    - humanization_level
+    - immunogenicity_ada_risk
+    - cross_reactivity_protein
+    - cross_reactivity_cell
     - species_reactivity
     - structure_template
     - complex_structure
-    - development_stage
-    - patent_status
-    - in_vitro_readout
-    - prediction_confidence
     - applicable_scenario
   platform_managed:
-    - uid
     - version
     - entry_date
-    - source_weight
-    - batch_id
-    - registry_id
-    - merged_into
-    - created_at
-    - updated_at
 
 
 # =========================================================
@@ -352,7 +303,7 @@ risks:
   - id: R1
     desc: |
       规模。paired 部分 21 个 study / 1,220 个 data-unit，全量约百万级序列。
-      单表 binder.binder 全量灌入会让本源占据 A 库 99% 以上的行，
+      binder 实体表全量灌入会让本源占据 A 库 99% 以上的行，
       且这些行的 target_antigen 全为 null，对推荐算法无直接价值。
       => 强烈建议先回答 Part 1 的「进不进 A 库」，若进也必须先定抽样策略。
       unpaired 部分十亿级，更不可能全量。
@@ -364,9 +315,9 @@ risks:
       本档已把 target_antigen 硬定为 constant null 来堵这个口子。
   - id: R3
     desc: |
-      实体键用序列对而非 ID。若同一序列在多个 data-unit 出现会触发归并；
-      归并时 experiment_conditions（供者、疾病、时间点）会不同，
-      必须保留全部来源行并靠 core.merge_log 关联，不可直接覆盖。
+      实体键用序列对而非 ID。同一序列在多个 data-unit 出现时复用同一 binder_id；
+      供者、疾病、时间点等差异分别保留在多条 binder_evidence.experimental_conditions 中，
+      不可覆盖或拼成一条证据。
   - id: R4
     desc: |
       官方说明页称「120,000 paired sequences from 7 studies」，与实测的 21 study 不符。

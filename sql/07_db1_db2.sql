@@ -1,9 +1,9 @@
 -- 1.6 DB1：ABC 组合（A 提供 Binder + 工艺，B 提供 CAR）
 CREATE TABLE IF NOT EXISTS db1.combo (
-  uid              text PRIMARY KEY,
-  binder_uid       text NOT NULL REFERENCES binder.binder(uid),
-  car_construct_uid text NOT NULL REFERENCES car.construct(uid),
-  process_uid      text REFERENCES process.process(uid),
+  uid               text PRIMARY KEY,
+  binder_id         uuid NOT NULL REFERENCES binder.binder(binder_id),
+  car_id            uuid NOT NULL REFERENCES car.car(car_id),
+  manufacturing_id  uuid REFERENCES manufacturing.manufacturing(manufacturing_id),
 
   -- 同一实验组合判定：三库记录是否出自同一实验
   same_experiment  boolean,
@@ -12,15 +12,14 @@ CREATE TABLE IF NOT EXISTS db1.combo (
 
   -- 标签（字段规范/方案：相似度、来源等级、实验阶段）
   similarity       numeric(5,4),
-  evidence_level   core.evidence_level,
-  source_weight    numeric(3,2) GENERATED ALWAYS AS (core.weight_of(evidence_level)) STORED,
+  evidence_level   text,
   experiment_stage text,
   labels           jsonb,
 
   trainable        boolean NOT NULL DEFAULT false,  -- 是否可用于训练（目标 ≥100 条）
   batch_id         uuid REFERENCES core.batch_run(batch_id),
   created_at       timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (binder_uid, car_construct_uid, process_uid)
+  UNIQUE (binder_id, car_id, manufacturing_id)
 );
 CREATE INDEX IF NOT EXISTS db1_trainable_idx ON db1.combo (trainable);
 

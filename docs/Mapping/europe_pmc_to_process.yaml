@@ -1,5 +1,5 @@
 # =========================
-# Mapping: Europe PMC -> process.process
+# Mapping: Europe PMC -> manufacturing.manufacturing + manufacturing.manufacturing_evidence
 # =========================
 # 只回答一件事：Europe PMC 的内容如何变成数据库字段。
 # 不描述如何获取数据（见 docs/SourceRegistry/europe_pmc.yaml），
@@ -8,7 +8,7 @@
 mapping_id: europe_pmc_to_process
 source_name: Europe PMC
 route_id: [search_api, fulltext_xml]
-target_schema: sql/05_process.sql → process.process
+target_schema: sql/05_process.sql → manufacturing.manufacturing + manufacturing.manufacturing_evidence
 source_format: json_object（检索层）+ parsed_document（全文层）
 record_grain: 一篇文献中报告的一套 CAR-T 制造工艺
 
@@ -23,10 +23,10 @@ why_this_source_matters: |
   这是三个 C 库源里唯一能填定量工艺参数的。
 
   实测对比同一批字段：
-    process.process.moi           EMA 全文 0 命中 | FDA 全文 0 命中
-    process.process.culture_days  EMA 全文 0 命中 | FDA 被 (b)(4) 涂黑（"After ___ of culture"）
-    process.process.vcn           EMA 全文 0 命中 | FDA 全文 0 命中
-    process.process.mycoplasma    EMA 全文 0 命中 | FDA 有检测项但限度涂黑
+    manufacturing.manufacturing.moi           EMA 全文 0 命中 | FDA 全文 0 命中
+    manufacturing.manufacturing.culture_duration  EMA 全文 0 命中 | FDA 被 (b)(4) 涂黑（"After ___ of culture"）
+    manufacturing.manufacturing_evidence.vcn           EMA 全文 0 命中 | FDA 全文 0 命中
+    manufacturing.manufacturing_evidence.mycoplasma    EMA 全文 0 命中 | FDA 有检测项但限度涂黑
 
   监管文档给的是「工艺链的定性描述 + 已上市产品的权威基线」，
   给不了做推荐算法所需的定量参数。这些只能来自同行评议文献。
@@ -51,17 +51,17 @@ search_layer_fields:
 
   - source: [source, id]
     example: MED / 39315411
-    target: process.process.source_id
+    target: manufacturing.manufacturing_evidence.source_id
     method: derived
     rule: '"{source}:{id}"，如 "MED:39315411"'
     required: true
   - source: [pmid, pmcid, doi]
     example: 39315411 / 10.3390/cells15151333
-    target: process.process.citation
+    target: manufacturing.manufacturing_evidence.citation
     method: derived
   - source: [title, authorString, journalInfo, pubYear]
     example: 'CD8α Structural Domains Enhance GUCY2C CAR-T Cell Efficacy.'
-    target: process.process.citation
+    target: manufacturing.manufacturing_evidence.citation
     method: derived
     required: true
   - source: [isOpenAccess, inEPMC, inPMC, hasPDF, fullTextUrlList]
@@ -86,7 +86,7 @@ search_layer_fields:
       pubTypeList 含 Review 的应降权或排除——综述转述他人工艺参数，
       会造成同一工艺被重复计数且失去原始出处。见 Part 5 R2。
   - source: [firstPublicationDate, firstIndexDate, dateOfRevision]
-    target: process.process.citation
+    target: manufacturing.manufacturing_evidence.citation
     method: derived
     note: firstIndexDate 用于 cursorMark 增量
   - source: citedByCount
@@ -120,12 +120,12 @@ search_layer_filters:
 # 【与 EMA/FDA 的关键差异】
 # 那两个源的 evidence 栏可以给出实测原文，因为文档固定且已下载。
 # 本源是上万篇异质文献，无法逐篇预验证。
-# 下列字段是「文献中通常报告、且 process.process 有对应列」的交集，
+# 下列字段是「文献中通常报告、且 manufacturing.manufacturing 有对应列」的交集，
 # 属预期覆盖而非已验证覆盖。见 Part 5 R1。
 
 targets:
 
-  - table: process.process
+  - table: manufacturing.manufacturing
     record_per_source: one
     entity_key: [source, id]
     entity_key_note: |
@@ -135,41 +135,12 @@ targets:
 
     fields:
 
-      # ---- 公共元数据 ----
-      - target: source_type
-        method: constant
-        value: 文献
-        note: core.source_type 四值中唯一贴合的一档
-      - target: evidence_level
-        method: derived
-        rule_ref: derive_evidence_level_by_source
-        note: |
-          【业务侧 2026-08-20 决定：按源定固定值；本源需一个例外分支】
-          MED（PubMed）与 PMC 记录为同行评议期刊文献 → 同行评议（weight 0.7）。
-          但 Europe PMC 也收录 PPR（preprint）来源，
-          source == 'PPR' 时必须改填「专利预印本」（weight 0.4），
-          一律填同行评议会虚抬权重。
-      - target: source_id
-        source: [source, id]
-        method: derived
-        required: true
-      - target: citation
-        source: [authorString, title, journalInfo, pubYear, doi, pmid, 页码/章节]
-        method: derived
-        required: true
-      - target: product_name
+      - {target: manufacturing_id, method: platform}
+      - target: corresponding_car_product
         source: 全文中的产品/构建体代号
         method: llm
         rule_ref: extract_product_name
         note: 学术文献多用内部代号（如 "GCC-CART"），非商品名；如实抽取
-      - target: contrary_evidence
-        source: 全文
-        method: llm
-        rule_ref: extract_contrary_evidence
-        note: |
-          本源是三个 C 库源里唯一可能提供相反证据的。
-          监管文档只写已批准产品的成功工艺；文献会报告失败/劣于对照的工艺。
-          这对推荐算法有独立价值——负样本比正样本稀缺。
 
       # ---- 定量参数（本源的核心价值）----
       - target: moi
@@ -180,23 +151,12 @@ targets:
           EMA/FDA 均 0 命中，本列只能由本源填。
           单位为无量纲比值；文献常写 "MOI of 5" 或 "MOI = 1:10"，
           后者是感染比而非 MOI，须区分，不可直接取数字。
-      - target: culture_days
+      - target: culture_duration
         source: Methods 章节的扩增段
         method: llm
         rule_ref: extract_culture_days
         unit_from: day
         note: 文献常写 "expanded for 9 days" 或 "day 0 to day 10"，后者需换算成时长
-      - target: vcn
-        source: Results 或 Methods 的质控段
-        method: llm
-        rule_ref: extract_vcn
-        unit_from: copies/cell
-        note: EMA/FDA 均 0 命中，本列只能由本源填
-      - target: mycoplasma
-        source: Methods 的质控段
-        method: llm
-        rule_ref: extract_release_spec
-        note: EMA 0 命中、FDA 涂黑，本列主要靠本源
 
       # ---- 工艺链（与 EMA 重叠，用于交叉验证）----
       - target: t_cell_source
@@ -214,11 +174,11 @@ targets:
         method: llm
         rule_ref: extract_activation
         note: 文献通常写得比 EMA 具体（如 "anti-CD3/CD28 Dynabeads at 1:1 bead-to-cell ratio"）
-      - target: activation_reagents
+      - target: reagents
         source: 同上
         method: llm
         rule_ref: extract_activation
-      - target: vector
+      - target: vector_type
         source: Methods 的基因导入段
         method: llm
         rule_ref: extract_vector_type
@@ -227,7 +187,7 @@ targets:
                     electroporation: 电转, nucleofection: 电转}
         note: 文献的载体类型比监管文档多样（转座子、电转在学术工艺中常见，
               已上市产品几乎全是慢病毒）
-      - target: transduction_condition
+      - target: transduction_transfection_conditions
         source: Methods 的转导段
         method: llm
         rule_ref: extract_transduction_condition
@@ -236,14 +196,14 @@ targets:
         method: llm
         rule_ref: extract_culture_system
         note: 文献会写具体培养基品名（X-VIVO 15、TexMACS 等），比 EMA 的泛称有用
-      - target: cytokines
+      - target: cytokine_combination
         source: Methods 的扩增段
         method: llm
         rule_ref: extract_cytokines
         note: |
           文献常给浓度（"IL-7 (10 ng/mL) and IL-15 (5 ng/mL)"），
           比 EMA 只写 "human IL-2" 信息量大得多。浓度须一并抽取写入本列。
-      - target: cryo_condition
+      - target: cryopreservation_conditions
         source: Methods 的冻存段
         method: llm
         rule_ref: extract_cryo_condition
@@ -255,30 +215,42 @@ targets:
         source: Results 的表型段
         method: llm
         rule_ref: extract_cd4_cd8_ratio
-      - target: starting_quality
+      - target: starting_cell_quality
         source: Methods 的起始材料段
         method: llm
         rule_ref: extract_starting_quality
 
-      # ---- 放行 / 表征指标 ----
-      - target: viability_pct
+  - table: manufacturing.manufacturing_evidence
+    record_per_source: one
+    entity_key: [source, id, process_group]
+    fields:
+      - {target: evidence_id, method: platform}
+      - {target: manufacturing_id, method: parent, references: manufacturing.manufacturing_id}
+      - {target: source_type, method: constant, value: literature}
+      - {target: source_id, source: [source, id, process_group], method: derived, required: true}
+      - {target: evidence_level, method: derived, rule_ref: derive_evidence_level_by_source}
+      - {target: citation, source: [authorString, title, journalInfo, pubYear, doi, pmid, 页码/章节], method: derived, required: true}
+      - {target: contrary_evidence, source: 全文, method: llm, rule_ref: extract_contrary_evidence}
+      - {target: vcn, source: Results 或 Methods 的质控段, method: llm, rule_ref: extract_vcn, unit_from: copies/cell}
+      - {target: mycoplasma, source: Methods 的质控段, method: llm, rule_ref: extract_release_spec}
+      - target: cell_viability
         source: Results
         method: llm
         rule_ref: extract_release_spec
         unit_from: '%'
-      - target: transduction_efficiency_pct
+      - target: transduction_efficiency
         source: Results
         method: llm
         rule_ref: extract_release_spec
         unit_from: '%'
         note: 文献几乎必报此值（流式 CAR+ 比例），是本源填充率最高的定量列之一
-      - target: cd3_positive_pct
+      - target: cd3_positive_ratio
         source: Results 的流式段
         method: llm
         rule_ref: extract_release_spec
         unit_from: '%'
         note: EMA 因 PK 语境混淆而不可用，本源可正常抽取
-      - target: phenotype
+      - target: memory_phenotype
         source: Results 的表型段
         method: llm
         rule_ref: extract_phenotype
@@ -286,7 +258,7 @@ targets:
           记忆表型（Tscm/Tcm/Tem/Teff）与耗竭表型（PD-1/TIM-3/LAG-3）。
           这是文献相对监管文档的最大增量——EPAR 只写 "cell phenotype" 不给分型。
           与 CLAUDE.md 提到的紧张性信号（tonic signaling）直接相关。
-      - target: cytotoxicity
+      - target: killing_activity
         source: Results 的功能段
         method: llm
         rule_ref: extract_functional_readout
@@ -309,7 +281,7 @@ targets:
         rule_ref: extract_release_spec
 
       # ---- 溯源 ----
-      - target: experiment_conditions
+      - target: experimental_conditions
         source: [章节名, 段落, 原文片段, rule_ref, 是否来自补充材料]
         method: derived
         required: true
@@ -330,15 +302,8 @@ targets:
 not_available:
   - car_construct_uid   # 需等 B 库建好后按构建体描述回填
 platform_managed:
-  - uid
   - version
   - entry_date
-  - source_weight
-  - batch_id
-  - registry_id
-  - merged_into
-  - created_at
-  - updated_at
 
 
 # =========================================================
@@ -418,12 +383,12 @@ risks:
       若不去重，C 库会出现大量近似记录，且都带 weight 0.7。
       对策：pubTypeList 含 Review 的排除；
       "as previously described" 的返回 null；
-      归并阶段按 (product_name + vector + culture_days + cytokines) 做相似度判定。
+      归并阶段按 (corresponding_car_product + vector + culture_duration + cytokines) 做相似度判定。
   - id: R3
     desc: |
       补充材料。CAR-T 工艺的定量参数经常只在 supplementary 里
       （正文写 "detailed protocols in Supplementary Methods"）。
-      本轮未做补充材料抓取。若不做，moi / culture_days 的实际填充率会远低于预期，
+      本轮未做补充材料抓取。若不做，moi / culture_duration 的实际填充率会远低于预期，
       而这两列正是本源存在的理由。=> 接入前须确认补充材料的抓取路径。
   - id: R4
     desc: |

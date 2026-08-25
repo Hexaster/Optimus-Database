@@ -34,15 +34,77 @@ binder:
     fr_cdr_regions:
       type: json
       nullable: true
-      description: FR/CDR 区域及其位置或序列信息。
+      description: FR/CDR 区域列表及其位置或序列信息。
+      item_schema:
+        chain:
+          type: string
+          nullable: false
+          allowed_values:
+          - VH
+          - VL
+        region:
+          type: string
+          nullable: false
+          allowed_values:
+          - FR1
+          - CDR1
+          - FR2
+          - CDR2
+          - FR3
+          - CDR3
+          - FR4
+        start_position:
+          type: string
+          nullable: true
+        end_position:
+          type: string
+          nullable: true
+        sequence:
+          type: string
+          nullable: true
     cdr_lengths:
       type: json
       nullable: true
-      description: 各 CDR 区域的长度。
+      description: 各 CDR 区域的长度列表。
+      item_schema:
+        chain:
+          type: string
+          nullable: false
+          allowed_values:
+          - VH
+          - VL
+        region:
+          type: string
+          nullable: false
+          allowed_values:
+          - CDR1
+          - CDR2
+          - CDR3
+        length:
+          type: integer
+          nullable: false
+          unit: aa
+          check: length >= 0
     vdj_genes:
       type: json
       nullable: true
-      description: V(D)J 基因信息。
+      description: 各可变区链的 V(D)J 基因列表。
+      item_schema:
+        chain:
+          type: string
+          nullable: false
+          allowed_values:
+          - VH
+          - VL
+        v_gene:
+          type: string
+          nullable: true
+        d_gene:
+          type: string
+          nullable: true
+        j_gene:
+          type: string
+          nullable: true
     germline_origin:
       type: string
       nullable: true
@@ -50,7 +112,23 @@ binder:
     somatic_mutations:
       type: json
       nullable: true
-      description: 体细胞突变信息。
+      description: 体细胞突变位点列表。
+      item_schema:
+        chain:
+          type: string
+          nullable: false
+          allowed_values:
+          - VH
+          - VL
+        position:
+          type: string
+          nullable: false
+        germline_residue:
+          type: string
+          nullable: false
+        observed_residue:
+          type: string
+          nullable: false
     target_antigen:
       type: string
       nullable: true
@@ -59,11 +137,34 @@ binder:
     glycosylation_sites:
       type: json
       nullable: true
-      description: 糖基化位点信息。
+      description: 糖基化位点列表。
+      item_schema:
+        chain:
+          type: string
+          nullable: false
+          allowed_values:
+          - VH
+          - VL
+        position:
+          type: string
+          nullable: false
+        motif:
+          type: string
+          nullable: true
     free_cysteines:
       type: json
       nullable: true
-      description: 游离半胱氨酸信息。
+      description: 游离半胱氨酸位点列表。
+      item_schema:
+        chain:
+          type: string
+          nullable: false
+          allowed_values:
+          - VH
+          - VL
+        position:
+          type: string
+          nullable: false
     humanization_level:
       type: string
       nullable: true
@@ -86,6 +187,7 @@ binder:
       nullable: false
       description: 该记录的录入日期。
       default: current_date
+      
 binder_evidence:
   table: binder_evidence
   description: Binder 证据表。保存特定来源、特定实验条件下对 Binder 的观察或测量结果。
@@ -128,7 +230,17 @@ binder_evidence:
     experimental_conditions:
       type: json
       nullable: true
-      description: 产生该证据时的实验条件。
+      description: 产生该证据时的实验条件列表。
+      item_schema:
+        name:
+          type: string
+          nullable: false
+        value:
+          type: string
+          nullable: false
+        unit:
+          type: string
+          nullable: true
     applicable_scenario:
       type: string
       nullable: true
@@ -174,19 +286,56 @@ binder_evidence:
     measurement_conditions:
       type: json
       nullable: true
-      description: Kd、Kon、Koff 等测量值对应的具体测量条件。
+      description: Kd、Kon、Koff 等测量值对应的条件列表。
+      item_schema:
+        name:
+          type: string
+          nullable: false
+        value:
+          type: string
+          nullable: false
+        unit:
+          type: string
+          nullable: true
     cross_reactivity_protein:
       type: json
       nullable: true
-      description: 蛋白水平的交叉反应性信息。
+      description: 蛋白水平的交叉反应性结果列表。
+      item_schema:
+        protein:
+          type: string
+          nullable: false
+        species:
+          type: string
+          nullable: true
+        result:
+          type: string
+          nullable: false
     cross_reactivity_cell:
       type: json
       nullable: true
-      description: 细胞水平的交叉反应性信息。
+      description: 细胞水平的交叉反应性结果列表。
+      item_schema:
+        cell_type:
+          type: string
+          nullable: false
+        species:
+          type: string
+          nullable: true
+        result:
+          type: string
+          nullable: false
     species_reactivity:
       type: json
       nullable: true
-      description: 对人、鼠、猴等不同物种的反应性信息。
+      description: 对人、鼠、猴等不同物种的反应性结果列表。
+      item_schema:
+        species:
+          type: string
+          nullable: false
+        result:
+          type: string
+          nullable: false
     tm:
       type: number
       nullable: true

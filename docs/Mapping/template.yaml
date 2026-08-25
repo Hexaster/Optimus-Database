@@ -15,7 +15,8 @@ source_name:
 # 該 source 只有單一 route 時可留空
 route_id:
 
-# Schema_A / Schema_B / Schema_C
+# 对应 SQL 档与所有目标表，例：
+# sql/03_binder.sql → binder.binder + binder.binder_evidence
 target_schema:
 
 # 進入映射時的記錄形態，例：csv_row / json_object / xml_record / parsed_document
@@ -43,11 +44,12 @@ targets:
     iterate_over:
 
     # 實體歸一化鍵：用哪些 source 字段判定「這是同一個實體」。
-    # 平台內部主鍵（uuid）由此鍵生成或查得，不在 fields 中列出。
+    # 平台內部 UUID 由此鍵生成或查得，仍需在 fields 中以
+    # method: platform 列出 binder_id / car_id / manufacturing_id / evidence_id。
     entity_key: []
 
-    # evidence 等子表填寫；外鍵指向同一條 source record 映射出的父表記錄，
-    # 不在 fields 中重複列出
+    # evidence 等子表填寫；外鍵指向同一條 source record 映射出的父表記錄。
+    # 外鍵仍需在 fields 中以 method: parent 列出。
     parent:
 
     fields:
@@ -62,6 +64,8 @@ targets:
         # constant : 該 source 的固定值，如 source_type、evidence_level
         # derived  : 由一個或多個 source 字段計算 / 拆分 / 合併
         # llm      : 從自由文本抽取
+        # platform : 平台生成 UUID
+        # parent   : 使用同次映射產生的父表 UUID
         method: direct
 
         # method 為 constant 時的取值

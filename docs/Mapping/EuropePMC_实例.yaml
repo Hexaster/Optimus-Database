@@ -6,15 +6,15 @@
 # 不描述目标库结构、类型、约束（见 sql/03_binder.sql、04_car.sql、05_process.sql）。
 #
 # 本条是文献侧的"满配"示范：A/B/C 三库同时被大量填充，
-# 也是唯一能填 process.process 业务列的源类型。
+# 也是唯一能填 manufacturing.manufacturing 业务列的源类型。
 
 instance_id: europepmc_PMC12144966_to_abc
 source_name: Europe PMC
 route_id: [search, fulltext_efetch]
 target_schema:
-  - sql/03_binder.sql  → binder.binder
-  - sql/04_car.sql     → car.module / car.construct
-  - sql/05_process.sql → process.process
+  - sql/03_binder.sql  → binder.binder + binder.binder_evidence
+  - sql/04_car.sql     → car.car + car.car_evidence
+  - sql/05_process.sql → manufacturing.manufacturing + manufacturing.manufacturing_evidence
 source_format: jats_xml（OA 全文）+ pdf
 record_grain: 一篇 OA 论文（PMC12144966 / PMID 40487639）
 
@@ -37,7 +37,7 @@ attached_files:
 
 scope_caveat: |
   ★两点口径必须先声明，否则字段会填错：
-  ① binder 是单域 VHH 纳米抗体，无 VH/VL 配对 → vl_seq 恒为 null，不是"缺失"而是"不适用"；
+  ① binder 是单域 VHH 纳米抗体，无 VH/VL 配对 → vl_sequence 恒为 null，不是"缺失"而是"不适用"；
   ② 效应细胞是 NK92 细胞系（CAR-NK），不是原代 CAR-T → process 的 T 细胞口径字段不适用，见 R2。
 
 
@@ -111,21 +111,22 @@ raw_evidence:
 # =========================================================
 # 按 Binder 字段规范 47 栏逐栏对齐。
 targets_binder:
-  - table: binder.binder
+  - tables: [binder.binder, binder.binder_evidence]
+    field_routing: "entity fields -> binder.binder; source/measurement fields -> binder.binder_evidence; IDs linked by binder_id"
     record_per_source: two            # NbCDH17（实验组）+ NbC9（阴性对照）
-    entity_key: [name_code, target_antigen]
+    entity_key: [name, target_antigen]
 
     # ===== 公共元数据 11 栏 =====
     metadata_fields:
-      - {target: uid, method: platform}
-      - {target: name_code, method: derived, value: 'NbCDH17（对照 NbC9）', source_ref: car_schematic}
-      - {target: source_type, method: constant, value: 文献}
+      - {platform_primary_key: true, method: platform}
+      - {target: name, method: derived, value: 'NbCDH17（对照 NbC9）', source_ref: car_schematic}
+      - {target: source_type, method: constant, value: literature}
       - {target: source_id, method: constant, value: '10.1016/j.apsb.2025.03.039'}
-      - target: experiment_conditions
+      - target: experimental_conditions
         method: derived
         value: '流式（anti-VHH-AF647 / Anti-Camelid VHH Cocktail-iFluor 647）检测 CAR 表面表达；结合验证见 Supporting Fig. S3'
         note: ★检测条件有，但亲和力测定条件无——两者不可混填
-      - {target: evidence_level, method: constant, value: 同行评议, note: 'Acta Pharm Sin B；core.weight_of = 0.7'}
+      - {target: evidence_level, method: constant, value: 同行评议, note: 'Acta Pharm Sin B；evidence_level 以文本保存'}
       - target: version
         method: constant
         value: 正式发表版（非预印本）
@@ -135,17 +136,17 @@ targets_binder:
       - target: applicable_scenario
         method: derived
         value: '胃肠道肿瘤 CDH17 靶向；人鼠双交叉→可直接用同源小鼠模型评价，省去替代抗体'
-      - {target: contrary_evidence, method: constant, value: null}
+      - {target: contrary_evidence, method: constant, value: false}
 
     # ===== 序列 4 栏 =====
     sequence_fields:
-      - target: vh_seq
+      - target: vh_sequence
         method: constant
         value: null
         status: 不适用
         note: ★VHH 为单域 camelid 抗体，无 VH/VL 配对——是 not_applicable，不是 data_absent
-      - {target: vl_seq, method: constant, value: null, status: 不适用}
-      - target: scfv_seq
+      - {target: vl_sequence, method: constant, value: null, status: 不适用}
+      - target: scfv_sequence
         method: constant
         value: null
         status: 缺失
@@ -154,16 +155,15 @@ targets_binder:
 
     # ===== 编号 / 注释 7 栏 =====
     annotation_fields:
-      - {target: numbering, method: constant, value: null, note: 无序列则无从编号；且编号体系由我方 pipeline 决定，不由来源决定}
-      - target: 'FR 区'
+      - {target: numbering_scheme, method: constant, value: null, note: 无序列则无从编号；且编号体系由我方 pipeline 决定，不由来源决定}
+      - target: 'fr_cdr_regions'
         method: constant
         value: null
-        status: ★schema 无对应列
-        note: 规范列出「FR/CDR 区」，但 binder.binder 只有 cdr_h1-h3 / cdr_l1-l3，无 FR 列，见 R7
-      - {target: [cdr_h1, cdr_h2, cdr_h3, cdr_l1, cdr_l2, cdr_l3], method: constant, value: null, note: 'VHH 只有 CDR1-3（无轻链）；即便取到序列，落 cdr_h* 还是 cdr_l* 需先定口径'}
+        status: 本粒度缺失
+        note: VHH 全序列未在正文给出；取到序列后以 JSON 键保存 FR/CDR 区域
       - {target: cdr_lengths, method: constant, value: null}
       - {target: vdj_genes, method: constant, value: null}
-      - target: germline
+      - target: germline_origin
         method: derived
         value: 骆驼科（camelid）来源
         confidence: 中
@@ -173,27 +173,26 @@ targets_binder:
     # ===== 靶点 / 表位 4 栏 =====
     target_fields:
       - {target: target_antigen, method: derived, value: 'CDH17（cadherin 17）', confidence: 高}
-      - {target: epitope_position, method: constant, value: null, note: 正文未做表位定位}
-      - {target: epitope_kind, method: constant, value: 未知, note: 'binder.epitope_type 枚举取值'}
+      - {target: epitope, method: constant, value: null, note: 正文未做表位定位}
       - {target: binding_site, method: constant, value: null}
 
     # ===== 亲和力 5 栏 =====
     affinity_fields:
-      - target: [kd_nm, kon_m1s1, koff_s1]
+      - target: [kd, kon, koff]
         method: constant
         value: null
         note: ★原文只有定性 "high binding affinity to both human and mouse CDH17"，无任何数值
-      - target: measure_method
+      - target: measurement_method
         method: constant
         value: null
         note: |
           ★本栏语义为亲和力测定方法（SPR / BLI）。全文只有流式检测，不是亲和力测定 →
-          填 null，流式条件另记于 experiment_conditions。（旧版本此栏误填流式抗体，已改。）
-      - {target: measure_condition, method: constant, value: null}
+          填 null，流式条件另记于 experimental_conditions。（旧版本此栏误填流式抗体，已改。）
+      - {target: measurement_conditions, method: constant, value: null}
 
     # ===== 特异性 2 栏 =====
     specificity_fields:
-      - target: cross_reactivity
+      - target: cross_reactivity_protein
         method: derived
         value: '蛋白水平：对人与小鼠 CDH17 重组蛋白均高亲和结合（Supporting Fig. S3）。细胞水平：正文未做跨种属细胞结合实验，仅有人源靶细胞（IM95/ASPC1）杀伤数据。'
         note: ★规范要求区分蛋白水平与细胞水平；本条只有蛋白水平证据，须明写以免被读成两级均验证
@@ -201,12 +200,12 @@ targets_binder:
 
     # ===== 成药性 10 栏 =====
     developability_fields:
-      - target: [tm_celsius, viscosity, aggregation, solubility, hydrophobicity,
-                 net_charge, glycosylation_sites, free_cysteine, immunogenicity_risk]
+      - target: [tm, viscosity, aggregation_tendency, solubility, hydrophobicity,
+                 charge, glycosylation_sites, free_cysteines, immunogenicity_ada_risk]
         method: constant
         value: null
         note: 文献未做任何成药性表征——这是文献源的系统性缺口，须由 DOTAD/Thera-SAbDab 等补
-      - target: humanization
+      - target: humanization_level
         method: constant
         value: null
         status: 不适用
@@ -214,52 +213,53 @@ targets_binder:
 
     # ===== 结构 3 栏 =====
     structure_fields:
-      - target: [structure_template, complex_structure, prediction_confidence]
+      - target: [structure_template, complex_structure]
         method: constant
         value: null
         note: 无晶体结构、无预测模型；Fig. 2B 的结构示意图是卡通图，不是结构数据，不得填入
 
     # ===== 状态 / 功能 3 栏 =====
     status_fields:
-      - {target: development_stage, method: constant, value: '临床前（体外 + CDX/PDX 小鼠模型）'}
-      - {target: patent_status, method: constant, value: null, note: 论文未提及专利}
-      - target: in_vitro_readout
+      - {unmapped_legacy_field: development_stage, method: constant, value: '临床前（体外 + CDX/PDX 小鼠模型）'}
+      - {unmapped_legacy_field: patent_status, method: constant, value: null, note: 论文未提及专利}
+      - unmapped_legacy_field: in_vitro_readout
         method: derived
         value: 'CDH17 依赖性细胞毒（LDH 释放法，靶 IM95/ASPC1）；granzyme B / IFN-γ / TNF-α 分泌升高（ELISA）'
 
 
 # =========================================================
-# Part 3 — B 库映射（car.module + car.construct）
+# Part 3 — B 库映射（car.car + car.car）
 # =========================================================
 # 按 CAR 结构库字段规范 25 栏逐栏对齐。
 targets_car:
-  - table: car.module
+  - analysis_scope: [car.car.modules, car.car_evidence]
+    analysis_only: true
     record_per_source: many
     entity_key: [source_id, module_type, source_molecule]
 
     # ===== 元数据 11 栏 =====
     metadata_fields:
-      - {target: uid, method: platform}
-      - {target: name_code, method: derived, rule: '"{source_molecule}-{module_type}@PMC12144966"'}
-      - {target: source_type, method: constant, value: 文献}
+      - {platform_primary_key: true, method: platform}
+      - {target: name, method: derived, rule: '"{source_molecule}-{module_type}@PMC12144966"'}
+      - {target: source_type, method: constant, value: literature}
       - {target: source_id, method: constant, value: '10.1016/j.apsb.2025.03.039'}
-      - {target: experiment_conditions, method: derived, value: 'NK92 细胞系中表达；anti-VHH 流式验证表面表达'}
+      - {target: experimental_conditions, method: derived, value: 'NK92 细胞系中表达；anti-VHH 流式验证表面表达'}
       - {target: evidence_level, method: constant, value: 同行评议}
       - {target: version, method: constant, value: 正式发表版}
       - {target: entry_date, method: platform}
       - {target: citation, method: derived, value: 'Zheng L, et al. (2025). Acta Pharm Sin B 15(5):2559-2574. 见 2.6 Plasmid construction and lentivirus production。'}
       - {target: applicable_scenario, method: derived, value: '二代 CAR 骨架，已在 NK 系（NK92）中验证可用；CD8 铰链 + CD28 跨膜的混源配对'}
-      - {target: contrary_evidence, method: constant, value: null}
+      - {target: contrary_evidence, method: constant, value: false}
 
     # ===== 标识 4 栏 =====
     identity_fields:
-      - {target: module_type, method: derived, rule_ref: parse_car_architecture_sentence}
-      - {target: source_molecule, method: derived, note: 只取原文明写者}
-      - target: sequence
+      - {target: modules, method: derived, rule_ref: parse_car_architecture_sentence}
+      - {target: modules, method: derived, note: 只取原文明写者}
+      - target: modules
         method: constant
         value: null
         note: ★正文只给模块名，不给序列——文献源的系统性缺口（与专利/序列库正相反）
-      - {target: length_aa, method: constant, value: null, note: 规范的"长度（残基数）"；无序列则不得估计}
+      - {target: modules, method: constant, value: null, note: 规范的"长度（残基数）"；无序列则不得估计}
 
     modules:
       - {module_type: null, source_molecule: CD8, name: CD8 信号肽, note: 枚举缺「信号肽」档，见 R5}
@@ -273,7 +273,7 @@ targets_car:
     # ===== 功能属性 7 栏 =====
     functional_fields:
       - target: [activation_speed, metabolic_state, expansion_capacity,
-                 memory_phenotype, persistence, exhaustion_risk, tonic_signaling]
+                 memory_phenotype, persistence, exhaustion_risk, tonic_signaling_tendency]
         method: constant
         value: null
         note: |
@@ -282,12 +282,12 @@ targets_car:
 
     # ===== 铰链/跨膜几何属性 =====
     geometry_fields:
-      - target: 几何长度
+      - target: geometric_length
         method: constant
         value: null
-        status: ★schema 无对应列
-        note: 规范把「长度（残基数）」与「几何长度」分列两栏，car.module 只有 length_aa，见 R7
-      - target: [epitope_distance_effect, synapse_effect, tonic_effect]
+        status: 本源无可入库数值
+        note: modules[].length 保存残基数；正文未给可写入 numeric geometric_length 的物理长度
+      - target: [epitope_distance_effect, immune_synapse_effect, tonic_signaling_effect]
         method: constant
         value: null
         note: |
@@ -300,42 +300,47 @@ targets_car:
         method: derived
         value: 'CD8 信号肽 | VHH(NbCDH17) | CD8 铰链 | CD28 跨膜 | CD28 共刺激 | CD3ζ | T2A | CopGFP（二代，单共刺激域）'
         note: |
-          ★assembly_rules 是 car.module 的列（04_car.sql 第 39 行），非 car.construct 的列。
+          ★assembly_rules 是 car.car 的列（04_car.sql 第 39 行），非 car.car 的列。
           按规范「可兼容或不兼容模块及装配规则」三者同组，均落模块级。
           本条一个值得记的事实：铰链取自 CD8、跨膜取自 CD28 —— 混源配对，非同源成对。
       - target: compatible_modules
         method: derived
         value: 'CD8 铰链 与 CD28 跨膜 可混源配对并在 NK92 中正常表达（实测 CAR+ 91.4%）'
-        note: 落库时 jsonb 需填对方模块 uid，本轮先以文本记录该兼容性事实
+        note: 落库时以带来源与观察条件的 JSON 对象保存，不使用旧版模块 UID
       - {target: incompatible_modules, method: constant, value: null}
 
-  - table: car.construct
+  - tables: [car.car, car.car_evidence]
+    field_routing: "name/modules/version/entry_date -> car.car; source/performance/constraint fields -> car.car_evidence; IDs linked by car_id"
     record_per_source: two            # CDH17-CAR 与 C9-CAR
     fields:
-      - {target: name_code, method: derived, value: 'CDH17-CAR / C9-CAR'}
-      - {target: source_type, method: constant, value: 文献}
+      - {target: name, method: derived, value: 'CDH17-CAR / C9-CAR'}
+      - {target: source_type, method: constant, value: literature}
       - {target: source_id, method: constant, value: '10.1016/j.apsb.2025.03.039'}
       - {target: evidence_level, method: constant, value: 同行评议}
-      - {target: experiment_conditions, method: derived, value: 'NK92 细胞系，puromycin 选择 + anti-VHH FACS 分选'}
+      - {target: experimental_conditions, method: derived, value: 'NK92 细胞系，puromycin 选择 + anti-VHH FACS 分选'}
       - {target: version, method: constant, value: 正式发表版}
       - {target: entry_date, method: platform}
       - {target: citation, method: derived, value: 'Zheng L, et al. (2025). Acta Pharm Sin B 15(5):2559-2574.'}
       - {target: applicable_scenario, method: derived, value: 'CAR-NK 平台（非 CAR-T）；异体现货型细胞治疗方向'}
-      - {target: contrary_evidence, method: constant, value: null}
-      - {target: binder_uid, method: derived, rule: 指向 NbCDH17 / NbC9}
-      - target: [scfv_module_uid, hinge_module_uid, tm_module_uid,
+      - {target: contrary_evidence, method: constant, value: false}
+      - {unmapped_legacy_field: binder_uid, method: derived, rule: 指向 NbCDH17 / NbC9}
+      - unmapped_legacy_fields: [scfv_module_uid, hinge_module_uid, tm_module_uid,
                  costim_module_uid, cd3z_module_uid]
         method: derived
-        rule: 指向 car.module 对应模块 uid
+        rule: 指向 car.car 对应模块 uid
         note: ★scfv_module_uid 此处指向的是 VHH 识别域（列名沿用 scfv 但语义为"识别域槽位"）
-      - {target: linker_module_uid, method: constant, value: null, status: 不适用, note: 单域抗体无 linker}
-      - {target: full_sequence, method: constant, value: null}
-      - {target: vector_backbone, method: derived, value: 'pCD513B-CopGFP 慢病毒转移载体（GENEWIZ 克隆）'}
-      - {target: logic, method: constant, value: 无}
-      - target: validated_function
+      - target: modules
+        method: derived
+        rule: >-
+          汇总前述组件，仅保留 hinge/transmembrane_region/costimulatory_domain/
+          CD3zeta/tag；VHH 识别域由 binder 实体独立管理
+      - {unmapped_legacy_field: full_sequence, method: constant, value: null}
+      - {unmapped_legacy_field: vector_backbone, method: derived, value: 'pCD513B-CopGFP 慢病毒转移载体（GENEWIZ 克隆）'}
+      - {unmapped_legacy_field: logic, method: constant, value: 无}
+      - unmapped_legacy_field: validated_function
         method: derived
         value: 'CAR+ 率 CDH17 91.4% / C9 85.7%；CDH17 依赖性杀伤；体内 CDX+PDX（胃癌）及胰腺癌 ASPC1 抑瘤、延长生存；与 CD47-SIRPα 抑制剂 CV1 协同；无自相残杀'
-      - {target: risk_tags, method: derived, value: '["effector_is_NK92_cell_line", "no_sequence_in_fulltext", "binder_is_single_domain", "hinge_tm_mixed_source"]'}
+      - {unmapped_legacy_field: risk_tags, method: derived, value: '["effector_is_NK92_cell_line", "no_sequence_in_fulltext", "binder_is_single_domain", "hinge_tm_mixed_source"]'}
 
 functional_readouts_to_DB1:
   note: 以下均为「CAR × 效应细胞 × 靶细胞」的组合读出，按设计入 DB1，不入 B 库明细
@@ -349,26 +354,27 @@ functional_readouts_to_DB1:
 
 
 # =========================================================
-# Part 4 — C 库映射（process.process）
+# Part 4 — C 库映射（manufacturing.manufacturing）
 # =========================================================
 # 按制造工艺字段规范逐栏对齐。本条是六个实例里 C 库填得较满的两条之一。
 targets_process:
-  - table: process.process
+  - tables: [manufacturing.manufacturing, manufacturing.manufacturing_evidence]
+    field_routing: "process definition fields -> manufacturing.manufacturing; source/outcome fields -> manufacturing.manufacturing_evidence; IDs linked by manufacturing_id"
     record_per_source: one
 
     # ===== 元数据 11 栏 =====
     metadata_fields:
-      - {target: uid, method: platform}
-      - {target: name_code, method: constant, value: CDH17-CAR-NK92 制备流程}
-      - {target: source_type, method: constant, value: 文献}
+      - {platform_primary_key: true, method: platform}
+      - {target: name, method: constant, value: CDH17-CAR-NK92 制备流程}
+      - {target: source_type, method: constant, value: literature}
       - {target: source_id, method: constant, value: '10.1016/j.apsb.2025.03.039'}
-      - {target: experiment_conditions, method: derived, value: '37 °C、5% CO2 湿化培养箱'}
+      - {target: experimental_conditions, method: derived, value: '37 °C、5% CO2 湿化培养箱'}
       - {target: evidence_level, method: constant, value: 同行评议, note: 规范此处明写"同行评议文献"，本条符合}
       - {target: version, method: constant, value: 正式发表版}
       - {target: entry_date, method: platform}
       - {target: citation, method: derived, value: 'Zheng L, et al. (2025). Acta Pharm Sin B 15(5):2559-2574. 见 2.2 Cell culture 与 2.7 Generation of CAR-NK cells。'}
       - {target: applicable_scenario, method: derived, value: 'NK 细胞系平台的研究级制备；非 GMP、非原代，不可直接外推到临床 CAR-T 工艺'}
-      - {target: contrary_evidence, method: constant, value: null}
+      - {target: contrary_evidence, method: constant, value: false}
 
     # ===== 起始材料 3 栏 =====
     starting_material_fields:
@@ -377,13 +383,13 @@ targets_process:
         value: 未知
         note: |
           ★枚举 (自体/异体/未知) 为原代 T 细胞设计。本条效应细胞为 NK92 细胞系，
-          三档皆不贴切，只能填 未知；真实语义记于 starting_quality。见 R2。
+          三档皆不贴切，只能填 未知；真实语义记于 starting_cell_quality。见 R2。
       - target: cd4_cd8_ratio
         method: constant
         value: null
         status: 不适用
         note: ★NK 细胞无 CD4/CD8 分群，本栏对 CAR-NK 天然不适用，非缺失
-      - {target: starting_quality, method: derived, value: 'NK92 细胞系（非原代），Procell Life（武汉）采购'}
+      - {target: starting_cell_quality, method: derived, value: 'NK92 细胞系（非原代），Procell Life（武汉）采购'}
 
     # ===== 激活 2 栏 =====
     activation_fields:
@@ -392,45 +398,45 @@ targets_process:
         value: null
         status: 不适用
         note: NK92 细胞系无需 CD3/CD28 激活步骤（那是原代 T 的流程），属不适用而非缺失
-      - {target: activation_reagents, method: constant, value: null, status: 不适用}
+      - {target: reagents, method: constant, value: null, status: 不适用}
 
     # ===== 基因导入 3 栏 =====
     transduction_fields:
-      - {target: vector, method: derived, value: 慢病毒, value_map: {lentiviral: 慢病毒}}
+      - {target: vector_type, method: derived, value: 慢病毒, value_map: {lentiviral: 慢病毒}}
       - {target: moi, method: constant, value: null, note: 原文未给 MOI}
-      - target: transduction_condition
+      - target: transduction_transfection_conditions
         method: derived
         value: '慢病毒转导 NK92；48 h 后加 puromycin 2.5 μg/mL 选择 10 天；再以 anti-VHH-AF647 抗体 FACS（SH800ZBP）分选。载体生产：HEK293T/17 共转染 pMD2.G + psPAX2（二代包装），48/72 h 收上清，Lenti-X Concentrator 浓缩。'
 
     # ===== 扩增 3 栏 =====
     expansion_fields:
       - {target: culture_system, method: derived, value: 'alpha MEM + 0.1 mmol/L 2-巯基乙醇 + 0.02 mmol/L 叶酸 + 0.2 mmol/L 肌醇 + 12.5% FBS + 12.5% 马血清'}
-      - {target: cytokines, method: derived, value: 'IL-2 100 U/mL'}
-      - target: culture_days
+      - {target: cytokine_combination, method: derived, value: 'IL-2 100 U/mL'}
+      - target: culture_duration
         method: constant
         value: null
         note: ★只给"puromycin 选择 10 天"，那是选择期不是总培养时长，不得挪用填此栏
 
     # ===== 冻存 / 配方 2 栏 =====
     formulation_fields:
-      - {target: cryo_condition, method: constant, value: null}
+      - {target: cryopreservation_conditions, method: constant, value: null}
       - {target: formulation, method: constant, value: null}
 
     # ===== 放行指标 10 栏 =====
     release_fields:
-      - {target: viability_pct, method: constant, value: null}
-      - {target: transduction_efficiency_pct, method: derived, value: 91.4, note: 'CDH17-CAR 分选后阳性率；对照 C9-CAR 为 85.7'}
+      - {target: cell_viability, method: constant, value: null}
+      - {target: transduction_efficiency, method: derived, value: 91.4, note: 'CDH17-CAR 分选后阳性率；对照 C9-CAR 为 85.7'}
       - {target: vcn, method: constant, value: null}
-      - {target: cd3_positive_pct, method: constant, value: null, status: 不适用, note: ★NK92 为 CD3- 细胞，本栏对 CAR-NK 不适用}
-      - {target: phenotype, method: constant, value: null, note: 未做记忆/耗竭/Treg 分型（NK 亦无 Treg 概念）}
+      - {target: cd3_positive_ratio, method: constant, value: null, status: 不适用, note: ★NK92 为 CD3- 细胞，本栏对 CAR-NK 不适用}
+      - {target: [memory_phenotype, exhaustion_phenotype, treg_phenotype], method: constant, value: null, note: 未做记忆/耗竭/Treg 分型（NK 亦无 Treg 概念）}
       - {target: [sterility, mycoplasma, endotoxin], method: constant, value: null, note: 研究级制备，无放行三项}
-      - {target: cytotoxicity, method: derived, value: 'LDH 释放法（靶 IM95 / ASPC1，共孵 4 h，3 个 E:T 比）'}
+      - {target: killing_activity, method: derived, value: 'LDH 释放法（靶 IM95 / ASPC1，共孵 4 h，3 个 E:T 比）'}
       - {target: cytokine_release, method: derived, value: 'granzyme B / IFN-γ / TNF-α（ELISA）'}
 
     # ===== 关联 2 栏 =====
     linkage_fields:
-      - {target: car_construct_uid, method: derived, rule: 指向 Part 3 的 CDH17-CAR construct}
-      - {target: product_name, method: constant, value: CDH17-CAR-NK92}
+      - {unmapped_legacy_field: car_construct_uid, method: derived, rule: 指向 Part 3 的 CDH17-CAR construct}
+      - {target: corresponding_car_product, method: constant, value: CDH17-CAR-NK92}
 
 
 # =========================================================
@@ -439,37 +445,30 @@ targets_process:
 unmapped_target_columns:
 
   binder_not_in_fulltext:
-    columns: [scfv_seq, linker, cdr_h1, cdr_h2, cdr_h3, cdr_l1, cdr_l2, cdr_l3,
-              cdr_lengths, numbering, vdj_genes, germline, somatic_mutations]
+    columns: [scfv_sequence, linker, fr_cdr_regions,
+              cdr_lengths, numbering_scheme, vdj_genes, germline_origin, somatic_mutations]
     note: VHH 全序列未在正文给出（可能在补充材料，本轮未取）
 
   binder_not_available_at_all:
-    columns: [kd_nm, kon_m1s1, koff_s1, measure_condition, epitope_position,
-              epitope_kind, binding_site, tm_celsius, viscosity, aggregation,
-              solubility, hydrophobicity, net_charge, glycosylation_sites,
-              free_cysteine, humanization, immunogenicity_risk, structure_template,
-              complex_structure, prediction_confidence, patent_status]
-    note: 无数值亲和力、无表位、无成药性、无结构；humanization 对 camelid VHH 亦不适用
+    columns: [kd, kon, koff, measurement_conditions, epitope,
+              binding_site, tm, viscosity, aggregation_tendency,
+              solubility, hydrophobicity, charge, glycosylation_sites,
+              free_cysteines, humanization_level, immunogenicity_ada_risk, structure_template,
+              complex_structure, patent_status]
+    note: 无数值亲和力、无表位、无成药性、无结构；humanization_level 对 camelid VHH 亦不适用
 
   car_gaps:
     columns: [sequence, length_aa, compatible_modules, incompatible_modules]
     note: 正文只给模块名不给序列，这是文献源的系统性缺口（与专利源正相反）
 
   process_gaps:
-    columns: [activation_reagents, moi, culture_days, cryo_condition, formulation,
-              viability_pct, vcn, phenotype, sterility, mycoplasma, endotoxin]
+    columns: [reagents, moi, culture_duration, cryopreservation_conditions, formulation,
+              cell_viability, vcn, phenotype, sterility, mycoplasma, endotoxin]
     note: 无 MOI、无培养时长/冻存、无 VCN、无终产品活率、无放行三项（无菌/支原体/内毒素）
 
   platform_managed:
-    - uid
     - version
     - entry_date
-    - source_weight
-    - batch_id
-    - registry_id
-    - merged_into
-    - created_at
-    - updated_at
 
 
 # =========================================================
@@ -510,19 +509,19 @@ risks:
   - id: R3
     severity: P2
     desc: |
-      binder.measure_method 现填的是 anti-VHH 流式检测（CAR 表面表达检测），
+      binder.measurement_method 现填的是 anti-VHH 流式检测（CAR 表面表达检测），
       而非亲和力测定方法（SPR/BLI）。两者语义不同。
-      若该列严格限定为亲和力测定方法，本栏应改填 null，检测手段另记 experiment_conditions。
+      若该列严格限定为亲和力测定方法，本栏应改填 null，检测手段另记 experimental_conditions。
   - id: R4
     severity: P1
     desc: |
-      binder.binder 无 vhh_seq 列，单域序列无处可落（vh_seq/vl_seq 均不适用）。
+      binder.binder 无 vhh_seq 列，单域序列无处可落（vh_sequence/vl_sequence 均不适用）。
       本条因正文未给序列而暂未暴露，但只要补充材料的 VHH 序列到手就会立刻卡住。
-      建议：或复用 scfv_seq 列并以 format=VHH 区分，或新增 vhh_seq 列。
+      建议：或复用 scfv_sequence 列并以 format=VHH 区分，或新增 vhh_seq 列。
   - id: R5
     severity: P2
     desc: |
-      car.module_type 枚举缺「信号肽」「2A 自剪切肽」「报告基因」三档，
+      car.car_type 枚举缺「信号肽」「2A 自剪切肽」「报告基因」三档，
       本条的 CD8 信号肽与 T2A-CopGFP 落不进枚举。
       与 Addgene R3、CARTiBASE R3 同一问题，建议统一扩枚举。
   - id: R6
@@ -534,8 +533,5 @@ risks:
   - id: R7
     severity: P1
     desc: |
-      ★schema 缺口：规范的「FR/CDR 区」只实现了一半。
-      binder.binder 有 cdr_h1-h3 / cdr_l1-l3 六列，但无 FR（框架区）列。
-      FR 对人源化改造、稳定性评估与嵌合设计都必需，且跑 ANARCI 时 FR 与 CDR 是一并产出的，
-      丢弃 FR 等于每次都要重算。
-      建议：增 fr_h1-h4 / fr_l1-l4 八列，或用一个 regions jsonb 统一承载 FR+CDR。
+      最新 schema 已用 binder.binder.fr_cdr_regions JSON 统一承载 FR/CDR。
+      本条正文没有 VHH 序列，因此仍为空；补到序列后须按区域名写 JSON，不能恢复成旧版六个标量列。
