@@ -6,8 +6,6 @@
   2. 对 inEPMC=Y 的记录逐篇取 /{pmcid}/fullTextXML —— 工艺参数在正文里，
      moi / culture_days / vcn / mycoplasma 四个字段只能从这里抽。
 
-全文端点的正确形态是 /{pmcid}/fullTextXML，不是 /PMC/{pmcid}/fullTextXML
-（后者实测 404）。
 """
 from __future__ import annotations
 

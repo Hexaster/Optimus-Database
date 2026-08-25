@@ -149,9 +149,7 @@ notes: >
         ("CAR-T" OR "chimeric antigen receptor")
         AND (MOI OR "vector copy number" OR "multiplicity of infection")
         AND OPEN_ACCESS:y
-      result_type: core        # lite 不给 license / inEPMC，抽取用途必须 core
-      page_size: 100
-      max_records: 2210        # 2026-08-21 实测 hitCount；上游 rolling，会变
+      result_type: core        # lite 不给 license / inEPMC，抽取用途必须 core     
       # 正确形态是 /{pmcid}/fullTextXML；/PMC/{pmcid}/fullTextXML 实测 404
       fulltext_endpoint: https://www.ebi.ac.uk/europepmc/webservices/rest/{pmcid}/fullTextXML
       output:
