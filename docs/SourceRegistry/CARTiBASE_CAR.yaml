@@ -1,0 +1,75 @@
+source_name: CARTiBASE
+domain: car_db                 # 从专利/文献抽取的 CAR 序列库（B 池，全靶点）
+入口_API:
+  endpoint: https://cartibase.org           # 站内 Download/Export 导出 CSV
+  条目route: https://cartibase.org/entry/{来源号_序号}   # 例 /entry/EP20170776591_1209（仅浏览器可见，headless 空壳）
+  method: web_download                       # 无稳定 API：/api=404，SPA(Vue)动态加载
+  authentication: none                       # 浏览/导出免注册
+  credential_env: null
+文件格式: [html]            # 直接访问：SPA(Vue) HTML 空壳，无记录体(不可直接抽)
+抽取:
+  可用格式: [fasta, csv]    # fasta=单条目序列(已实测到手)；csv=站内批量导出
+  获取步骤: 浏览器打开 → 单条目可下 FASTA(已实测)；批量走站内 Download/Export 导出 CSV(headless 取不到：/api=404)
+  额外成本: 无 API，需人工导出；且商用许可"严格禁止"→ 落地前须先解决授权
+版本或快照: {mode: snapshot, version_source: 导出日期即快照标识, snapshot_date: null}
+更新频率: {upstream: unknown, project_check: quarterly}
+取样验证:
+  verified: true                             # 序列已实测；记录体(靶点等结构字段)仍未取
+  verification_sample: 'entry EP20170776591_1209（键=来源专利号_序号）：FASTA 已到手，969 aa 多顺反子 ORF，实测可无缝拆为 CAR(1-517: CD8α信号肽|VL|(G4S)×3|VH|myc|CD8α铰链|CD8α跨膜|4-1BB|CD3ζ) — P2A — 未鉴定ORF2 — T2A — PuroR；但条目页记录体仍取不到(/api=404，HTML 仅空壳3066B)，故靶抗原等字段仍空'
+  verified_at: 2026-08-21
+# 条目 = 从专利/文献抽的 CAR 序列 → 主要填 B(CAR)；scFv 内含 → Binder 部分◐；无工艺
+可填字段_详见: 2_实例/CARTiBASE_实例.yaml
+
+可填字段_Binder:
+  - binder.binder.name_code
+  - binder.binder.source_type
+  - binder.binder.source_id
+  - binder.binder.evidence_level
+  - binder.binder.version
+  - binder.binder.entry_date
+  - binder.binder.citation
+  - binder.binder.applicable_scenario
+  - binder.binder.vh_seq
+  - binder.binder.vl_seq
+  - binder.binder.scfv_seq
+  - binder.binder.linker
+  - binder.binder.format
+  - binder.binder.numbering
+  - binder.binder.cdr_h1
+  - binder.binder.cdr_h2
+  - binder.binder.cdr_h3
+  - binder.binder.cdr_l1
+  - binder.binder.cdr_l2
+  - binder.binder.cdr_l3
+  - binder.binder.cdr_lengths
+  - binder.binder.vdj_genes
+  - binder.binder.germline
+  - binder.binder.somatic_mutations
+  - binder.binder.patent_status
+
+可填字段_CAR:
+  - car.module.name_code
+  - car.module.source_type
+  - car.module.source_id
+  - car.module.evidence_level
+  - car.module.version
+  - car.module.entry_date
+  - car.module.citation
+  - car.module.applicable_scenario
+  - car.module.contrary_evidence
+  - car.module.module_type
+  - car.module.source_molecule
+  - car.module.sequence
+  - car.module.length_aa
+  - car.module.assembly_rules
+
+可填字段_制造工艺: []
+
+建行建议:
+  process.process: 不建行——22 个业务列全空
+
+notes: >
+  React/Vue SPA，无公开 bulk API，仅网页手动导出 CSV，字段需导出后按真实列名回填。
+  规模 >10,000 条 CAR。⚠许可(P0)：ToS 明示仅学术非商用，"与工业/商业伙伴合作的研究严格禁止"
+  → 复星×明度(商业合作)按字面连研究性使用都被禁，取得书面授权前不得入生产库。
+  替代路径：直接用来源专利(如 EP20170776591)重取同一序列，专利文本无此限制。

@@ -1,0 +1,79 @@
+source_name: Google Patents                    # 结构字段走 Public Data (BigQuery)，全文走专利页 PDF
+domain: patent
+入口_API: {endpoint: patents-public-data.patents.publications, method: bigquery_sql, authentication: service_account, credential_env: GOOGLE_APPLICATION_CREDENTIALS}
+文件格式: [bigquery_table, pdf]   # 直接下载：BQ 结构表 或 专利页 PDF
+抽取:
+  可用格式: [bigquery_table, text]  # 结构字段直接查 BQ；序列/权利要求全文 → PDF 解析
+  获取步骤: 结构字段(号/权利/受让人/法律状态)直接查 BQ；VH/VL 序列、claims 全文 → 下 PDF 后解析(或用 SEQ 序列数据集)
+  额外成本: BQ 需服务账号 + 计费(1TB/月免费额度)；逐页抓 PDF 易被限流(需退避/间隔)
+版本或快照: {mode: release, version_source: dataset last update（滞后1季度+）, snapshot_date: null}
+更新频率: {upstream: quarterly, project_check: quarterly}
+取样验证:
+  verified: true
+  verification_sample: 'US9156915B2 ANTI-GCC ANTIBODY MOLECULES(授权/Waldman/Thomas Jefferson University)：publication_number/claims/assignee/inventor/grant_date/legal_status=granted/SEQ ID 1-4(MS7 与 MS20 的 VH/VL) 存在'
+  verified_at: 2026-08-19
+  # ⚠逐字核对更正：claim17 仅限定「识别域(VH+VL)结合人 GCC」，不含 hinge/TM/共刺激/CD3ζ；
+  #   早前误记的 IgG1 hinge/CH2CH3+免疫受体跨膜 实为 claim7-10 的 Fc/免疫偶联物条款，非 CAR。
+可填字段_详见: 2_实例/GooglePatents_实例.yaml
+
+可填字段_Binder:
+  - binder.binder.name_code
+  - binder.binder.source_type
+  - binder.binder.source_id
+  - binder.binder.evidence_level
+  - binder.binder.version
+  - binder.binder.entry_date
+  - binder.binder.citation
+  - binder.binder.applicable_scenario
+  - binder.binder.contrary_evidence
+  - binder.binder.vh_seq
+  - binder.binder.vl_seq
+  - binder.binder.linker
+  - binder.binder.format
+  - binder.binder.numbering
+  - binder.binder.cdr_h1
+  - binder.binder.cdr_h2
+  - binder.binder.cdr_h3
+  - binder.binder.cdr_l1
+  - binder.binder.cdr_l2
+  - binder.binder.cdr_l3
+  - binder.binder.cdr_lengths
+  - binder.binder.vdj_genes
+  - binder.binder.germline
+  - binder.binder.somatic_mutations
+  - binder.binder.target_antigen
+  - binder.binder.epitope_position
+  - binder.binder.epitope_kind
+  - binder.binder.binding_site
+  - binder.binder.cross_reactivity
+  - binder.binder.species_reactivity
+  - binder.binder.humanization
+  - binder.binder.development_stage
+  - binder.binder.patent_status
+  - binder.binder.in_vitro_readout
+
+可填字段_CAR:
+  - car.module.name_code
+  - car.module.source_type
+  - car.module.source_id
+  - car.module.evidence_level
+  - car.module.version
+  - car.module.entry_date
+  - car.module.citation
+  - car.module.applicable_scenario
+  - car.module.contrary_evidence
+  - car.module.module_type
+  - car.module.source_molecule
+  - car.module.sequence
+  - car.module.length_aa
+  - car.module.assembly_rules
+
+可填字段_制造工艺: []
+
+建行建议:
+  process.process: 不建行——22 个业务列逐栏核对，无一有值
+
+notes: >
+  专利侧主力：补 Binder 序列(VH/VL 全序列)+表位+专利状态，是 S 级 Binder 正样本来源。
+  B 侧通常只是「纸面 CAR」——claims 仅限定识别域、无骨架模块、无功能数据。
+  C(制造工艺)≈0。

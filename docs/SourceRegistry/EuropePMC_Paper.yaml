@@ -1,0 +1,114 @@
+source_name: Europe PMC
+domain: literature
+入口_API: {endpoint: https://www.ebi.ac.uk/europepmc/webservices/rest/search, method: rest_api, authentication: none, credential_env: null, 全文route: 'NCBI efetch db=pmc（有 PMCID 的 OA 全文；EPMC fullTextXML 端点 404）'}
+文件格式: [json]            # 直接下载：检索接口回题录/摘要 JSON
+抽取:
+  可用格式: [xml]           # 全文抽取目标：OA 全文 XML
+  获取步骤: 检索得 PMCID → NCBI efetch db=pmc 取 OA 全文 XML(EPMC 自身 fullTextXML 端点 404)
+  额外成本: 仅 OA 子集(有 PMCID)有全文；非 OA 只回摘要
+版本或快照: {mode: rolling, version_source: daily update, snapshot_date: null}
+更新频率: {upstream: daily, project_check: monthly}
+取样验证: {verified: true, verification_sample: 'PMC12144966 OA 全文 177KB，含 Materials and methods / lentivirus / Generation of CAR-NK', verified_at: 2026-08-19}
+可填字段_详见: 2_实例/EuropePMC_实例.yaml
+
+可填字段_Binder:
+  - binder.binder.name_code
+  - binder.binder.source_type
+  - binder.binder.source_id
+  - binder.binder.experiment_conditions
+  - binder.binder.evidence_level
+  - binder.binder.version
+  - binder.binder.entry_date
+  - binder.binder.citation
+  - binder.binder.applicable_scenario
+  - binder.binder.contrary_evidence
+  - binder.binder.vh_seq
+  - binder.binder.vl_seq
+  - binder.binder.scfv_seq
+  - binder.binder.linker
+  - binder.binder.format
+  - binder.binder.numbering
+  - binder.binder.cdr_h1
+  - binder.binder.cdr_h2
+  - binder.binder.cdr_h3
+  - binder.binder.cdr_l1
+  - binder.binder.cdr_l2
+  - binder.binder.cdr_l3
+  - binder.binder.cdr_lengths
+  - binder.binder.vdj_genes
+  - binder.binder.germline
+  - binder.binder.somatic_mutations
+  - binder.binder.target_antigen
+  - binder.binder.epitope_position
+  - binder.binder.epitope_kind
+  - binder.binder.binding_site
+  - binder.binder.kd_nm
+  - binder.binder.kon_m1s1
+  - binder.binder.koff_s1
+  - binder.binder.measure_method
+  - binder.binder.measure_condition
+  - binder.binder.cross_reactivity
+  - binder.binder.species_reactivity
+  - binder.binder.humanization
+  - binder.binder.development_stage
+  - binder.binder.in_vitro_readout
+
+可填字段_CAR:
+  - car.module.name_code
+  - car.module.source_type
+  - car.module.source_id
+  - car.module.experiment_conditions
+  - car.module.evidence_level
+  - car.module.version
+  - car.module.entry_date
+  - car.module.citation
+  - car.module.applicable_scenario
+  - car.module.contrary_evidence
+  - car.module.module_type
+  - car.module.source_molecule
+  - car.module.sequence
+  - car.module.length_aa
+  - car.module.epitope_distance_effect
+  - car.module.synapse_effect
+  - car.module.tonic_effect
+  - car.module.compatible_modules
+  - car.module.incompatible_modules
+  - car.module.assembly_rules
+
+可填字段_制造工艺:
+  - process.process.name_code
+  - process.process.source_type
+  - process.process.source_id
+  - process.process.experiment_conditions
+  - process.process.evidence_level
+  - process.process.version
+  - process.process.entry_date
+  - process.process.citation
+  - process.process.applicable_scenario
+  - process.process.contrary_evidence
+  - process.process.t_cell_source
+  - process.process.cd4_cd8_ratio
+  - process.process.starting_quality
+  - process.process.activation_method
+  - process.process.activation_reagents
+  - process.process.vector
+  - process.process.moi
+  - process.process.transduction_condition
+  - process.process.culture_system
+  - process.process.cytokines
+  - process.process.culture_days
+  - process.process.cryo_condition
+  - process.process.viability_pct
+  - process.process.transduction_efficiency_pct
+  - process.process.cd3_positive_pct
+  - process.process.phenotype
+  - process.process.cytotoxicity
+  - process.process.cytokine_release
+  - process.process.car_construct_uid
+  - process.process.product_name
+
+notes: >
+  抽取主力（文献侧唯一能抽功能/工艺参数的源）。全文仅 OA 子集（有 PMCID）。
+  两点口径：① binder 可能是单域 VHH(无 VH/VL 配对)，非都是 scFv；
+  ② 效应细胞可能是 NK 系(CAR-NK)而非原代 CAR-T——工艺字段按对应细胞口径填。
+  功能属性按设计归 DB1，不进 B 库。

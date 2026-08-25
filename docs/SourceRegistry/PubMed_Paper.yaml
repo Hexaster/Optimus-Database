@@ -1,0 +1,39 @@
+source_name: PubMed
+domain: literature
+入口_API: {endpoint: https://eutils.ncbi.nlm.nih.gov/entrez/eutils/, method: rest_api, authentication: api_key, credential_env: NCBI_API_KEY}
+文件格式: [xml, json]       # 直接下载：efetch 题录+摘要 XML(该粒度即用)
+抽取:
+  可用格式: [xml]           # 摘要级即用
+  获取步骤: 题录/摘要直接用；深抽全文需带 PMCID → 转 PMC(=EuropePMC 全文路由)
+  额外成本: 本身无全文；全文依赖 PMC(仅 OA 子集)
+版本或快照: {mode: release, version_source: baseline year + daily update files, snapshot_date: null}
+更新频率: {upstream: daily, project_check: monthly}
+取样验证: {verified: true, verification_sample: 'PMID 40487639「CDH17-targeting CAR-NK cells synergize with CD47 blockade」：题录+摘要存在；带 PMCID PMC12144966 → 可转 PMC 取 OA 全文', verified_at: 2026-08-19}
+可填字段_详见: 2_实例/PubMed_实例.yaml
+
+可填字段_Binder:
+  - binder.binder.source_type
+  - binder.binder.source_id
+  - binder.binder.evidence_level
+  - binder.binder.version
+  - binder.binder.entry_date
+  - binder.binder.citation
+  - binder.binder.applicable_scenario
+  - binder.binder.format
+  - binder.binder.target_antigen
+  - binder.binder.development_stage
+  - binder.binder.in_vitro_readout
+
+可填字段_CAR: []
+
+可填字段_制造工艺:
+  - process.process.product_name
+
+建行建议:
+  car.module: 不建行（module_type 为 NOT NULL 而摘要无模块名）；car.construct 至多建空壳占位行
+  process.process: 不建行——22 个业务列只有 product_name 可由摘要推出
+
+notes: >
+  摘要级：A/B/C 专属字段几乎全空，仅能填元数据 + 靶抗原/CAR 产品等定性项。
+  深抽须带 PMCID 转 PMC 全文(=EuropePMC 全文路由，实测本例 PMID 40487639 → PMC12144966)。
+  PubMed 定位为补充/发现源。

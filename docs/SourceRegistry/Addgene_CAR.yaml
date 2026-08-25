@@ -1,0 +1,82 @@
+source_name: Addgene
+domain: car_db                 # 质粒库：CAR 构建体(GenBank 全序列)，B 池全靶点
+入口_API:
+  endpoint: https://www.addgene.org/{id}/                 # 主页面元数据(免登录)
+  method: web_download                                    # 无公开 API(/api、api.addgene.org 均404)
+  authentication: account                                 # 逐模块序列 GenBank 需免费账号
+  credential_env: ADDGENE_COOKIE
+  序列route: https://www.addgene.org/{id}/sequences/       # genbank / fasta / snapgene
+文件格式: [html]            # 直接下载：主页面元数据 HTML(免登录)
+抽取:
+  可用格式: [genbank, fasta]  # 序列抽取目标(各模块坐标/全序列)
+  获取步骤: 元数据抓 HTML(免登录)；逐模块序列 → 免费登录 + /{id}/sequences/ 下 GenBank
+  额外成本: 序列需免费账号；实体质粒受 MTA(本项目仅要序列，不受限)
+版本或快照: {mode: rolling, version_source: 每质粒 Addgene-full(验证版)/Depositor-full, snapshot_date: null}
+更新频率: {upstream: continuous, project_check: quarterly}
+取样验证:
+  verified: true                                          # 实测 #135992
+  verification_sample: 'plasmid 135992 (pSLCAR-CD19-BBz)：gene/insert=FMC63-41BB-3z-P2A-EGFP，Alt name 明写 "Contains: FMC63-scFV, Hinge domain, CD28-transmembrane domain, 41BB-ITD, CD3z-ITD"；vector backbone=pSL(Lentiviral)/promoter=EF1a-short/resistance=Ampicillin 100 μg/mL/depositor=Scott McComb/Publication=Bloemberg et al 2020(PubMed 32083149) 全部存在'
+  # ⚠跨膜区是 CD28 不是 CD8；铰链页面只写 "Hinge domain" 未指明来源分子，不得推断
+  verified_at: 2026-08-19
+# 质粒 = CAR 构建体 → 主填 B(CAR)；scFv 内含 → Binder◐；载体信息 → 工艺仅"载体类型"
+可填字段_详见: 2_实例/Addgene_实例.yaml
+
+可填字段_Binder:
+  - binder.binder.name_code
+  - binder.binder.source_type
+  - binder.binder.source_id
+  - binder.binder.evidence_level
+  - binder.binder.version
+  - binder.binder.entry_date
+  - binder.binder.citation
+  - binder.binder.applicable_scenario
+  - binder.binder.vh_seq
+  - binder.binder.vl_seq
+  - binder.binder.scfv_seq
+  - binder.binder.linker
+  - binder.binder.format
+  - binder.binder.numbering
+  - binder.binder.cdr_h1
+  - binder.binder.cdr_h2
+  - binder.binder.cdr_h3
+  - binder.binder.cdr_l1
+  - binder.binder.cdr_l2
+  - binder.binder.cdr_l3
+  - binder.binder.cdr_lengths
+  - binder.binder.vdj_genes
+  - binder.binder.germline
+  - binder.binder.somatic_mutations
+  - binder.binder.target_antigen
+  - binder.binder.species_reactivity
+  - binder.binder.development_stage
+
+可填字段_CAR:
+  - car.module.name_code
+  - car.module.source_type
+  - car.module.source_id
+  - car.module.evidence_level
+  - car.module.version
+  - car.module.entry_date
+  - car.module.citation
+  - car.module.applicable_scenario
+  - car.module.module_type
+  - car.module.source_molecule
+  - car.module.sequence
+  - car.module.length_aa
+  - car.module.compatible_modules
+  - car.module.assembly_rules
+
+可填字段_制造工艺:
+  - process.process.vector
+  - process.process.car_construct_uid
+
+建行建议:
+  process.process: 不建行——22 个业务列只有 vector 一栏有值，接近空行
+
+notes: >
+  主页面元数据免登录可抓；逐模块序列 GenBank 需免费登录 + 接受 Affinity Reagent Sequence Policy。
+  ⚠许可：页面 Industry Terms = "Not Available to Industry"，Ordering 栏写明
+  "available to academics and nonprofits only"。本项目为商业合作，实体质粒按字面不可获取；
+  序列数据是否同受限取决于 Affinity Reagent Sequence Policy 条款，落地前须法务复核
+  ——不可默认"只要序列就不受限"。规模 ~58 条(搜 "chimeric antigen receptor")。
+  无功能属性(激活/持久/耗竭)——那属 DB1 组合，非序列库能给。

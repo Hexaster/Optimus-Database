@@ -1,0 +1,116 @@
+source_name: OpenAlex
+domain: literature
+入口_API: {endpoint: https://api.openalex.org/works, method: rest_api, authentication: none, credential_env: OPENALEX_MAILTO}
+文件格式: [json]            # 直接下载：书目元数据 JSON(即用)
+抽取:
+  可用格式: [json, pdf]     # 元数据 JSON 即用；OA 条目另有全文 PDF
+  获取步骤: 元数据直接用；OA 条目走 best_oa_location.pdf_url 另取全文 PDF
+  额外成本: 非 OA 无全文；OA 的 PDF 在外部出版商站点(可能反爬/限流)
+版本或快照: {mode: rolling, version_source: API updated_date / S3 月度快照, snapshot_date: null}
+更新频率: {upstream: continuous, project_check: monthly}
+取样验证:
+  verified: true
+  verification_sample: 'W4402816281「CD8α Structural Domains Enhance GUCY2C CAR-T Cell Efficacy」：id/doi/title/concepts/open_access(is_oa=true, gold)/authorships 存在；经 best_oa_location 取到 OA 全文 PDF'
+  verified_at: 2026-08-19
+# 两级抽取：① 元数据层(OpenAlex 本体 json) ② OA 全文层(经 best_oa_location 取 PDF/XML 后深抽)
+可填字段_详见: 2_实例/OpenAlex_实例.yaml
+
+可填字段_Binder:
+  - binder.binder.name_code
+  - binder.binder.source_type
+  - binder.binder.source_id
+  - binder.binder.experiment_conditions
+  - binder.binder.evidence_level
+  - binder.binder.version
+  - binder.binder.entry_date
+  - binder.binder.citation
+  - binder.binder.applicable_scenario
+  - binder.binder.contrary_evidence
+  - binder.binder.vh_seq
+  - binder.binder.vl_seq
+  - binder.binder.scfv_seq
+  - binder.binder.linker
+  - binder.binder.format
+  - binder.binder.numbering
+  - binder.binder.cdr_h1
+  - binder.binder.cdr_h2
+  - binder.binder.cdr_h3
+  - binder.binder.cdr_l1
+  - binder.binder.cdr_l2
+  - binder.binder.cdr_l3
+  - binder.binder.cdr_lengths
+  - binder.binder.vdj_genes
+  - binder.binder.germline
+  - binder.binder.somatic_mutations
+  - binder.binder.target_antigen
+  - binder.binder.epitope_position
+  - binder.binder.epitope_kind
+  - binder.binder.binding_site
+  - binder.binder.kd_nm
+  - binder.binder.kon_m1s1
+  - binder.binder.koff_s1
+  - binder.binder.measure_method
+  - binder.binder.measure_condition
+  - binder.binder.cross_reactivity
+  - binder.binder.species_reactivity
+  - binder.binder.humanization
+  - binder.binder.development_stage
+  - binder.binder.in_vitro_readout
+
+可填字段_CAR:
+  - car.module.name_code
+  - car.module.source_type
+  - car.module.source_id
+  - car.module.experiment_conditions
+  - car.module.evidence_level
+  - car.module.version
+  - car.module.entry_date
+  - car.module.citation
+  - car.module.applicable_scenario
+  - car.module.contrary_evidence
+  - car.module.module_type
+  - car.module.source_molecule
+  - car.module.sequence
+  - car.module.length_aa
+  - car.module.epitope_distance_effect
+  - car.module.synapse_effect
+  - car.module.tonic_effect
+  - car.module.compatible_modules
+  - car.module.incompatible_modules
+  - car.module.assembly_rules
+
+可填字段_制造工艺:
+  - process.process.name_code
+  - process.process.source_type
+  - process.process.source_id
+  - process.process.experiment_conditions
+  - process.process.evidence_level
+  - process.process.version
+  - process.process.entry_date
+  - process.process.citation
+  - process.process.applicable_scenario
+  - process.process.contrary_evidence
+  - process.process.t_cell_source
+  - process.process.cd4_cd8_ratio
+  - process.process.starting_quality
+  - process.process.activation_method
+  - process.process.activation_reagents
+  - process.process.vector
+  - process.process.moi
+  - process.process.transduction_condition
+  - process.process.culture_system
+  - process.process.cytokines
+  - process.process.culture_days
+  - process.process.cryo_condition
+  - process.process.viability_pct
+  - process.process.transduction_efficiency_pct
+  - process.process.phenotype
+  - process.process.cytotoxicity
+  - process.process.cytokine_release
+  - process.process.car_construct_uid
+  - process.process.product_name
+
+notes: >
+  OpenAlex 本体只给书目元数据 → A/B/C 专属字段全空，主用于发现/去重。
+  但 OA 条目可经 best_oa_location.pdf_url 取全文 PDF 再深抽，届时 A/B/C 大量字段可被填补
+  （实测 W4402816281 即走此两级路径）。功能属性按设计归 DB1，不进 B 库。
