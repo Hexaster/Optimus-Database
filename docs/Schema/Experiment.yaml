@@ -1,0 +1,75 @@
+# Because features such as experimental conditions exist in every schema,
+# separate them as an independent one.
+
+experiment:
+  table: experiment
+  description: 保存所有實驗相關數據
+  fields:
+    experimental_id:
+      type: uuid
+      key: primary
+      nullible: false
+    source_type:
+      type: string
+      nullable: false
+      description: 证据来源类型。
+      allowed_values:
+      - public_database
+      - literature
+      - patent
+      - internal_data
+      index: true
+    source_id:
+      type: string
+      nullable: false
+      description: 外部来源 ID，例如 DOI、专利号、数据库登录号或内部批次号。
+      index: true
+    citation:
+      type: string
+      nullable: true
+      description: 该证据对应的引用信息。
+    evidence_level:
+      type: string
+      nullable: false
+      description: 证据等级；具体分级值由统一证据分级规范定义。
+    experimental_conditions:
+      type: json
+      nullable: true
+      description: 产生该证据时的实验条件。
+    applicable_scenario:
+      type: string
+      nullable: true
+      description: 该证据或结果适用的场景。
+    contrary_evidence:
+      type: boolean
+      nullable: false
+      description: 该记录是否属于与主要结论相反的证据。
+      default: false
+    binder_evidence_id:
+      type: uuid
+      key: foreign
+      references: binder_evidence.evidence_id
+      nullible: true
+      descrition: 該記錄中是否有binder
+      unique: true
+    car_evidence_id:
+      type: uuid
+      key: foreign
+      references: car_evidence.evidence_id
+      nullible: true
+      descrition: 該記錄中是否有car
+      unique: true
+    manufacturing_evidence_id:
+      type: uuid
+      key: foreign
+      references: manufacturing_evidence.evidence_id
+      nullible: true
+      descrition: 該記錄中是否有manufacturing
+      unique: true
+    combination_id:
+      type: uuid
+      key: foreign
+      references: abc_combination_experiments.experiment_id
+      descrition: 該記錄中是否屬於完整的ABC組合
+      nullible: true
+      unique: true

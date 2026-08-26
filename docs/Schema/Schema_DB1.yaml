@@ -1,0 +1,62 @@
+db1:
+  table: abc_combination_db1
+  description: ABC組合數據庫 -- db1
+  fields:
+    combination_id:
+      type: uuid
+      key: primary
+      nullible: false
+    binder_id:
+      type: uuid
+      key: foreign
+      references: binder.binder_id
+      nullible: false
+    car_id:
+      type: uuid
+      key: foreign
+      references: car.car_id
+      nullible: false
+    manufacturing_id:
+      type: uuid
+      key: foreign
+      references: manufacturing.manufacturing_id
+      nullible: false
+    similarity:
+      type: any
+      description: A+B組合蛋白質序列與其他蛋白質序列的相似度(處理方法待定)
+      nullible: true
+    completed_experiment_phase:
+      type: string
+      description: 已完成的實驗階段
+      nullible: true
+      allowed values:
+        # GPT provided
+        - design_only # 僅設計/構建
+        - in_vitro # 體外實驗
+        - in_vivo # 動物實驗
+        - preclinical # 臨床前安全性/IND 支持
+        - clinical_phase_1
+        - clinical_phase_2
+        - clinical_phase_3
+
+abc_combination_experiments:
+  table: abc_combination_experiments
+  description: ABC組合實驗數據
+  fields:
+    experiment_id:
+      type: uuid
+      key: primary
+      nullible: false
+    combination_id:
+      type: uuid
+      key: foreign
+      to: abc_combination.combination_id
+      nullible: false
+      description: 組合ID
+    outcomes:
+      type: json
+      nullable: true
+      description: >
+        该 ABC 组合在该实验中的结果，如杀伤率、细胞因子释放、
+        肿瘤抑制、存活、扩增、持续性或毒性等。
+    

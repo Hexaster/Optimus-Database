@@ -95,42 +95,6 @@ manufacturing_evidence:
       description: 该证据对应的制造工艺 ID。
       nullable: false
       index: true
-    source_type:
-      type: string
-      nullable: false
-      description: 证据来源类型。
-      allowed_values:
-      - public_database
-      - literature
-      - patent
-      - internal_data
-      index: true
-    source_id:
-      type: string
-      nullable: false
-      description: 外部来源 ID，例如 DOI、专利号、数据库登录号或内部批次号。
-      index: true
-    citation:
-      type: string
-      nullable: true
-      description: 该证据对应的引用信息。
-    evidence_level:
-      type: string
-      nullable: false
-      description: 证据等级；具体分级值由统一证据分级规范定义。
-    experimental_conditions:
-      type: json
-      nullable: true
-      description: 产生该证据时的实验条件。
-    applicable_scenario:
-      type: string
-      nullable: true
-      description: 该证据或结果适用的场景。
-    contrary_evidence:
-      type: boolean
-      nullable: false
-      description: 该记录是否属于与主要结论相反的证据。
-      default: false
     cell_viability:
       type: number
       nullable: true
@@ -187,13 +151,3 @@ manufacturing_evidence:
       type: json
       nullable: true
       description: 细胞因子释放结果。
-relationships:
-- from: binder_evidence.binder_id
-  to: binder.binder_id
-  cardinality: many-to-one
-- from: car_evidence.car_id
-  to: car.car_id
-  cardinality: many-to-one
-- from: manufacturing_evidence.manufacturing_id
-  to: manufacturing.manufacturing_id
-  cardinality: many-to-one
