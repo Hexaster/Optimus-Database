@@ -47,6 +47,13 @@ abc_combination_experiments:
       type: uuid
       key: primary
       nullible: false
+    record_id:
+      type: uuid
+      key: foreign
+      references: record.record_id
+      nullible: true
+      description: 該 ABC 組合實驗對應的記錄 ID。
+      unique: true
     combination_id:
       type: uuid
       key: foreign

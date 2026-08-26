@@ -11,6 +11,10 @@ binder:
       type: string
       description: Binder 的名称或代号。
       nullable: true
+    aliases:
+      type: json
+      nullable: true
+      description: 該 Binder 的其他名稱
     scfv_sequence:
       type: string
       nullable: true
@@ -76,16 +80,7 @@ binder:
       type: string
       nullable: true
       description: Binder 与靶标复合物的结构信息。
-    version:
-      type: string
-      nullable: false
-      description: 该 Binder 记录的版本。
-      default: '1.0'
-    entry_date:
-      type: date
-      nullable: false
-      description: 该记录的录入日期。
-      default: current_date
+
 binder_evidence:
   table: binder_evidence
   description: Binder 证据表。保存特定来源、特定实验条件下对 Binder 的观察或测量结果。
@@ -95,6 +90,13 @@ binder_evidence:
       key: primary
       description: 平台内部唯一 Binder 证据记录 ID。
       nullable: false
+    record_id:
+      type: uuid
+      key: foreign
+      references: record.record_id
+      nullible: true
+      description: 該 Binder 證據對應的記錄 ID。
+      unique: true
     binder_id:
       type: uuid
       key: foreign

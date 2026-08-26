@@ -42,16 +42,7 @@ car:
           unit: aa
           check: length >= 0
       nullable: false
-    version:
-      type: string
-      nullable: false
-      description: 该 CAR backbone 记录的版本。
-      default: '1.0'
-    entry_date:
-      type: date
-      nullable: false
-      description: 该记录的录入日期。
-      default: current_date
+
 car_evidence:
   table: car_evidence
   description: CAR 证据表。保存特定来源、特定实验条件下对 CAR backbone 性能与行为的观察结果。
@@ -61,6 +52,13 @@ car_evidence:
       key: primary
       description: 平台内部唯一 CAR 证据记录 ID。
       nullable: false
+    record_id:
+      type: uuid
+      key: foreign
+      references: record.record_id
+      nullible: true
+      description: 該 CAR 證據對應的記錄 ID。
+      unique: true
     car_id:
       type: uuid
       key: foreign
