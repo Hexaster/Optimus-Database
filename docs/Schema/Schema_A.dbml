@@ -1,0 +1,56 @@
+Table binder {
+  binder_id uuid [pk, not null, note: '平台内部唯一 Binder ID。']
+  name varchar [note: 'Binder 的名称或代号。']
+  aliases json [note: '該 Binder 的其他名稱']
+  scfv_sequence varchar [note: 'scFv 完整氨基酸序列。']
+  vh_sequence varchar [note: 'VH 氨基酸序列。']
+  vl_sequence varchar [note: 'VL 氨基酸序列。']
+  linker varchar [note: '连接 VH 与 VL 的 linker 序列。']
+  numbering_scheme varchar [note: '抗体序列编号体系，例如 IMGT、Kabat。']
+  fr_cdr_regions json [note: 'FR/CDR 区域及其位置或序列信息。']
+  cdr_lengths json [note: '各 CDR 区域的长度。']
+  vdj_genes json [note: 'V(D)J 基因信息。']
+  germline_origin varchar [note: '胚系来源。']
+  somatic_mutations json [note: '体细胞突变信息。']
+  target_antigen varchar [note: 'Binder 的靶抗原，例如 GCC、CDH17。']
+  glycosylation_sites json [note: '糖基化位点信息。']
+  free_cysteines json [note: '游离半胱氨酸信息。']
+  humanization_level varchar [note: '人源化程度。']
+  structure_template varchar [note: '可用于该 Binder 的结构模板。']
+  complex_structure varchar [note: 'Binder 与靶标复合物的结构信息。']
+
+  indexes {
+    target_antigen
+  }
+
+  Note: 'Binder 核心实体表。一个经实体归一化后的 Binder 对应一条记录。'
+}
+
+Table binder_evidence {
+  evidence_id uuid [pk, not null, note: '平台内部唯一 Binder 证据记录 ID。']
+  record_id uuid [unique, ref: > record.record_id, note: '該 Binder 證據對應的記錄 ID。']
+  binder_id uuid [not null, ref: > binder.binder_id, note: '该证据对应的 Binder ID。']
+  epitope varchar [note: 'Binder 识别的表位。']
+  binding_site varchar [note: 'Binder 的结合位点信息。']
+  kd decimal [note: '平衡解离常数 Kd。单位：nM；检查：kd >= 0']
+  kon decimal [note: '结合速率常数 Kon。单位：1/(M*s)；检查：kon >= 0']
+  koff decimal [note: '解离速率常数 Koff。单位：1/s；检查：koff >= 0']
+  measurement_method varchar [note: '亲和力或动力学参数的测量方法。可选值：SPR、BLI']
+  measurement_conditions json [note: 'Kd、Kon、Koff 等测量值对应的具体测量条件。']
+  cross_reactivity_protein json [note: '蛋白水平的交叉反应性信息。']
+  cross_reactivity_cell json [note: '细胞水平的交叉反应性信息。']
+  species_reactivity json [note: '对人、鼠、猴等不同物种的反应性信息。']
+  tm decimal [note: '热稳定性指标 Tm。单位：°C']
+  viscosity decimal [note: '黏度测量结果。检查：viscosity >= 0']
+  aggregation_tendency varchar [note: '聚集倾向。']
+  solubility varchar [note: '溶解度。']
+  hydrophobicity decimal [note: '疏水性指标。']
+  charge decimal [note: '电荷相关指标。']
+  immunogenicity_ada_risk varchar [note: '免疫原性或抗药抗体（ADA）风险信息。']
+
+  indexes {
+    binder_id
+  }
+
+  Note: 'Binder 证据表。保存特定来源、特定实验条件下对 Binder 的观察或测量结果。'
+}

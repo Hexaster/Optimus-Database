@@ -1,0 +1,19 @@
+Table abc_combination_db1 {
+  combination_id uuid [pk, not null]
+  binder_id uuid [not null, ref: > binder.binder_id]
+  car_id uuid [not null, ref: > car.car_id]
+  manufacturing_id uuid [not null, ref: > manufacturing.manufacturing_id]
+  similarity varchar [note: 'A+B組合蛋白質序列與其他蛋白質序列的相似度（處理方法待定；原 YAML 類型為 any）']
+  completed_experiment_phase varchar [note: '已完成的實驗階段。可选值：design_only、in_vitro、in_vivo、preclinical、clinical_phase_1、clinical_phase_2、clinical_phase_3']
+
+  Note: 'ABC組合數據庫 -- db1'
+}
+
+Table abc_combination_experiments {
+  experiment_id uuid [pk, not null]
+  record_id uuid [unique, ref: > record.record_id, note: '該 ABC 組合實驗對應的記錄 ID。']
+  combination_id uuid [not null, ref: > abc_combination_db1.combination_id, note: '組合ID']
+  outcomes json [note: '该 ABC 组合在该实验中的结果，如杀伤率、细胞因子释放、肿瘤抑制、存活、扩增、持续性或毒性等。']
+
+  Note: 'ABC組合實驗數據'
+}

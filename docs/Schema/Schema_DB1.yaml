@@ -5,30 +5,30 @@ db1:
     combination_id:
       type: uuid
       key: primary
-      nullible: false
+      nullable: false
     binder_id:
       type: uuid
       key: foreign
       references: binder.binder_id
-      nullible: false
+      nullable: false
     car_id:
       type: uuid
       key: foreign
       references: car.car_id
-      nullible: false
+      nullable: false
     manufacturing_id:
       type: uuid
       key: foreign
       references: manufacturing.manufacturing_id
-      nullible: false
+      nullable: false
     similarity:
       type: any
       description: A+B組合蛋白質序列與其他蛋白質序列的相似度(處理方法待定)
-      nullible: true
+      nullable: true
     completed_experiment_phase:
       type: string
       description: 已完成的實驗階段
-      nullible: true
+      nullable: true
       allowed values:
         # GPT provided
         - design_only # 僅設計/構建
@@ -46,19 +46,19 @@ abc_combination_experiments:
     experiment_id:
       type: uuid
       key: primary
-      nullible: false
+      nullable: false
     record_id:
       type: uuid
       key: foreign
       references: record.record_id
-      nullible: true
+      nullable: true
       description: 該 ABC 組合實驗對應的記錄 ID。
       unique: true
     combination_id:
       type: uuid
       key: foreign
       to: abc_combination.combination_id
-      nullible: false
+      nullable: false
       description: 組合ID
     outcomes:
       type: json

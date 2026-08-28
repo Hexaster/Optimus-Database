@@ -94,7 +94,7 @@ binder_evidence:
       type: uuid
       key: foreign
       references: record.record_id
-      nullible: true
+      nullable: true
       description: 該 Binder 證據對應的記錄 ID。
       unique: true
     binder_id:

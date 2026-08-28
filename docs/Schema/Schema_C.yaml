@@ -90,7 +90,7 @@ manufacturing_evidence:
       type: uuid
       key: foreign
       references: record.record_id
-      nullible: true
+      nullable: true
       description: 該製造工藝證據對應的記錄 ID。
       unique: true
     manufacturing_id:

@@ -56,7 +56,7 @@ car_evidence:
       type: uuid
       key: foreign
       references: record.record_id
-      nullible: true
+      nullable: true
       description: 該 CAR 證據對應的記錄 ID。
       unique: true
     car_id:

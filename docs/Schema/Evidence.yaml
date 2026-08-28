@@ -1,0 +1,269 @@
+evidence:
+  table: evidence
+  description: 合并 record、binder_evidence、car_evidence 和 manufacturing_evidence 的统一证据表。
+  fields:
+    record_id:
+      type: uuid
+      key: primary
+      nullable: false
+    source_type:
+      type: string
+      nullable: false
+      description: 证据来源类型。
+      allowed_values:
+      - public_database
+      - literature
+      - patent
+      - internal_data
+      index: true
+    source_id:
+      type: string
+      nullable: false
+      description: 外部来源 ID，例如 DOI、专利号、数据库登录号或内部批次号。
+      index: true
+    citation:
+      type: string
+      nullable: true
+      description: 该证据对应的引用信息。
+    evidence_level:
+      type: string
+      nullable: false
+      description: 证据等级；具体分级值由统一证据分级规范定义。
+    experimental_conditions:
+      type: json
+      nullable: true
+      description: 产生该证据时的实验条件。
+    applicable_scenario:
+      type: string
+      nullable: true
+      description: 该证据或结果适用的场景。
+    contrary_evidence:
+      type: boolean
+      nullable: false
+      description: 该记录是否属于与主要结论相反的证据。
+      default: false
+    time_of_upload:
+      type: date
+      description: 源數據上傳時間
+    time_of_download:
+      type: date
+      description: 數據下載時間
+
+    binder.binder_id:
+      type: uuid
+      key: foreign
+      references: binder.binder_id
+      description: 该证据对应的 Binder ID。
+      nullable: false
+      index: true
+    binder.epitope:
+      type: string
+      nullable: true
+      description: Binder 识别的表位。
+    binder.binding_site:
+      type: string
+      nullable: true
+      description: Binder 的结合位点信息。
+    binder.kd:
+      type: number
+      nullable: true
+      description: 平衡解离常数 Kd。
+      unit: nM
+      check: kd >= 0
+    binder.kon:
+      type: number
+      nullable: true
+      description: 结合速率常数 Kon。
+      unit: 1/(M*s)
+      check: kon >= 0
+    binder.koff:
+      type: number
+      nullable: true
+      description: 解离速率常数 Koff。
+      unit: 1/s
+      check: koff >= 0
+    binder.measurement_method:
+      type: string
+      nullable: true
+      description: 亲和力或动力学参数的测量方法。
+      allowed_values:
+      - SPR
+      - BLI
+    binder.measurement_conditions:
+      type: json
+      nullable: true
+      description: Kd、Kon、Koff 等测量值对应的具体测量条件。
+    binder.cross_reactivity_protein:
+      type: json
+      nullable: true
+      description: 蛋白水平的交叉反应性信息。
+    binder.cross_reactivity_cell:
+      type: json
+      nullable: true
+      description: 细胞水平的交叉反应性信息。
+    binder.species_reactivity:
+      type: json
+      nullable: true
+      description: 对人、鼠、猴等不同物种的反应性信息。
+    binder.tm:
+      type: number
+      nullable: true
+      description: 热稳定性指标 Tm。
+      unit: °C
+    binder.viscosity:
+      type: number
+      nullable: true
+      description: 黏度测量结果。
+      check: viscosity >= 0
+    binder.aggregation_tendency:
+      type: string
+      nullable: true
+      description: 聚集倾向。
+    binder.solubility:
+      type: string
+      nullable: true
+      description: 溶解度。
+    binder.hydrophobicity:
+      type: number
+      nullable: true
+      description: 疏水性指标。
+    binder.charge:
+      type: number
+      nullable: true
+      description: 电荷相关指标。
+    binder.immunogenicity_ada_risk:
+      type: string
+      nullable: true
+      description: 免疫原性或抗药抗体（ADA）风险信息。
+
+    car.car_id:
+      type: uuid
+      key: foreign
+      references: car.car_id
+      description: 该证据对应的 CAR backbone ID。
+      nullable: false
+      index: true
+    car.activation_speed:
+      type: string
+      nullable: true
+      description: CAR 激活速度。
+    car.metabolic_state:
+      type: string
+      nullable: true
+      description: CAR-T 细胞的代谢状态，例如糖酵解或氧化代谢。
+      allowed_values:
+      - glycolytic
+      - oxidative
+    car.expansion_capacity:
+      type: string
+      nullable: true
+      description: CAR-T 细胞的扩增能力。
+    car.memory_phenotype:
+      type: string
+      nullable: true
+      description: CAR-T 细胞的记忆表型。
+    car.persistence:
+      type: string
+      nullable: true
+      description: CAR-T 细胞的持久性。
+    car.exhaustion_risk:
+      type: string
+      nullable: true
+      description: CAR-T 细胞的耗竭风险。
+    car.tonic_signaling_tendency:
+      type: string
+      nullable: true
+      description: CAR 的 tonic signaling 倾向。
+    car.geometric_length:
+      type: number
+      nullable: true
+      description: CAR 相关模块或构型的几何长度信息。
+      check: geometric_length >= 0
+    car.epitope_distance_effect:
+      type: string
+      nullable: true
+      description: 构型对表位距离相关效果的影响。
+    car.immune_synapse_effect:
+      type: string
+      nullable: true
+      description: 构型对免疫突触形成或性质的影响。
+    car.tonic_signaling_effect:
+      type: string
+      nullable: true
+      description: 构型对 tonic signaling 的影响。
+    car.compatible_modules:
+      type: json
+      nullable: true
+      description: 已观察或报告为可兼容的模块组合。
+    car.incompatible_modules:
+      type: json
+      nullable: true
+      description: 已观察或报告为不兼容的模块组合。
+    car.assembly_rules:
+      type: json
+      nullable: true
+      description: CAR 模块装配规则或约束。
+
+    manufacturing.manufacturing_id:
+      type: uuid
+      key: foreign
+      references: manufacturing.manufacturing_id
+      description: 该证据对应的制造工艺 ID。
+      nullable: false
+      index: true
+    manufacturing.cell_viability:
+      type: number
+      nullable: true
+      description: 细胞活率。
+      unit: '%'
+      check: 0 <= cell_viability <= 100
+    manufacturing.transduction_efficiency:
+      type: number
+      nullable: true
+      description: 转导效率。
+      unit: '%'
+      check: 0 <= transduction_efficiency <= 100
+    manufacturing.vcn:
+      type: number
+      nullable: true
+      description: 载体拷贝数（VCN）。
+      unit: copies/cell
+      check: vcn >= 0
+    manufacturing.cd3_positive_ratio:
+      type: number
+      nullable: true
+      description: CD3+ 细胞比例。
+      unit: '%'
+      check: 0 <= cd3_positive_ratio <= 100
+    manufacturing.memory_phenotype:
+      type: string
+      nullable: true
+      description: 产品细胞的记忆表型。
+    manufacturing.exhaustion_phenotype:
+      type: string
+      nullable: true
+      description: 产品细胞的耗竭表型。
+    manufacturing.treg_phenotype:
+      type: string
+      nullable: true
+      description: 产品细胞的 Treg 相关表型。
+    manufacturing.sterility:
+      type: string
+      nullable: true
+      description: 无菌检测结果。
+    manufacturing.mycoplasma:
+      type: string
+      nullable: true
+      description: 支原体检测结果。
+    manufacturing.endotoxin:
+      type: string
+      nullable: true
+      description: 内毒素检测结果。
+    manufacturing.killing_activity:
+      type: string
+      nullable: true
+      description: 杀伤活性结果。
+    manufacturing.cytokine_release:
+      type: json
+      nullable: true
+      description: 细胞因子释放结果。

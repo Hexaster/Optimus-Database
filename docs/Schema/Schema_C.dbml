@@ -1,0 +1,44 @@
+Table manufacturing {
+  manufacturing_id uuid [pk, not null, note: '平台内部唯一制造工艺 ID']
+  name varchar [note: '制造工艺或工艺版本的名称/代号']
+  t_cell_source varchar [note: 'T 细胞来源。可选值：自体、异体']
+  cd4_cd8_ratio varchar [note: '起始或目标 CD4:CD8 比例']
+  starting_cell_quality json [note: '起始细胞质量']
+  activation_method varchar [note: 'T 细胞激活方式']
+  reagents json [note: '制造过程中使用的关键试剂']
+  vector_type varchar [note: '用于基因导入的载体类型。可选值：慢病毒、逆转录病毒、转座子、电转']
+  moi decimal [note: '感染复数（MOI）。检查：moi >= 0']
+  transduction_transfection_conditions json [note: '转导或转染条件']
+  culture_system varchar [note: '细胞培养体系']
+  cytokine_combination json [note: '培养过程中使用的细胞因子组合']
+  culture_duration varchar [note: '培养时长']
+  cryopreservation_conditions json [note: '冻存条件']
+  formulation json [note: '最终制剂相关信息']
+  corresponding_car_product varchar [note: '来源中报告的对应 CAR 构型或产品信息']
+
+  Note: '制造工艺核心实体表。每个产品/工艺版本对应一条记录。'
+}
+
+Table manufacturing_evidence {
+  evidence_id uuid [pk, not null, note: '平台内部唯一制造工艺证据记录 ID。']
+  record_id uuid [unique, ref: > record.record_id, note: '該製造工藝證據對應的記錄 ID。']
+  manufacturing_id uuid [not null, ref: > manufacturing.manufacturing_id, note: '该证据对应的制造工艺 ID。']
+  cell_viability decimal [note: '细胞活率。单位：%；检查：0 <= cell_viability <= 100']
+  transduction_efficiency decimal [note: '转导效率。单位：%；检查：0 <= transduction_efficiency <= 100']
+  vcn decimal [note: '载体拷贝数（VCN）。单位：copies/cell；检查：vcn >= 0']
+  cd3_positive_ratio decimal [note: 'CD3+ 细胞比例。单位：%；检查：0 <= cd3_positive_ratio <= 100']
+  memory_phenotype varchar [note: '产品细胞的记忆表型。']
+  exhaustion_phenotype varchar [note: '产品细胞的耗竭表型。']
+  treg_phenotype varchar [note: '产品细胞的 Treg 相关表型。']
+  sterility varchar [note: '无菌检测结果。']
+  mycoplasma varchar [note: '支原体检测结果。']
+  endotoxin varchar [note: '内毒素检测结果。']
+  killing_activity varchar [note: '杀伤活性结果。']
+  cytokine_release json [note: '细胞因子释放结果。']
+
+  indexes {
+    manufacturing_id
+  }
+
+  Note: '制造工艺证据表。保存特定来源或实验中该工艺得到的质量、表型与功能结果。'
+}
