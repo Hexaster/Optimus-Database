@@ -1,4 +1,4 @@
-# 用大模型从文献和专利中抽取数据：设计文档
+# 文献和专利parser：设计文档
 
 日期：2026-08-28
 状态：待实现
@@ -16,33 +16,29 @@ Kd 值可能写在正文里，也可能藏在表格的某一格，还可能只�
 
 数据进入数据库有两条路，走哪一条取决于原始数据长什么样：
 
-**第一条，结构化通道（已经做好了）。**
+**第一条，结构化通道**
 原始数据本身就是表格，例如 Thera-SAbDab 的 CSV。这种情况下，我们只需要写一份对照表
 （`docs/Mapping/*.yaml`），说明「原表的第 3 列对应数据库的 vh_sequence 字段」，
-程序照着搬就行，不需要模型参与。代码见 `src/cart_db/parser/therasabdab.py`。
+程序照着搬就行，不需要模型参与。
 
 **第二条，文本通道（本文档要做的）。**
-原始数据是文章。这里没有「第 3 列」可言，需要模型通读全文，判断哪些内容对应哪个字段。
+原始数据是文章，需要模型通读全文，判断哪些内容对应哪个字段。
 
 两条通道最后必须产出同样格式的结果，这样后面的校验、去重、入库等步骤只要写一套。
 共同的交接格式是 `NormalizedData`，也就是一行一条记录，每条记录写明「这条数据属于哪张表」
 和「各字段的值」。
 
-输入文件已经有现成的下载命令：
-
-    make download-litc    # Europe PMC 文献全文 XML → data/raw/europe_pmc/
-    make download-epar    # EMA 审评报告 PDF        → data/raw/ema_epar/
 
 **本文档的目标**：给一个 PDF 或 XML 文件，产出一份结果文件
 `data/normalised/<文件名>.jsonl`，里面每一行都是一条符合数据库表结构的记录。
 
-## 2. 现在的草稿为什么跑不通
+## 2. 现在的草稿
 
 `src/cart_db/llm.py` 写得很完整，本次一行都不用改。它已经做好了这几件事：
 调用模型、把重复的提示词缓存起来省钱、每次调用都记一笔账到数据库、
 当天花费超过上限就自动拦下、以及批量提交接口。
 
-问题出在 `src/cart_db/extraction.py`，它目前是一份跑不出结果的草稿，有三个毛病：
+`src/cart_db/extraction.py`目前是一份跑不出结果的草稿：
 
 1. 传给模型的「答题格式」参数写成了 `List[NormalizedData]`。这在 Python 里不是一个
    可用的格式定义，调用当场就会报错。
@@ -65,7 +61,6 @@ Kd 值可能写在正文里，也可能藏在表格的某一格，还可能只�
 | 做到哪一步为止 | 产出 jsonl 结果文件即可 | 与结构化通道交接格式一致；写进数据库这一步两条通道共用，以后再写 |
 | 文献出处谁来填 | 模型自己从原文里读 | 业务方决定；程序会检查出处是否为空，空的就丢弃该行 |
 | 文件怎么读进来 | 都转成纯文本；XML 去掉参考文献部分 | 最省钱，全部在本地完成，不额外调用服务 |
-| evidence 表的三个关联字段 | 从「必填」改为「可以为空」 | 见下方说明 |
 
 **关于「嵌套结构」。**
 一篇文献里可能有 3 个 Binder，每个各做了 2 组实验。程序最后要写进数据库的是一行行平表，
@@ -90,11 +85,6 @@ Binder 5F9
 序号的好处是，模型如果写了个 7 而列表里只有 2 个 Binder，程序一眼就能发现并丢弃，
 不会稀里糊涂地关联到错误的实体上。
 
-**关于「evidence 表的三个关联字段」。**
-`Evidence.yaml` 目前要求每条证据必须同时填写 Binder、CAR、制造工艺三个编号。
-但一篇只测了亲和力的抗体文献，根本没有 CAR 也没有制造工艺。
-按现在的规定，这类数据一条都存不进来——而这恰恰是文献里最常见的内容。
-所以把这三个字段改为可以为空：一条证据说清楚它是关于谁的即可，其余留空。
 
 ## 4. 整体流程
 
@@ -115,9 +105,7 @@ Binder 5F9
 
 `.jsonl` 是一种朴素的文本格式：一行一条记录，可以直接用文本编辑器打开逐行核对。
 
-## 5. 要填的六张表
-
-`docs/Schema/` 里目前有效的目标表是这六张：
+## 5. 要填的表
 
 | 表 | 装什么 | 定义位置 |
 |---|---|---|
@@ -126,16 +114,11 @@ Binder 5F9
 | `manufacturing` | 制造工艺参数 | `Schema_C.yaml` |
 | `evidence` | 所有实验结果与其出处 | `Evidence.yaml` |
 | `abc_combination_db1` | 一个具体的 A+B+C 组合 | `Schema_DB1.yaml` |
-| `abc_combination_experiments` | 该组合做过的实验 | `Schema_DB1.yaml` |
 
 `evidence` 是一张合并表，用带前缀的字段名区分内容属于哪一类，
 例如 `binder.kd`、`car.persistence`、`manufacturing.vcn`。
 结果文件里原样保留这些带点的字段名，这样一行结果可以直接对着 `Evidence.yaml` 逐字核对。
 
-**开工前提**：`docs/Schema/Record.yaml`，以及 `Schema_A/B/C.yaml` 里残留的
-`binder_evidence`、`car_evidence`、`manufacturing_evidence` 三段，都已被合并进
-`Evidence.yaml`，需要业务方先行删除。程序会把 `docs/Schema/` 整个目录读给模型看，
-残留的旧定义会让模型去填已经不存在的表。
 
 ## 6. 字段清单（新增 `src/cart_db/extraction_models.py`）
 
@@ -215,6 +198,7 @@ class Extraction(BaseModel):         # 交给模型的完整答题格式
 唯一的出路就是编一个 DOI 出来。允许留空，它才能如实空着，
 再由第 8 节的检查把这行丢掉。宁可少一行，也不要一个假的出处。
 
+(Yihang: 這裏與李總想法衝突)
 其二，证据拆成三个清单而不是合并成一个。合并的话，
 每条证据都要把 binder、car、manufacturing 三类字段全写一遍，
 而强制格式模式要求每个字段都得出现，模型会在每行上写三十来个「无」。
@@ -239,13 +223,13 @@ PDF 用 pymupdf 逐页取字。XML 读进来之后删掉 `<ref-list>`、`<back>`
 **`flatten(result)` —— 把嵌套结果拆成平表。**
 逐层遍历，给每个实体和每条证据生成一个唯一编号，填好归属关系，
 把键值对列表还原成正常结构，然后按顺序输出各表的记录：
-先 `binder`、`car`、`manufacturing`，再 `evidence`，最后是两张组合表。
+先 `binder`、`car`、`manufacturing`，再 `abc_combination_db1`，最后 `evidence`。
 顺序有讲究——被引用的实体必须先出现，后面引用它的记录才有编号可填。
 
-组合实验会同时产出两行：一行写进 `evidence`（出处、实验条件、
-结果都在这里，三个实体编号取自该组合所引用的实体），
-另一行写进 `abc_combination_experiments`，只保留关联信息，指向前者。
-同一份结果不存两遍。
+组合实验只产出一行，写进 `evidence`：出处、实验条件、结果（`outcomes`）都在这里，
+三个实体编号取自该组合所引用的实体。换句话说，
+**三个实体编号都填了的证据行，就是关于那个 ABC 组合的实验结果**——
+组合由这三个编号本身确定，不需要另一张实验表来记。
 
 **`extract_document(path, out_dir=None, dry_run=False)` —— 串起全流程。**
 加上 `dry_run=True` 时只估算这篇文档要花多少钱，不真的发起抽取。
@@ -306,27 +290,10 @@ make extract FILE=data/raw/europe_pmc/xxx.xml
 `llm.py` 里已经写好了批量提交接口，走批量按五折计费。本期不接，
 但正式跑全量之前应该接上。
 
-## 11. 需要业务方确认或处理的事
 
-1. **`Evidence.yaml` 的三个关联字段**（`binder.binder_id`、`car.car_id`、
-   `manufacturing.manufacturing_id`）当前是必填，本次改为可以为空。已确认。
-2. **`Evidence.yaml` 新增了 `outcomes` 字段**，而 `Schema_DB1.yaml` 的
-   `abc_combination_experiments` 也有同名字段。本设计按「结果写在 `evidence` 里，
-   组合实验表只留关联」处理，请确认这是合并的本意。
-3. **`Schema_C.yaml` 的可选值写法有误。**`t_cell_source` 的键名写成了
-   `allowed values`（中间是空格），`vector_type` 写成了 `allowed value`，
-   正确写法是 `allowed_values`；而且选项写成 `-自体`，短横线后面少一个空格，
-   这样机器读出来是一整个字符串，不是一份选项清单。修好之前，
-   这两个字段只能当自由文本处理，模型填什么都拦不住。
-4. **`Schema_DB1.yaml` 的 `completed_experiment_phase`** 也用了 `allowed values`
-   这个错误键名，但选项列表本身格式正确，改个键名即可。
-5. **`sql/*.sql` 还是合并之前的表结构**（三张证据表分立，另有一张同名但含义不同的
-   `core.evidence`）。本设计一律以 `docs/Schema/*.yaml` 为准，
-   SQL 的同步不在本期范围内。
+## 11. 本期不做
 
-## 12. 本期明确不做
-
-- **超长专利的分段处理。**先用字数统计拦一下，真遇到超长的再说。
+- **超长专利的分段处理。**先用測試一下模型的1m context 能否handle。
 - **跨文档的实体去重。**同一个 Binder 在十篇文献里出现，现在会产出十条独立记录，
   合并是后面单独的一步。
 - **写进 Postgres。**先产出结果文件，入库两条通道共用一套代码，以后再写。
@@ -335,27 +302,12 @@ make extract FILE=data/raw/europe_pmc/xxx.xml
   能看懂版面的方式（更准，但更贵）。
 - **批量提交。**见第 10 节。
 
-## 13. 实现顺序
+## 12. 实现顺序
 
 1. `requirements.txt` 补上 `pymupdf` 和 `pytest`（前者代码里已经在用，但从来没声明过）。
-2. 改 `docs/Schema/Evidence.yaml` 的三个关联字段为可以为空。
-3. 写 `src/cart_db/extraction_models.py`（字段清单）。
-4. 重写 `src/cart_db/extraction.py`（读文件、拼说明、拆平）。
-5. 写 `tests/test_extraction.py`。
-6. 写 `scripts/extract.py` 和 Makefile 的 `extract` 命令。
-7. 拿一篇真实的 Europe PMC 文献先 `--dry-run` 核对成本，再实跑一篇，人工核对结果。
+2. 写 `src/cart_db/extraction_models.py`（字段清单）。
+3. 重写 `src/cart_db/extraction.py`（读文件、拼说明、拆平）。
+4. 写 `tests/test_extraction.py`。
+5. 写 `scripts/extract.py` 和 Makefile 的 `extract` 命令。
+6. 拿一篇真实的 Europe PMC 文献先 `--dry-run` 核对成本，再实跑一篇，人工核对结果。
 
-## 附录：术语表
-
-| 术语 | 意思 |
-|---|---|
-| LLM / 大模型 | 这里指 Claude，负责读文章、填表 |
-| token | 模型处理文字的计量单位，计费按它算。中文约一字一个 |
-| 强制格式模式 | 调用模型时预先规定「只准填这些字段」，模型填不出规定外的内容 |
-| 提示词缓存 | 每次调用都重复的那段说明只算一次全价，之后按一折计费 |
-| 字段清单（Pydantic 模型） | 用 Python 写出的「这张表有哪些字段、各是什么类型」 |
-| 关联字段（外键） | 一张表里指向另一张表某条记录的那一列，例如「这条 Kd 属于哪个 Binder」 |
-| 唯一编号（UUID） | 程序生成的一长串不重复的编号，用来给记录之间建立关联 |
-| 嵌套 / 拆平 | 模型按「实验写在实体内部」的树状结构作答；程序再拆成数据库的一行行平表 |
-| jsonl | 一行一条记录的文本文件，可直接用编辑器打开核对 |
-| JATS | 文献全文 XML 的通用格式，Europe PMC 用的就是它 |
