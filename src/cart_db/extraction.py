@@ -6,14 +6,17 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from . import llm
 from .basemodel import NormalizedData
-from .schema_models import ExtractionSchema, load_schema
+from .config import cost_cny, settings
+from .schema_models import SCHEMA_DIR, ExtractionSchema, load_schema
 
 logger = logging.getLogger(__name__)
 
@@ -181,3 +184,90 @@ def flatten(result, schema: ExtractionSchema | None = None) -> list[NormalizedDa
                     NormalizedData(table=schema.evidence_table, data=row))
 
     return entity_rows + combination_rows + evidence_rows
+
+
+PROMPT_PATH = Path(__file__).with_name("article_extraction_prompt.txt")
+
+# article_extraction_prompt.txt 讲「抽什么」，这段讲「怎么摆」。
+OUTPUT_GUIDE = """\
+# Output Structure
+
+Return one JSON object with four lists: `binders`, `cars`, `manufacturings`,
+`combinations`.
+
+- Nest every experimental result inside the entity it describes, in that
+  entity's `evidence` list. Do not emit identifiers of your own; the pipeline
+  assigns them.
+- Every schema field of type `json` is expressed here as a list of
+  `{"key": ..., "value": ...}` pairs, both written as strings.
+- A combination refers to its three parts by zero-based position in the lists
+  above: `binder_index: 0` means the first entry of `binders`. Emit a
+  combination only when the source ties a binder, a CAR backbone and a
+  manufacturing process to the same experimental system or product. A
+  combination whose index does not exist will be discarded.
+- Results measured on the combination as a whole go in that combination's
+  `experiments` list, with the measured values as key/value pairs under
+  `outcomes`.
+- Field names here omit the table prefix used in Evidence.yaml: inside a
+  binder's evidence write `kd`, not `binder.kd`.
+- Use `null` for anything the source does not report. Never guess.
+"""
+
+
+def build_system_prompt() -> str:
+    """抽取规则 + 全部表结构 + 输出格式说明。
+
+    对每篇文档都完全一样，llm.py 会把它标为可缓存内容，
+    第二篇起这部分按输入价的 0.1× 计费。
+    """
+    schema = "\n\n".join(
+        f"# {path.name}\n{path.read_text(encoding='utf-8')}"
+        for path in sorted(SCHEMA_DIR.glob("*.yaml"))
+    )
+    return "\n\n".join([
+        PROMPT_PATH.read_text(encoding="utf-8"),
+        f"# Database Schema\n\n```yaml\n{schema}\n```",
+        OUTPUT_GUIDE,
+    ])
+
+
+def extract_document(
+    path: str | Path,
+    *,
+    out_dir: str | Path | None = None,
+    dry_run: bool = False,
+) -> list[NormalizedData]:
+    """读文件 → 调模型 → 拆平 → 写 data/normalised/<文件名>.jsonl。
+
+    dry_run=True 时只估算 token 与费用，不调模型、不写文件，返回空列表。
+    """
+    path = Path(path)
+    document = load_document(path)
+    system_prompt = build_system_prompt()
+
+    if dry_run:
+        input_tokens = llm.count_tokens(document=document, system_prompt=system_prompt)
+        logger.info(
+            "%s：输入 %d token，预计约 ¥%.2f（输出按 3000 token 估）",
+            path.name, input_tokens, cost_cny(input_tokens, 3000),
+        )
+        return []
+
+    schema = load_schema()
+    result = llm.extract(
+        schema=schema.extraction,
+        document=document,
+        system_prompt=system_prompt,
+        purpose="article_extraction",
+    )
+    rows = flatten(result, schema)
+
+    out_dir = Path(out_dir) if out_dir else settings.data_root / "normalised"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{path.stem}.jsonl"
+    with out_path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row.model_dump(), ensure_ascii=False) + "\n")
+
+    logger.info("%s → %s（%d 行）", path.name, out_path, len(rows))
+    return rows

@@ -251,3 +251,74 @@ def test_evidence_with_blank_evidence_level_is_dropped():
     ex = Extraction(binders=[Binder(name="A", evidence=[
         model(source_type="literature", source_id="PMC1", evidence_level="   ")])])
     assert _rows_of(flatten(ex), "evidence") == []
+
+
+import json
+
+from cart_db import extraction
+
+
+def test_system_prompt_contains_rules_schema_and_output_guide():
+    prompt = extraction.build_system_prompt()
+    assert "biomedical data extraction agent" in prompt      # article_extraction_prompt.txt
+    assert "target_antigen" in prompt                        # Schema_A.yaml
+    assert "abc_combination_db1" in prompt                   # Schema_DB1.yaml
+    assert "binder.kd" in prompt                             # Evidence.yaml
+    assert "binder_index" in prompt                          # 输出格式说明
+
+
+def test_system_prompt_is_stable_across_calls():
+    """跨文档完全一致才能命中提示词缓存。"""
+    assert extraction.build_system_prompt() == extraction.build_system_prompt()
+
+
+def test_extract_document_writes_jsonl(tmp_path, monkeypatch):
+    doc = tmp_path / "PMC1.xml"
+    doc.write_text(JATS, encoding="utf-8")
+    Binder = _entity("binder").model
+    captured = {}
+
+    def fake_extract(*, schema, document, system_prompt, purpose, **kw):
+        captured.update(document=document, purpose=purpose, schema=schema)
+        return Extraction(binders=[
+            Binder(name="ARB-202", evidence=[_ev("binder", kd=2.4)])])
+
+    monkeypatch.setattr(extraction.llm, "extract", fake_extract)
+    out_dir = tmp_path / "out"
+    rows = extraction.extract_document(doc, out_dir=out_dir)
+
+    assert "Kd = 2.4 nM" in captured["document"]      # 正文送进去了
+    assert "Smith 2020" not in captured["document"]   # 参考文献没送
+    assert captured["purpose"] == "article_extraction"
+    assert captured["schema"] is SCHEMA.extraction
+
+    written = (out_dir / "PMC1.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(written) == len(rows) == 2
+    assert json.loads(written[0])["data"]["name"] == "ARB-202"
+
+
+def test_extract_document_writes_readable_utf8(tmp_path, monkeypatch):
+    doc = tmp_path / "PMC1.xml"
+    doc.write_text(JATS, encoding="utf-8")
+    Binder = _entity("binder").model
+    monkeypatch.setattr(extraction.llm, "extract",
+                        lambda **kw: Extraction(binders=[Binder(name="抗体")]))
+
+    extraction.extract_document(doc, out_dir=tmp_path / "out")
+    raw = (tmp_path / "out" / "PMC1.jsonl").read_text(encoding="utf-8")
+    assert "抗体" in raw
+
+
+def test_dry_run_estimates_without_calling_extract(tmp_path, monkeypatch):
+    doc = tmp_path / "PMC1.xml"
+    doc.write_text(JATS, encoding="utf-8")
+
+    def boom(**kw):
+        raise AssertionError("dry_run 不该真的调用模型")
+
+    monkeypatch.setattr(extraction.llm, "extract", boom)
+    monkeypatch.setattr(extraction.llm, "count_tokens", lambda **kw: 42_000)
+
+    rows = extraction.extract_document(doc, out_dir=tmp_path / "out", dry_run=True)
+    assert rows == []
+    assert not (tmp_path / "out" / "PMC1.jsonl").exists()
