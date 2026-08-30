@@ -11,3 +11,5 @@ tenacity>=8.3
 rich>=13.7
 pyyaml>=6.0                  # downloaders 读 SourceRegistry/*.yaml 的「下载配置」块
 google-cloud-bigquery>=3.25  # 仅 google_patents downloader 需要；另需 GCP 服务账号凭证
+pymupdf>=1.24        # extraction.load_document 从 PDF 取文字
+pytest>=8.0          # tests/
