@@ -129,10 +129,21 @@ def _split_evidence(fields: dict) -> tuple[dict, dict[str, dict]]:
     return shared, grouped
 
 
-@lru_cache(maxsize=4)
 def load_schema(schema_dir: Path | None = None) -> ExtractionSchema:
-    """读 docs/Schema/*.yaml，构建整套答题格式。"""
-    tables = _load_tables(schema_dir or SCHEMA_DIR)
+    """读 docs/Schema/*.yaml，构建整套答题格式。
+
+    薄封装：把参数归一化成同一个值后再进缓存，让 load_schema()、
+    load_schema(None)、load_schema(SCHEMA_DIR) 命中同一条缓存、
+    返回同一个对象 —— lru_cache 按字面参数取键，不按解析后的默认值取键，
+    否则这几种写法会各自建一套结构相同但不是同一个类的模型，
+    下游用 `is`/`isinstance` 比较模型类时会静默出错。
+    """
+    return _load_schema_cached(schema_dir or SCHEMA_DIR)
+
+
+@lru_cache(maxsize=4)
+def _load_schema_cached(schema_dir: Path) -> ExtractionSchema:
+    tables = _load_tables(schema_dir)
     shared_fields, grouped = _split_evidence(tables[EVIDENCE_TABLE])
 
     entities: list[EntitySpec] = []

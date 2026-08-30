@@ -148,3 +148,9 @@ def test_prefix_group_overlapping_a_shared_field_is_rejected(tmp_path):
     )
     with pytest.raises(ValueError, match="与共享字段重名"):
         load_schema(schema_dir)
+
+
+def test_load_schema_default_and_explicit_none_are_the_same_object():
+    from cart_db.schema_models import SCHEMA_DIR, load_schema
+    assert load_schema() is load_schema(None)
+    assert load_schema() is load_schema(SCHEMA_DIR)
