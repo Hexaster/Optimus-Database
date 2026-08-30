@@ -67,3 +67,187 @@ def test_unknown_extension_raises(tmp_path):
     path.write_text("a,b\n1,2\n", encoding="utf-8")
     with pytest.raises(ValueError, match="不支持的文件格式"):
         load_document(path)
+
+
+from cart_db.extraction import flatten
+from cart_db.schema_models import KV, load_schema
+
+SCHEMA = load_schema()
+Extraction = SCHEMA.extraction
+Combination = Extraction.model_fields["combinations"].annotation.__args__[0]
+
+
+def _entity(kind):
+    return next(e for e in SCHEMA.entities if e.kind == kind)
+
+
+def _ev(kind, **kw):
+    """一条能通过校验的最小证据。"""
+    model = _entity(kind).evidence_model
+    return model(source_type="literature", source_id="PMC1",
+                 evidence_level="同行評議", **kw)
+
+
+def _shared_ev(**kw):
+    """组合实验用的证据（只有共享字段）。"""
+    model = Combination.model_fields["experiments"].annotation.__args__[0]
+    return model(source_type="literature", source_id="PMC1",
+                 evidence_level="同行評議", **kw)
+
+
+def _rows_of(rows, table):
+    return [r for r in rows if r.table == table]
+
+
+def test_evidence_points_at_its_own_binder():
+    Binder = _entity("binder").model
+    ex = Extraction(binders=[
+        Binder(name="ARB-202", target_antigen="CDH17",
+               evidence=[_ev("binder", kd=2.4, measurement_method="SPR")]),
+        Binder(name="5F9", evidence=[_ev("binder", kd=40.0)]),
+    ])
+    rows = flatten(ex)
+    binders = _rows_of(rows, "binder")
+    by_kd = {e.data["binder.kd"]: e for e in _rows_of(rows, "evidence")}
+
+    assert len(binders) == 2
+    assert by_kd[2.4].data["binder.binder_id"] == binders[0].data["binder_id"]
+    assert by_kd[40.0].data["binder.binder_id"] == binders[1].data["binder_id"]
+    assert binders[0].data["binder_id"] != binders[1].data["binder_id"]
+
+
+def test_evidence_carries_all_three_fk_columns():
+    Binder = _entity("binder").model
+    ex = Extraction(binders=[Binder(name="A", evidence=[_ev("binder")])])
+    data = _rows_of(flatten(ex), "evidence")[0].data
+    assert data["binder.binder_id"] is not None
+    assert data["car.car_id"] is None
+    assert data["manufacturing.manufacturing_id"] is None
+
+
+def test_shared_fields_are_not_prefixed():
+    Binder = _entity("binder").model
+    ex = Extraction(binders=[Binder(name="A", evidence=[_ev("binder")])])
+    data = _rows_of(flatten(ex), "evidence")[0].data
+    assert data["source_id"] == "PMC1"
+    assert "binder.source_id" not in data
+
+
+def test_car_and_manufacturing_memory_phenotype_stay_apart():
+    """同名字段必须写成两个不同的列，绝不能互相覆盖。"""
+    Car = _entity("car").model
+    Manufacturing = _entity("manufacturing").model
+    ex = Extraction(
+        cars=[Car(name="BBz", evidence=[_ev("car", memory_phenotype="Tcm 偏多")])],
+        manufacturings=[Manufacturing(
+            name="LV", evidence=[_ev("manufacturing", memory_phenotype="Tscm 偏多")])],
+    )
+    rows = _rows_of(flatten(ex), "evidence")
+    values = {}
+    for row in rows:
+        values.update({k: v for k, v in row.data.items() if k.endswith("memory_phenotype")})
+    assert values["car.memory_phenotype"] == "Tcm 偏多"
+    assert values["manufacturing.memory_phenotype"] == "Tscm 偏多"
+
+
+def test_kv_lists_become_dicts():
+    Binder = _entity("binder").model
+    ex = Extraction(binders=[Binder(
+        name="A",
+        fr_cdr_regions=[KV(key="CDR-H3", value="ARDYW")],
+        evidence=[_ev("binder", measurement_conditions=[
+            KV(key="温度", value="25°C"), KV(key="缓冲液", value="PBS")])],
+    )])
+    rows = flatten(ex)
+    assert _rows_of(rows, "binder")[0].data["fr_cdr_regions"] == {"CDR-H3": "ARDYW"}
+    assert _rows_of(rows, "evidence")[0].data["binder.measurement_conditions"] == {
+        "温度": "25°C", "缓冲液": "PBS"}
+
+
+def test_modules_stay_a_list():
+    Car = _entity("car").model
+    ex = Extraction(cars=[Car(name="BBz", modules=[
+        {"module_type": "hinge", "source_molecule": "CD8a", "length": 45},
+        {"module_type": "CD3zeta"},
+    ])])
+    modules = _rows_of(flatten(ex), "car")[0].data["modules"]
+    assert isinstance(modules, list) and len(modules) == 2
+    assert modules[0]["module_type"] == "hinge"
+
+
+def test_entities_come_before_evidence():
+    Binder = _entity("binder").model
+    ex = Extraction(binders=[Binder(name="A", evidence=[_ev("binder")])])
+    tables = [r.table for r in flatten(ex)]
+    assert tables.index("binder") < tables.index("evidence")
+
+
+def test_combination_resolves_indices_and_emits_one_evidence_row():
+    Binder, Car = _entity("binder").model, _entity("car").model
+    Manufacturing = _entity("manufacturing").model
+    ex = Extraction(
+        binders=[Binder(name="A"), Binder(name="B")],
+        cars=[Car(name="BBz")],
+        manufacturings=[Manufacturing(name="LV-MOI5")],
+        combinations=[Combination(
+            binder_index=1, car_index=0, manufacturing_index=0,
+            completed_experiment_phase="in_vitro",
+            experiments=[_shared_ev(outcomes=[KV(key="killing_rate", value="85%")])],
+        )],
+    )
+    rows = flatten(ex)
+    combo = _rows_of(rows, "abc_combination_db1")[0]
+    evidence = _rows_of(rows, "evidence")[0]
+
+    assert combo.data["binder_id"] == _rows_of(rows, "binder")[1].data["binder_id"]
+    assert combo.data["completed_experiment_phase"] == "in_vitro"
+    assert evidence.data["binder.binder_id"] == combo.data["binder_id"]
+    assert evidence.data["car.car_id"] == combo.data["car_id"]
+    assert evidence.data["manufacturing.manufacturing_id"] == combo.data["manufacturing_id"]
+    assert evidence.data["outcomes"] == {"killing_rate": "85%"}
+
+
+def test_out_of_range_combination_is_dropped(caplog):
+    Binder, Car = _entity("binder").model, _entity("car").model
+    Manufacturing = _entity("manufacturing").model
+    ex = Extraction(
+        binders=[Binder(name="A")], cars=[Car(name="BBz")],
+        manufacturings=[Manufacturing(name="LV")],
+        combinations=[Combination(binder_index=7, car_index=0, manufacturing_index=0)],
+    )
+    with caplog.at_level("WARNING"):
+        rows = flatten(ex)
+    assert _rows_of(rows, "abc_combination_db1") == []
+    assert "序号越界" in caplog.text
+
+
+def test_negative_index_is_dropped():
+    Binder, Car = _entity("binder").model, _entity("car").model
+    Manufacturing = _entity("manufacturing").model
+    ex = Extraction(
+        binders=[Binder(name="A")], cars=[Car(name="BBz")],
+        manufacturings=[Manufacturing(name="LV")],
+        combinations=[Combination(binder_index=-1, car_index=0, manufacturing_index=0)],
+    )
+    assert _rows_of(flatten(ex), "abc_combination_db1") == []
+
+
+def test_evidence_without_source_id_is_dropped(caplog):
+    Binder = _entity("binder").model
+    model = _entity("binder").evidence_model
+    ex = Extraction(binders=[Binder(name="A", evidence=[
+        model(source_type="literature", source_id=None,
+              evidence_level="同行評議", kd=2.4)])])
+    with caplog.at_level("WARNING"):
+        rows = flatten(ex)
+    assert _rows_of(rows, "evidence") == []
+    assert _rows_of(rows, "binder") != []       # 实体本身保留
+    assert "出处" in caplog.text
+
+
+def test_evidence_with_blank_evidence_level_is_dropped():
+    Binder = _entity("binder").model
+    model = _entity("binder").evidence_model
+    ex = Extraction(binders=[Binder(name="A", evidence=[
+        model(source_type="literature", source_id="PMC1", evidence_level="   ")])])
+    assert _rows_of(flatten(ex), "evidence") == []
