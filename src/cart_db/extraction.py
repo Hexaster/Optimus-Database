@@ -1,52 +1,53 @@
-"""Utilities for extracting content from source documents."""
+"""从 PDF / XML / Markdown 文档中抽取结构化数据。
 
-from typing import Any, Literal
+与结构化通道（parser/therasabdab.py）的区别只在字段值从哪里来：
+那边靠 docs/Mapping/*.yaml 的列名映射，这边靠模型通读全文。
+两边最后都产出 NormalizedData。
+"""
+from __future__ import annotations
 
-import pymupdf
-from pydantic import BaseModel
+import logging
+import re
+from pathlib import Path
 
+logger = logging.getLogger(__name__)
 
-class Source(BaseModel):
-    source_id: str | None
-    source_type: Literal["literature"]
-    evidence: str
-
-
-class NormalizedData(BaseModel):
-    record_type: Literal["binder", "car", "manufacturing", "combination"]
-    data: dict[str, Any] #Do not care about the content for now
-    source: Source  
-
-
-class ExtractionResult(BaseModel):
-    records: list[NormalizedData]
+# JATS 的参考文献、致谢、附录：占篇幅，不含可抽取内容，删掉纯粹省钱。
+# 非贪婪匹配到最近的闭合标签；<back> 里嵌套的 <ref-list> 会被一并吃掉。
+_BOILERPLATE = re.compile(
+    r"<(ref-list|back|ack)\b[^>]*>.*?</\1\s*>",
+    re.DOTALL | re.IGNORECASE,
+)
 
 
-def load_pdf(pdf_file: str) -> str:
-    with pymupdf.open(pdf_file) as doc:
-        return "".join(page.get_text() for page in doc)
+def strip_xml_boilerplate(xml: str) -> str:
+    """删掉 <ref-list> / <back> / <ack> 三类段落。"""
+    return _BOILERPLATE.sub("", xml)
 
 
-def load_xml(xml_file: str) -> str:
-    """Read an XML file and return its raw content."""
-    with open(xml_file, "r", encoding="utf-8") as f:
-        return f.read()
+def load_document(path: str | Path) -> str:
+    """把文档读成纯文本。
 
+    .pdf        逐页取字
+    .xml/.nxml  读原文，去掉参考文献等无关段落
+    .md         已经是纯文本，原样读入
+    """
+    path = Path(path)
+    suffix = path.suffix.lower()
 
-def extract_article_data(article: str) -> list[dict]:
-    from .llm import extract
+    if suffix == ".pdf":
+        import pymupdf
 
-    result = extract(
-        schema=ExtractionResult,
-        document=article,
-        system_prompt=(
-            "Extract binder, car, manufacturing, and combination records. "
-            "Return normalized schema field names in data. "
-            "Use only information stated in the article. "
-            "For source, include the source ID if present, set source_type to "
-            "literature, and quote the supporting text as evidence."
-        ),
-        purpose="article_extraction",
+        with pymupdf.open(path) as document:
+            return "\n".join(page.get_text() for page in document)
+
+    if suffix in {".xml", ".nxml"}:
+        return strip_xml_boilerplate(path.read_text(encoding="utf-8"))
+
+    if suffix in {".md", ".markdown"}:
+        return path.read_text(encoding="utf-8")
+
+    raise ValueError(
+        f"不支持的文件格式：{path.suffix}"
+        "（只支持 .pdf / .xml / .nxml / .md / .markdown）"
     )
-    return [record.model_dump() for record in result.records]
-
