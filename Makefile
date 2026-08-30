@@ -1,7 +1,7 @@
-.PHONY: setup db-up db-down init reset smoke kpi \
+.PHONY: setup db-up db-down init reset smoke kpi extract \
         download-epar download-sbra download-litc download-patents \
         download-therasabdab download-sabdab download-dotad download-binder
-PY := ./.venv/bin/python
+PY ?= /home/zzz010122/anaconda3/envs/fosun/bin/python
 
 setup:   ## 一次性搭好环境（venv + 依赖 + 数据库 + 建表 + 冒烟）
 	./setup.sh
@@ -17,6 +17,10 @@ smoke:   ## 端到端冒烟测试
 	$(PY) scripts/smoke_test.py
 kpi:     ## 打印当前数量指标，抄进跟踪表「5.数量指标KPI」
 	$(PY) -c "from cart_db.db import kpi; [print(f'{k:24s} {v}') for k,v in kpi().items()]"
+
+# ---- 文本抽取 ------------------------------------------------------------
+extract:  ## 从一份 PDF/XML/MD 抽取数据：make extract FILE=data/raw/europe_pmc/x.xml
+	$(PY) scripts/extract.py $(FILE) $(ARGS)
 
 # ---- 原始数据下载 --------------------------------------------------------
 # 通用形态：$(PY) scripts/download.py <registry> --route <id> [--limit N] [--dry-run]

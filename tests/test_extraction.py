@@ -322,3 +322,45 @@ def test_dry_run_estimates_without_calling_extract(tmp_path, monkeypatch):
     rows = extraction.extract_document(doc, out_dir=tmp_path / "out", dry_run=True)
     assert rows == []
     assert not (tmp_path / "out" / "PMC1.jsonl").exists()
+
+
+import subprocess
+import sys
+from pathlib import Path as _Path
+
+REPO = _Path(__file__).resolve().parents[1]
+
+
+def test_cli_help_runs():
+    result = subprocess.run(
+        [sys.executable, str(REPO / "scripts" / "extract.py"), "--help"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0
+    assert "--dry-run" in result.stdout
+
+
+def test_cli_main_passes_arguments(tmp_path, monkeypatch):
+    sys.path.insert(0, str(REPO / "scripts"))
+    import extract as cli
+
+    doc = tmp_path / "PMC1.xml"
+    doc.write_text(JATS, encoding="utf-8")
+    seen = {}
+
+    def fake(path, *, out_dir=None, dry_run=False):
+        seen.update(path=str(path), out_dir=str(out_dir), dry_run=dry_run)
+        return []
+
+    monkeypatch.setattr(cli, "extract_document", fake)
+    assert cli.main([str(doc), "--out-dir", str(tmp_path / "out"), "--dry-run"]) == 0
+    assert seen["dry_run"] is True
+    assert seen["path"] == str(doc)
+
+
+def test_cli_reports_missing_file(tmp_path, capsys):
+    sys.path.insert(0, str(REPO / "scripts"))
+    import extract as cli
+
+    assert cli.main([str(tmp_path / "nope.xml")]) == 1
+    assert "不存在" in capsys.readouterr().err
