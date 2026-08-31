@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, get_origin
 
 import yaml
 from pydantic import BaseModel, Field, create_model
@@ -32,13 +32,6 @@ _SCALARS: dict[str, type] = {
     "date": str,      # JSON 没有日期类型，用 ISO 8601 字符串
     "any": str,
 }
-
-
-class KV(BaseModel):
-    """强制格式模式不允许「内容任意的对象」，json 字段一律用键值对列表表达。"""
-
-    key: str
-    value: str
 
 
 @dataclass(frozen=True)
@@ -61,6 +54,10 @@ class ExtractionSchema:
     shared_evidence_fields: tuple[str, ...]
     evidence_table: str
     combination_table: str
+    # 每张表单独一次 LLM 调用；每个模型只带 extraction 上同名同类型的那一个字段。
+    # 顺序固定：binders, cars, manufacturings, combinations —— 后者的索引提示
+    # 依赖前三者已经抽取完毕。
+    requests: tuple[tuple[str, type[BaseModel]], ...]
 
 
 def _camel(name: str) -> str:
@@ -87,7 +84,10 @@ def _annotation(spec: dict, *, nested_name: str) -> Any:
         item_type = _SCALARS.get(spec.get("item_type"))
         if item_type is not None:                  # YAML 可以写 item_type: string
             return list[item_type]
-        return list[KV]
+        # 没有结构约定的 json 字段：强制格式模式不允许「内容任意的对象」，
+        # 键值对列表会在 20+ 个可空字段时把编译后的 grammar 撑爆（见阻塞报告），
+        # 改成一段自由文本，交给模型自己组织格式。
+        return str
 
     if spec.get("allowed_values"):
         return Literal[tuple(spec["allowed_values"])]
@@ -98,8 +98,11 @@ def _annotation(spec: dict, *, nested_name: str) -> Any:
 def _build_model(name: str, fields: dict, *, skip_keys: bool = False) -> type[BaseModel]:
     """按 YAML 字段定义造一个 Pydantic 模型。
 
-    所有字段都给 None 默认值：llm._strict() 会给没有 required 的对象补上
-    「全部字段必填」，所以这不会放松对模型的约束。
+    字段一律非 Optional，靠 Field(default=None) 给默认值：`X | None` 的
+    anyOf 联合是压垮强制格式 grammar 的元凶（见阻塞报告），去掉 `| None`
+    换成普通默认值不影响约束 —— llm._strict() 本就会给没有 required 的
+    对象补上「全部字段必填」。列表字段（json 的 item_schema/item_type 分支）
+    用 default_factory=list，其余标量/枚举字段用 default=None。
     """
     definitions: dict[str, tuple] = {}
     for field_name, spec in fields.items():
@@ -108,7 +111,10 @@ def _build_model(name: str, fields: dict, *, skip_keys: bool = False) -> type[Ba
         if skip_keys and spec.get("key") in {"primary", "foreign"}:
             continue
         annotation = _annotation(spec, nested_name=f"{name}{_camel(field_name)}")
-        definitions[field_name] = (annotation | None, None)
+        if get_origin(annotation) is list:
+            definitions[field_name] = (annotation, Field(default_factory=list))
+        else:
+            definitions[field_name] = (annotation, Field(default=None))
     return create_model(name, **definitions)
 
 
@@ -191,7 +197,7 @@ def _load_schema_cached(schema_dir: Path) -> ExtractionSchema:
             combination_definitions[f"{target}_index"] = (int, ...)
             continue
         annotation = _annotation(spec, nested_name=f"Combination{_camel(name)}")
-        combination_definitions[name] = (annotation | None, None)
+        combination_definitions[name] = (annotation, Field(default=None))
 
     evidence_base = _build_model("EvidenceBase", shared_fields, skip_keys=True)
     combination_definitions["experiments"] = (
@@ -200,10 +206,20 @@ def _load_schema_cached(schema_dir: Path) -> ExtractionSchema:
     combination_model = create_model("Combination", **combination_definitions)
     root_fields["combinations"] = (list[combination_model], Field(default_factory=list))
 
+    # 每次 LLM 调用只填 extraction 上的一个字段：整份 Extraction 一次性提交
+    # 会让强制格式的 grammar 超出接口上限（见阻塞报告）。字段名与标注跟
+    # extraction 模型上的完全一致，flatten() 消费的仍是拼回去的完整 Extraction。
+    requests = tuple(
+        (field_name, create_model(f"{_camel(field_name)}Request",
+                                   **{field_name: root_fields[field_name]}))
+        for field_name in ("binders", "cars", "manufacturings", "combinations")
+    )
+
     return ExtractionSchema(
         extraction=create_model("Extraction", **root_fields),
         entities=tuple(entities),
         shared_evidence_fields=tuple(evidence_base.model_fields),
         evidence_table=EVIDENCE_TABLE,
         combination_table=COMBINATION_TABLE,
+        requests=requests,
     )

@@ -7,7 +7,7 @@ import yaml
 from pydantic import ValidationError
 
 from cart_db import llm
-from cart_db.schema_models import KV, load_schema
+from cart_db.schema_models import load_schema
 
 SCHEMA_DIR = Path(__file__).resolve().parents[1] / "docs" / "Schema"
 
@@ -84,10 +84,21 @@ def test_allowed_values_become_a_closed_choice():
         model(t_cell_source="autologous")
 
 
-def test_json_fields_become_key_value_lists():
-    model = _entity(load_schema(), "binder").model
-    built = model(fr_cdr_regions=[KV(key="CDR-H3", value="ARDYW")])
-    assert built.fr_cdr_regions[0].key == "CDR-H3"
+def test_json_field_without_item_schema_becomes_a_plain_string():
+    """没有 item_schema 的 json 字段现在是一段自由文本，不再是键值对列表。
+
+    键值对列表在 20+ 个可空字段时会把强制格式 grammar 撑爆（见阻塞报告）。
+    """
+    binder = _entity(load_schema(), "binder").model
+    assert binder.model_fields["fr_cdr_regions"].annotation is str
+    built = binder(fr_cdr_regions="CDR-H3: ARDYW")
+    assert built.fr_cdr_regions == "CDR-H3: ARDYW"
+
+    # 有 item_schema 的字段（car.modules）不受影响，仍然是嵌套模型。
+    car = _entity(load_schema(), "car").model
+    assert car.model_fields["modules"].annotation is not str
+    built_car = car(modules=[{"module_type": "hinge", "source_molecule": "CD8a", "length": 45}])
+    assert built_car.modules[0].module_type == "hinge"
 
 
 def test_item_schema_becomes_a_nested_model():
@@ -111,6 +122,18 @@ def test_combination_foreign_keys_become_indices():
 def test_root_model_has_four_lists():
     assert set(load_schema().extraction.model_fields) == {
         "binders", "cars", "manufacturings", "combinations"}
+
+
+def test_requests_have_one_field_each_in_call_order():
+    """每次 LLM 调用只问一张表，顺序固定：combinations 要靠前三次的结果填索引。"""
+    schema = load_schema()
+    names = [name for name, _ in schema.requests]
+    assert names == ["binders", "cars", "manufacturings", "combinations"]
+
+    extraction_fields = schema.extraction.model_fields
+    for name, model in schema.requests:
+        assert set(model.model_fields) == {name}
+        assert model.model_fields[name].annotation == extraction_fields[name].annotation
 
 
 def test_strict_schema_is_not_empty():

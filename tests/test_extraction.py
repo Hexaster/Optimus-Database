@@ -70,7 +70,7 @@ def test_unknown_extension_raises(tmp_path):
 
 
 from cart_db.extraction import flatten
-from cart_db.schema_models import KV, load_schema
+from cart_db.schema_models import load_schema
 
 SCHEMA = load_schema()
 Extraction = SCHEMA.extraction
@@ -150,18 +150,18 @@ def test_car_and_manufacturing_memory_phenotype_stay_apart():
     assert values["manufacturing.memory_phenotype"] == "Tscm 偏多"
 
 
-def test_kv_lists_become_dicts():
+def test_json_fields_without_item_schema_stay_plain_strings():
+    """没有 item_schema 的 json 字段现在是自由文本，flatten() 原样透传。"""
     Binder = _entity("binder").model
     ex = Extraction(binders=[Binder(
         name="A",
-        fr_cdr_regions=[KV(key="CDR-H3", value="ARDYW")],
-        evidence=[_ev("binder", measurement_conditions=[
-            KV(key="温度", value="25°C"), KV(key="缓冲液", value="PBS")])],
+        fr_cdr_regions="CDR-H3: ARDYW",
+        evidence=[_ev("binder", measurement_conditions="温度: 25°C；缓冲液: PBS")],
     )])
     rows = flatten(ex)
-    assert _rows_of(rows, "binder")[0].data["fr_cdr_regions"] == {"CDR-H3": "ARDYW"}
-    assert _rows_of(rows, "evidence")[0].data["binder.measurement_conditions"] == {
-        "温度": "25°C", "缓冲液": "PBS"}
+    assert _rows_of(rows, "binder")[0].data["fr_cdr_regions"] == "CDR-H3: ARDYW"
+    assert _rows_of(rows, "evidence")[0].data["binder.measurement_conditions"] == (
+        "温度: 25°C；缓冲液: PBS")
 
 
 def test_modules_stay_a_list():
@@ -192,7 +192,7 @@ def test_combination_resolves_indices_and_emits_one_evidence_row():
         combinations=[Combination(
             binder_index=1, car_index=0, manufacturing_index=0,
             completed_experiment_phase="in_vitro",
-            experiments=[_shared_ev(outcomes=[KV(key="killing_rate", value="85%")])],
+            experiments=[_shared_ev(outcomes="killing_rate: 85%")],
         )],
     )
     rows = flatten(ex)
@@ -204,7 +204,7 @@ def test_combination_resolves_indices_and_emits_one_evidence_row():
     assert evidence.data["binder.binder_id"] == combo.data["binder_id"]
     assert evidence.data["car.car_id"] == combo.data["car_id"]
     assert evidence.data["manufacturing.manufacturing_id"] == combo.data["manufacturing_id"]
-    assert evidence.data["outcomes"] == {"killing_rate": "85%"}
+    assert evidence.data["outcomes"] == "killing_rate: 85%"
 
 
 def test_out_of_range_combination_is_dropped(caplog):
@@ -233,10 +233,12 @@ def test_negative_index_is_dropped():
 
 
 def test_evidence_without_source_id_is_dropped(caplog):
+    """source_id 字段现在是非 Optional 的 str，靠不传（吃默认值 None）表达缺失，
+    而不是显式传 None —— 显式传 None 会被当成类型错误拒绝。"""
     Binder = _entity("binder").model
     model = _entity("binder").evidence_model
     ex = Extraction(binders=[Binder(name="A", evidence=[
-        model(source_type="literature", source_id=None,
+        model(source_type="literature",
               evidence_level="同行評議", kd=2.4)])])
     with caplog.at_level("WARNING"):
         rows = flatten(ex)
@@ -272,37 +274,77 @@ def test_system_prompt_is_stable_across_calls():
     assert extraction.build_system_prompt() == extraction.build_system_prompt()
 
 
+def _fake_request(schema, **overrides):
+    """按 schema（schema.requests 里的某个单字段模型）拼一个最小可用答案。
+
+    每个请求模型只有一个字段，字段名即 `next(iter(schema.model_fields))`；
+    没有指定覆盖值的字段一律给空列表。
+    """
+    field_name = next(iter(schema.model_fields))
+    return schema(**{field_name: overrides.get(field_name, [])})
+
+
 def test_extract_document_writes_jsonl(tmp_path, monkeypatch):
     doc = tmp_path / "PMC1.xml"
     doc.write_text(JATS, encoding="utf-8")
     Binder = _entity("binder").model
-    captured = {}
+    calls = []
 
     def fake_extract(*, schema, document, system_prompt, purpose, **kw):
-        captured.update(document=document, purpose=purpose, schema=schema)
-        return Extraction(binders=[
-            Binder(name="ARB-202", evidence=[_ev("binder", kd=2.4)])])
+        calls.append(dict(document=document, purpose=purpose, schema=schema))
+        return _fake_request(
+            schema,
+            binders=[Binder(name="ARB-202", evidence=[_ev("binder", kd=2.4)])],
+        )
 
     monkeypatch.setattr(extraction.llm, "extract", fake_extract)
     out_dir = tmp_path / "out"
     rows = extraction.extract_document(doc, out_dir=out_dir)
 
-    assert "Kd = 2.4 nM" in captured["document"]      # 正文送进去了
-    assert "Smith 2020" not in captured["document"]   # 参考文献没送
-    assert captured["purpose"] == "article_extraction"
-    assert captured["schema"] is SCHEMA.extraction
+    binder_call = calls[0]
+    assert "Kd = 2.4 nM" in binder_call["document"]      # 正文送进去了
+    assert "Smith 2020" not in binder_call["document"]   # 参考文献没送
+    assert binder_call["purpose"] == "article_extraction:binders"
+    assert binder_call["schema"] is SCHEMA.requests[0][1]
 
     written = (out_dir / "PMC1.jsonl").read_text(encoding="utf-8").splitlines()
     assert len(written) == len(rows) == 2
     assert json.loads(written[0])["data"]["name"] == "ARB-202"
 
 
+def test_extract_document_makes_one_call_per_request_and_hints_indices(tmp_path, monkeypatch):
+    """四次调用，顺序固定；combinations 那次的文档里带着前三次结果的编号清单。"""
+    doc = tmp_path / "PMC1.xml"
+    doc.write_text(JATS, encoding="utf-8")
+    Binder, Car = _entity("binder").model, _entity("car").model
+    calls = []
+
+    def fake_extract(*, schema, document, system_prompt, purpose, **kw):
+        field_name = next(iter(schema.model_fields))
+        calls.append((field_name, document))
+        if field_name == "binders":
+            return _fake_request(schema, binders=[Binder(name="ARB-202"), Binder(name="5F9")])
+        if field_name == "cars":
+            return _fake_request(schema, cars=[Car(name="CD8a-BBz")])
+        return _fake_request(schema)
+
+    monkeypatch.setattr(extraction.llm, "extract", fake_extract)
+    extraction.extract_document(doc, out_dir=tmp_path / "out")
+
+    assert [name for name, _ in calls] == ["binders", "cars", "manufacturings", "combinations"]
+    combo_document = calls[-1][1]
+    assert "binders: 0=ARB-202, 1=5F9" in combo_document
+    assert "cars: 0=CD8a-BBz" in combo_document
+    assert "manufacturings: (none)" in combo_document
+
+
 def test_extract_document_writes_readable_utf8(tmp_path, monkeypatch):
     doc = tmp_path / "PMC1.xml"
     doc.write_text(JATS, encoding="utf-8")
     Binder = _entity("binder").model
-    monkeypatch.setattr(extraction.llm, "extract",
-                        lambda **kw: Extraction(binders=[Binder(name="抗体")]))
+    monkeypatch.setattr(
+        extraction.llm, "extract",
+        lambda *, schema, **kw: _fake_request(schema, binders=[Binder(name="抗体")]))
 
     extraction.extract_document(doc, out_dir=tmp_path / "out")
     raw = (tmp_path / "out" / "PMC1.jsonl").read_text(encoding="utf-8")

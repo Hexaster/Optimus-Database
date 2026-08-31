@@ -114,6 +114,26 @@ def _at(ids: list[str], index: int) -> str | None:
     return ids[index] if 0 <= index < len(ids) else None
 
 
+def _index_hint(parts: dict[str, list]) -> str:
+    """把已抽取的 binder/car/manufacturing 列一份编号清单，喂给 combinations 那次调用。
+
+    combinations 那次调用只看得到这份清单，不看得到前三次调用的原始返回，
+    所以它填的 *_index 必须能在这份清单里查到对应的名字。
+    """
+    lines = ["Entities already extracted from this document, with the indices to use:"]
+    for kind in ("binders", "cars", "manufacturings"):
+        items = parts.get(kind, [])
+        if not items:
+            lines.append(f"{kind}: (none)")
+            continue
+        named = ", ".join(
+            f"{i}={getattr(item, 'name', None) or '(unnamed)'}"
+            for i, item in enumerate(items)
+        )
+        lines.append(f"{kind}: {named}")
+    return "\n".join(lines)
+
+
 def flatten(result, schema: ExtractionSchema | None = None) -> list[NormalizedData]:
     """把模型返回的嵌套结果拆成一行行 NormalizedData。
 
@@ -189,24 +209,35 @@ def flatten(result, schema: ExtractionSchema | None = None) -> list[NormalizedDa
 PROMPT_PATH = Path(__file__).with_name("article_extraction_prompt.txt")
 
 # article_extraction_prompt.txt 讲「抽什么」，这段讲「怎么摆」。
+#
+# 每次调用只问四张表里的一张（binders / cars / manufacturings / combinations），
+# 单表整份塞进一次调用会让强制格式的 grammar 超出接口上限（见阻塞报告）。
+# combinations 那次调用额外收到一份前三次抽取结果的编号清单（_index_hint()），
+# 好让它填的 *_index 有真实对象可指。这段文字本身对每次调用都完全一样，
+# 不会破坏 system_prompt 的缓存前缀。
 OUTPUT_GUIDE = """\
 # Output Structure
 
-Return one JSON object with four lists: `binders`, `cars`, `manufacturings`,
-`combinations`.
+Each call returns one JSON object with exactly one list: `binders`, `cars`,
+`manufacturings`, or `combinations`, depending on which one this call asks
+for.
 
 - Nest every experimental result inside the entity it describes, in that
   entity's `evidence` list. Do not emit identifiers of your own; the pipeline
   assigns them.
-- Every schema field of type `json` is expressed here as a list of
-  `{"key": ..., "value": ...}` pairs, both written as strings.
-- A combination refers to its three parts by zero-based position in the lists
-  above: `binder_index: 0` means the first entry of `binders`. Emit a
+- A schema field of type `json` that has no declared item structure is
+  written here as a single free-text string, not as key/value pairs. A field
+  with a declared item structure (e.g. a CAR's `modules`) is still a list of
+  objects with those fields.
+- The `combinations` call is made after binders, cars and manufacturings have
+  already been extracted; the prompt for that call lists them with their
+  zero-based indices. A combination refers to its three parts by that
+  position: `binder_index: 0` means the first entry of `binders`. Emit a
   combination only when the source ties a binder, a CAR backbone and a
   manufacturing process to the same experimental system or product. A
   combination whose index does not exist will be discarded.
 - Results measured on the combination as a whole go in that combination's
-  `experiments` list, with the measured values as key/value pairs under
+  `experiments` list, with the measured values written as free text under
   `outcomes`.
 - Field names here omit the table prefix used in Evidence.yaml: inside a
   binder's evidence write `kd`, not `binder.kd`.
@@ -254,12 +285,19 @@ def extract_document(
         return []
 
     schema = load_schema()
-    result = llm.extract(
-        schema=schema.extraction,
-        document=document,
-        system_prompt=system_prompt,
-        purpose="article_extraction",
-    )
+    parts: dict[str, list] = {}
+    for field_name, request_model in schema.requests:
+        payload = document
+        if field_name == "combinations":
+            payload = f"{document}\n\n{_index_hint(parts)}"
+        answer = llm.extract(
+            schema=request_model,
+            document=payload,
+            system_prompt=system_prompt,
+            purpose=f"article_extraction:{field_name}",
+        )
+        parts[field_name] = getattr(answer, field_name)
+    result = schema.extraction(**parts)
     rows = flatten(result, schema)
 
     out_dir = Path(out_dir) if out_dir else settings.data_root / "normalised"
