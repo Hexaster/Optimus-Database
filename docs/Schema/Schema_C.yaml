@@ -15,9 +15,9 @@ manufacturing:
       type: string
       nullable: true
       description: T 细胞来源
-      allowed values:
-        -自体
-        -异体
+      allowed_values:
+        - 自体
+        - 异体
     cd4_cd8_ratio:
       type: string
       nullable: true
@@ -38,11 +38,11 @@ manufacturing:
       type: string
       nullable: true
       description: 用于基因导入的载体类型
-      allowed value:
-        -慢病毒
-        -逆转录病毒
-        -转座子
-        -电转
+      allowed_values:
+        - 慢病毒
+        - 逆转录病毒
+        - 转座子
+        - 电转
     moi:
       type: number
       nullable: true
@@ -76,83 +76,3 @@ manufacturing:
       type: string
       nullable: true
       description: 来源中报告的对应 CAR 构型或产品信息
-
-manufacturing_evidence:
-  table: manufacturing_evidence
-  description: 制造工艺证据表。保存特定来源或实验中该工艺得到的质量、表型与功能结果。
-  fields:
-    evidence_id:
-      type: uuid
-      key: primary
-      description: 平台内部唯一制造工艺证据记录 ID。
-      nullable: false
-    record_id:
-      type: uuid
-      key: foreign
-      references: record.record_id
-      nullable: true
-      description: 該製造工藝證據對應的記錄 ID。
-      unique: true
-    manufacturing_id:
-      type: uuid
-      key: foreign
-      references: manufacturing.manufacturing_id
-      description: 该证据对应的制造工艺 ID。
-      nullable: false
-      index: true
-    cell_viability:
-      type: number
-      nullable: true
-      description: 细胞活率。
-      unit: '%'
-      check: 0 <= cell_viability <= 100
-    transduction_efficiency:
-      type: number
-      nullable: true
-      description: 转导效率。
-      unit: '%'
-      check: 0 <= transduction_efficiency <= 100
-    vcn:
-      type: number
-      nullable: true
-      description: 载体拷贝数（VCN）。
-      unit: copies/cell
-      check: vcn >= 0
-    cd3_positive_ratio:
-      type: number
-      nullable: true
-      description: CD3+ 细胞比例。
-      unit: '%'
-      check: 0 <= cd3_positive_ratio <= 100
-    memory_phenotype:
-      type: string
-      nullable: true
-      description: 产品细胞的记忆表型。
-    exhaustion_phenotype:
-      type: string
-      nullable: true
-      description: 产品细胞的耗竭表型。
-    treg_phenotype:
-      type: string
-      nullable: true
-      description: 产品细胞的 Treg 相关表型。
-    sterility:
-      type: string
-      nullable: true
-      description: 无菌检测结果。
-    mycoplasma:
-      type: string
-      nullable: true
-      description: 支原体检测结果。
-    endotoxin:
-      type: string
-      nullable: true
-      description: 内毒素检测结果。
-    killing_activity:
-      type: string
-      nullable: true
-      description: 杀伤活性结果。
-    cytokine_release:
-      type: json
-      nullable: true
-      description: 细胞因子释放结果。

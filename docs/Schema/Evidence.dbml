@@ -59,6 +59,8 @@ Table evidence {
   "manufacturing.killing_activity" varchar [note: '杀伤活性结果。']
   "manufacturing.cytokine_release" json [note: '细胞因子释放结果。']
 
+  outcomes json [note: '该 ABC 组合在该实验中的结果，如杀伤率、细胞因子释放、肿瘤抑制、存活、扩增、持续性或毒性等。']
+
   indexes {
     source_type
     source_id

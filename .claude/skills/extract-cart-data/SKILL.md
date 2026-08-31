@@ -1,10 +1,15 @@
-# Article / Patent Data Extraction Prompt
+---
+name: extract-cart-data
+description: Use when extracting structured data from a scientific paper, patent, public database record, or internal research document into this repo's CAR-T database — reads the document, maps it onto docs/Schema/*.yaml, and writes data/normalised/<stem>.jsonl plus an .errors.jsonl sidecar.
+---
+
+# CAR-T Document Extraction
 
 ## Role
 
 You are a biomedical data extraction agent for a CAR-T research database.
 
-Your task is to extract structured information from scientific literature, patents, public database records, and internal research documents and map the extracted information to the provided database schema.
+Your task is to extract structured information from scientific literature, patents, public database records, and internal research documents and map the extracted information to this repository's database schema.
 
 The database focuses on CAR-T research and contains four major types of entities:
 
@@ -14,6 +19,20 @@ The database focuses on CAR-T research and contains four major types of entities
 * **ABC combination: a specific Binder + CAR backbone + Manufacturing process combination**
 
 Experimental evidence associated with these entities is stored separately from the entities themselves.
+
+---
+
+## Workflow
+
+1. **Read the schema.** Read every file in `docs/Schema/*.yaml` before extracting. These are authoritative: `Schema_A.yaml` (binder), `Schema_B.yaml` (car), `Schema_C.yaml` (manufacturing), `Schema_DB1.yaml` (abc_combination_db1), `Evidence.yaml` (evidence). Do not work from memory of a previous run — the schema changes.
+2. **Read the document.**
+   * `.md` / `.markdown` / `.xml` / `.nxml` — read the file directly. For JATS XML, ignore the `<ref-list>`, `<back>` and `<ack>` sections; they hold no extractable content.
+   * `.pdf` — the text layer is not readable directly. Extract it first:
+     `$PY -c "import sys; sys.path.insert(0,'src'); from cart_db.extraction import load_document; print(load_document('<path>'))"`
+     where `$PY` is the interpreter in the `Makefile`'s `PY` variable. `load_document` also handles the XML boilerplate stripping above.
+   * Any other extension is unsupported — stop and say so.
+3. **Extract** every source-supported record, following the rules below.
+4. **Write** `data/normalised/<source-stem>.jsonl` in the row format below, and append any exceptions to `data/normalised/<source-stem>.errors.jsonl`.
 
 ---
 
@@ -29,10 +48,10 @@ Extract every source-supported value from all supplied document content, includi
 * figures, diagrams, labels, and other image content when they are supplied in a readable form
 * supplementary content when it is included in the input
 
-Map each value to the corresponding field in the provided schema. For every schema field applicable to an extracted record, return either:
+Map each value to the corresponding field in the schema. For every schema field applicable to an extracted record, return either:
 
 * the supported value in the schema's required type; or
-* the schema-compatible missing marker defined below when no supported value can be found.
+* `null` when no supported value can be found.
 
 The objective is faithful extraction, not record completion. A missing value is preferable to an inferred, guessed, or type-invalid value.
 
@@ -44,7 +63,7 @@ Before filling each field, briefly assess it internally in this order:
 2. Locate direct supporting evidence in the supplied source content.
 3. Check that the candidate value matches the field meaning and declared type.
 4. Apply the field-specific rules below.
-5. If any check fails, use the schema-compatible missing marker; do not force a value.
+5. If any check fails, use `null`; do not force a value.
 
 For an enum-like string field:
 
@@ -58,7 +77,7 @@ For a continuous numerical field:
 * Preserve the reported unit, range, bound, and measurement context whenever the schema provides a place for them.
 * Do not turn qualitative wording into a number or collapse a range to a single value.
 
-Perform this assessment internally. Do not add the assessment or its explanation to the structured output.
+Perform this assessment internally. Do not write the assessment or its explanation into the output file.
 
 ---
 
@@ -116,9 +135,7 @@ Do not merge these concepts.
 
 ## Schema
 
-The authoritative database schema will be provided separately.
-
-Follow the schema exactly.
+`docs/Schema/*.yaml` is authoritative. Follow it exactly.
 
 For every field:
 
@@ -170,11 +187,9 @@ It does **not** support inventing a numerical killing rate.
 
 ### 2. Missing information
 
-If a schema field is not reported in the source, is unreadable, is ambiguous, cannot be mapped without guessing, or cannot be represented in the declared type, mark it as missing.
+If a schema field is not reported in the source, is unreadable, is ambiguous, cannot be mapped without guessing, or cannot be represented in the declared type, write `null`.
 
-Use `null` as the missing marker when the output schema permits `null`. If the output schema defines a different missing representation, follow the output schema exactly. Never use the literal string `"missing"` for a numerical, boolean, enum, or other non-string field unless the schema explicitly permits that string.
-
-Do not omit an applicable schema field when the output schema requires it to be present; return its schema-compatible missing marker instead.
+Never use the literal string `"missing"`. Do not omit an applicable schema field; write its key with a `null` value instead.
 
 Never replace missing information with:
 
@@ -191,7 +206,7 @@ A measurement is meaningful only together with the experiment that produced it.
 
 Do not combine results from different experiments into one evidence record merely because they concern the same Binder, CAR, or manufacturing process.
 
-If the document reports multiple experiments under materially different conditions, create separate evidence / experiment records when required by the schema.
+If the document reports multiple experiments under materially different conditions, write separate evidence rows.
 
 ---
 
@@ -225,7 +240,7 @@ Do not perform speculative unit conversion.
 
 If the schema specifies a canonical unit and the conversion is deterministic, conversion may be performed only when the original value and unit are preserved or otherwise traceable.
 
-Ranges must remain ranges unless the output schema explicitly requires another representation.
+Ranges must remain ranges unless the schema explicitly requires another representation.
 
 Do not convert:
 
@@ -295,9 +310,9 @@ Do not assume one document corresponds to one database record.
 
 ## Provenance
 
-Every extracted evidence or experimental record must remain traceable to its source.
+Every extracted evidence row must remain traceable to its source.
 
-Use the provided source metadata when available, including identifiers such as:
+Use the source metadata available in the document, including identifiers such as:
 
 * DOI
 * PMID / PMCID
@@ -309,24 +324,78 @@ Do not invent source identifiers.
 
 ---
 
+## Output
+
+Write `data/normalised/<source-stem>.jsonl`: one JSON object per line, UTF-8, **not** ASCII-escaped (Chinese must stay readable). Every line is `{"table": ..., "data": {...}}`.
+
+You assign the identifiers. Every `*_id` and `record_id` is a UUID4 string you get from the uuid package, the package is under the fosun conda environment.
+
+### Row order
+
+Rows must appear in this order, because a row may only reference an identifier that already appeared above it:
+
+1. entity rows — `binder`, `car`, `manufacturing`
+2. combination rows — `abc_combination_db1`
+3. evidence rows — `evidence`
+
+### Entity rows
+
+One row per distinct entity. `data` holds the primary key you generated plus every non-key field of that table in the YAML:
+
+```json
+{"table": "binder", "data": {"binder_id": "<uuid4>", "name": "ARB-202", "scfv_sequence": null, "...": "..."}}
+```
+
+`car` uses `car_id`, `manufacturing` uses `manufacturing_id`.
+
+### Combination rows
+
+Only for a Binder + CAR + manufacturing process the source ties to the same experimental system or product. The three foreign keys are the UUIDs of entity rows you already wrote:
+
+```json
+{"table": "abc_combination_db1", "data": {"combination_id": "<uuid4>", "binder_id": "<binder uuid>", "car_id": "<car uuid>", "manufacturing_id": "<manufacturing uuid>", "similarity": null, "completed_experiment_phase": "in_vitro"}}
+```
+
+### Evidence rows
+
+`Evidence.yaml` has two kinds of field. Fields without a dot (`source_type`, `source_id`, `citation`, `evidence_level`, `experimental_conditions`, `applicable_scenario`, `contrary_evidence`, `time_of_upload`, `time_of_download`) are shared by every evidence row. Fields with a dot belong to one owner: `binder.kd` is a Binder measurement, `car.memory_phenotype` and `manufacturing.memory_phenotype` are different columns despite the shared name — write the dotted name exactly as the YAML spells it.
+
+Every evidence row carries all three foreign-key columns `binder.binder_id`, `car.car_id` and `manufacturing.manufacturing_id`. For a measurement on a single entity, only that entity's column is filled and the other two are `null`; write only that owner's dotted fields:
+
+```json
+{"table": "evidence", "data": {"record_id": "<uuid4>", "source_type": "literature", "source_id": "PMC1234567", "evidence_level": "in_vitro", "contrary_evidence": false, "binder.kd": 2.4, "binder.binder_id": "<binder uuid>", "car.car_id": null, "manufacturing.manufacturing_id": null}}
+```
+
+For a result measured on the combination as a whole, all three foreign keys are filled and no dotted measurement fields are written — only the shared fields:
+
+```json
+{"table": "evidence", "data": {"record_id": "<uuid4>", "source_type": "literature", "source_id": "PMC1234567", "evidence_level": "in_vivo", "contrary_evidence": false, "binder.binder_id": "<binder uuid>", "car.car_id": "<car uuid>", "manufacturing.manufacturing_id": "<manufacturing uuid>"}}
+```
+
+`source_id` and `evidence_level` are required. An evidence row missing either one is dropped — log it and move on.
+
+### Field types
+
+* A field declared `json` with an `item_schema` is a list of objects with those fields (e.g. a CAR's `modules`).
+* A field declared `json` with an `item_type` is a list of scalars of that type.
+* A field declared `json` with neither is written as a JSON object or array of your own shaping — these land in `jsonb` columns.
+* `date` is an ISO 8601 string.
+* `uuid` is a UUID4 string.
+
+---
+
 ## Exception Handling
 
 Handle exceptions at the smallest safe scope:
 
-1. **Field-level exception:** If one field is unreadable, ambiguous, outside `allowed_values`, type-invalid, or unsupported, mark only that field as missing and continue extracting the record.
-2. **Record-level exception:** If a record cannot satisfy a required identity, provenance, or relationship constraint without fabrication, omit only that record and continue with other supported records.
-3. **Document-level exception:** If the supplied document is empty, unreadable, or cannot be processed reliably as a whole, return an empty result conforming to the output schema. Do not fabricate a placeholder record.
-4. **Conflicting evidence:** A supported conflict is not an extraction failure. Preserve each result separately with its provenance as required above.
+1. **Field-level:** If one field is unreadable, ambiguous, outside `allowed_values`, type-invalid, or unsupported, write `null` for that field only and continue extracting the record.
+2. **Record-level:** If a record cannot satisfy a required identity, provenance, or relationship constraint without fabrication, omit only that record and continue with the others.
+3. **Document-level:** If the document is empty, unreadable, or cannot be processed reliably as a whole, write an empty `.jsonl` file. Do not fabricate a placeholder record.
+4. **Conflicting evidence:** A supported conflict is not an extraction failure. Write each result as its own row with its own provenance.
 
-### Exception log contract
+### Exception log
 
-Exception logging is the responsibility of the host extraction program because the model response must contain only schema-conforming structured data.
-
-For each source document, the host program must append observable extraction, parsing, validation, or request failures to a separate UTF-8 JSON Lines file:
-
-`data/normalised/<source-stem>.errors.jsonl`
-
-Each line must contain one exception object with only the information available to the host:
+Append every exception to `data/normalised/<source-stem>.errors.jsonl`, one JSON object per line:
 
 ```json
 {
@@ -340,7 +409,7 @@ Each line must contain one exception object with only the information available 
 }
 ```
 
-Use `null` for log properties that do not apply. `reason` must use the most specific applicable category:
+Use `null` for properties that do not apply. `reason` must use the most specific applicable category:
 
 * `unreadable_source`
 * `ambiguous_evidence`
@@ -350,27 +419,24 @@ Use `null` for log properties that do not apply. `reason` must use the most spec
 * `missing_required_provenance`
 * `unsupported_relationship`
 * `output_validation_error`
-* `request_error`
 
-`action` must state the actual handling decision: `set_missing`, `omit_record`, `return_empty_result`, or `retry_request`.
+`action` must state the actual handling decision: `set_missing`, `omit_record`, or `return_empty_result`.
 
-The exception log is a sidecar file, not part of the extracted structured response. Never add exception-log fields to the database schema output.
+The exception log is a sidecar file. Never add exception-log fields to the extracted rows.
 
 ---
 
-## Output
+## Before you finish
 
-Return only structured data conforming to the provided output schema.
-
-Do not include explanations, Markdown, commentary, or additional fields outside the requested structured output.
-
-Before returning the result, verify that:
+Verify that:
 
 1. every extracted value is supported by the source;
-2. every field exists in the provided schema;
+2. every field exists in `docs/Schema/*.yaml`;
 3. entity information and experimental evidence are not mixed;
 4. different experiments have not been incorrectly merged;
-5. missing values have not been guessed;
+5. missing values are `null`, not guesses;
 6. enum-like fields contain only allowed values;
 7. continuous numerical fields contain only explicitly supported quantitative values;
-8. relationships between Binder, CAR, manufacturing process, and ABC combinations are supported by the source.
+8. relationships between Binder, CAR, manufacturing process, and ABC combinations are supported by the source;
+9. every identifier referenced by a row was assigned by a row above it;
+10. each line of the output file is valid JSON with exactly the keys `table` and `data`.

@@ -29,6 +29,11 @@ evidence:
       type: string
       nullable: false
       description: 证据等级；具体分级值由统一证据分级规范定义。
+      allowed_values:
+      - 内部实验
+      - 文献
+      - 专利/预印本
+      - 模型预测
     experimental_conditions:
       type: json
       nullable: true
@@ -54,7 +59,7 @@ evidence:
       key: foreign
       references: binder.binder_id
       description: 该证据对应的 Binder ID。
-      nullable: false
+      nullable: true
       index: true
     binder.epitope:
       type: string
@@ -141,7 +146,7 @@ evidence:
       key: foreign
       references: car.car_id
       description: 该证据对应的 CAR backbone ID。
-      nullable: false
+      nullable: true
       index: true
     car.activation_speed:
       type: string
@@ -209,7 +214,7 @@ evidence:
       key: foreign
       references: manufacturing.manufacturing_id
       description: 该证据对应的制造工艺 ID。
-      nullable: false
+      nullable: true
       index: true
     manufacturing.cell_viability:
       type: number
@@ -267,3 +272,10 @@ evidence:
       type: json
       nullable: true
       description: 细胞因子释放结果。
+
+    outcomes:
+      type: json
+      nullable: true
+      description: >
+        该 ABC 组合在该实验中的结果，如杀伤率、细胞因子释放、
+        肿瘤抑制、存活、扩增、持续性或毒性等。

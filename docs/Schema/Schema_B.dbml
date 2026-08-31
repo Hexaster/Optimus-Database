@@ -5,29 +5,3 @@ Table car {
 
   Note: 'CAR 骨架核心实体表。一个经归一化后的 CAR backbone 对应一条记录；Binder 作为 A 实体独立管理，后续通过 ABC 组合关联。'
 }
-
-Table car_evidence {
-  evidence_id uuid [pk, not null, note: '平台内部唯一 CAR 证据记录 ID。']
-  record_id uuid [unique, ref: > record.record_id, note: '該 CAR 證據對應的記錄 ID。']
-  car_id uuid [not null, ref: > car.car_id, note: '该证据对应的 CAR backbone ID。']
-  activation_speed varchar [note: 'CAR 激活速度。']
-  metabolic_state varchar [note: 'CAR-T 细胞的代谢状态，例如糖酵解或氧化代谢。可选值：glycolytic、oxidative']
-  expansion_capacity varchar [note: 'CAR-T 细胞的扩增能力。']
-  memory_phenotype varchar [note: 'CAR-T 细胞的记忆表型。']
-  persistence varchar [note: 'CAR-T 细胞的持久性。']
-  exhaustion_risk varchar [note: 'CAR-T 细胞的耗竭风险。']
-  tonic_signaling_tendency varchar [note: 'CAR 的 tonic signaling 倾向。']
-  geometric_length decimal [note: 'CAR 相关模块或构型的几何长度信息。检查：geometric_length >= 0']
-  epitope_distance_effect varchar [note: '构型对表位距离相关效果的影响。']
-  immune_synapse_effect varchar [note: '构型对免疫突触形成或性质的影响。']
-  tonic_signaling_effect varchar [note: '构型对 tonic signaling 的影响。']
-  compatible_modules json [note: '已观察或报告为可兼容的模块组合。']
-  incompatible_modules json [note: '已观察或报告为不兼容的模块组合。']
-  assembly_rules json [note: 'CAR 模块装配规则或约束。']
-
-  indexes {
-    car_id
-  }
-
-  Note: 'CAR 证据表。保存特定来源、特定实验条件下对 CAR backbone 性能与行为的观察结果。'
-}

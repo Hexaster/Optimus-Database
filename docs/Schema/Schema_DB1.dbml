@@ -8,12 +8,3 @@ Table abc_combination_db1 {
 
   Note: 'ABC組合數據庫 -- db1'
 }
-
-Table abc_combination_experiments {
-  experiment_id uuid [pk, not null]
-  record_id uuid [unique, ref: > record.record_id, note: '該 ABC 組合實驗對應的記錄 ID。']
-  combination_id uuid [not null, ref: > abc_combination_db1.combination_id, note: '組合ID']
-  outcomes json [note: '该 ABC 组合在该实验中的结果，如杀伤率、细胞因子释放、肿瘤抑制、存活、扩增、持续性或毒性等。']
-
-  Note: 'ABC組合實驗數據'
-}
