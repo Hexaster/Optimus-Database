@@ -7,76 +7,173 @@ binder:
       key: primary
       description: 平台内部唯一 Binder ID。
       nullable: false
+
     name:
       type: string
       description: Binder 的名称或代号。
       nullable: true
+
     aliases:
-      type: json
+      shape: array
+      type: string
       nullable: true
       description: 該 Binder 的其他名稱
+
     scfv_sequence:
       type: string
       nullable: true
-      description: scFv 完整氨基酸序列。
+      description: scFv 完整氨基酸序列
+
     vh_sequence:
       type: string
       nullable: true
-      description: VH 氨基酸序列。
+      description: VH 氨基酸序列
+
     vl_sequence:
       type: string
       nullable: true
-      description: VL 氨基酸序列。
+      description: VL 氨基酸序列
+
     linker:
       type: string
       nullable: true
-      description: 连接 VH 与 VL 的 linker 序列。
+      description: 连接 VH 与 VL 的 linker 序列
+
     numbering_scheme:
       type: string
       nullable: true
-      description: 抗体序列编号体系，例如 IMGT、Kabat。
+      description: 抗体序列编号体系
+      allowed_values:
+        - IMGT
+        - Kabat
+        - Chothia
+        - AHo
+
     fr_cdr_regions:
       type: json
+      shape: array
       nullable: true
-      description: FR/CDR 区域及其位置或序列信息。
-    cdr_lengths:
-      type: json
-      nullable: true
-      description: 各 CDR 区域的长度。
+      description: FR/CDR 区域及其位置或序列信息
+      item_schema:
+        chain:
+          type: string
+          allowed_values: [VH, VL]
+          nullable: false
+        region:
+          type: string
+          allowed_values: [FR1, CDR1, FR2, CDR2, FR3, CDR3, FR4]
+          nullable: false
+        sequence:
+          type: string
+          nullable: true
+        start:
+          type: integer
+          nullable: true
+        end:
+          type: integer
+          nullable: true
+        cdr_length:
+          type: integer
+          nullable: true
+          check: cdr_length >= 0
+          description: 各 CDR 区域的长度
+
     vdj_genes:
       type: json
       nullable: true
-      description: V(D)J 基因信息。
+      description: V(D)J 基因信息
+      
     germline_origin:
       type: string
       nullable: true
-      description: 胚系来源。
+      description: 胚系来源
+
     somatic_mutations:
       type: json
+      shape: array
       nullable: true
-      description: 体细胞突变信息。
+      description: 体细胞突变信息
+      item_schema:
+        chain:
+          type: string
+          allowed_values:
+            - heavy
+            - light
+        position:
+          type: integer
+        germline_aa:
+          type: string
+          pattern: "^[ARNDCQEGHILKMFPSTWYV]$"
+        mutated_aa:
+          type: string
+          pattern: "^[ARNDCQEGHILKMFPSTWYV]$"
+
     target_antigen:
       type: string
       nullable: true
-      description: Binder 的靶抗原，例如 GCC、CDH17。
+      description: Binder 的靶抗原，例如 GCC、CDH17
       index: true
+
     glycosylation_sites:
+      shape: array
       type: json
       nullable: true
-      description: 糖基化位点信息。
+      description: 糖基化位点
+      item_schema:
+        chain:
+          type: string
+          nullable: false
+          allowed_values:
+            - heavy
+            - light
+        position:
+          type: integer
+          nullable: false
+          check: position > 0
+        glycosylation_type:
+          type: string
+          nullable: true
+          allowed_values:
+            - N-linked
+            - O-linked
+            - other
+        motif:
+          type: string
+          nullable: true
+
     free_cysteines:
+      shape: array
       type: json
       nullable: true
-      description: 游离半胱氨酸信息。
+      description: 游离半胱氨酸信息
+      item_schema:
+        chain:
+          type: string
+          nullable: false
+          allowed_values:
+            - heavy
+            - light
+        position:
+          type: integer
+          nullable: false
+          check: position > 0
+
     humanization_level:
       type: string
       nullable: true
-      description: 人源化程度。
+      description: 人源化程度
+      allowed_values:
+        - non_human
+        - chimetric
+        - humanized
+        - fully_human
+
     structure_template:
       type: string
       nullable: true
-      description: 可用于该 Binder 的结构模板。
+      description: 结构模板
+
     complex_structure:
       type: string
       nullable: true
-      description: Binder 与靶标复合物的结构信息。
+      description: 複合物結構

@@ -148,6 +148,9 @@ For every field:
 
 If information in the document does not map to any schema field, ignore it.
 
+Some features have examples, all of them are synthetic. They only exist for hints of the output
+structure but not any real information. You do not have to 100 % follow the examples. 
+
 ---
 
 ## Hard Boundaries and Extraction Rules
@@ -164,6 +167,7 @@ In particular, never:
 * reconstruct missing sequence regions or unreported experimental values;
 * alter a reported result to resolve a conflict; or
 * create, rename, or repurpose schema fields.
+* refer other results, you must do this job on your own, do not rely on other results to fill in any information.
 
 ### 1. Extract only supported information
 

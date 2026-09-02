@@ -26,14 +26,10 @@ evidence:
       nullable: true
       description: 该证据对应的引用信息。
     evidence_level:
-      type: string
+      type: number
       nullable: false
-      description: 证据等级；具体分级值由统一证据分级规范定义。
-      allowed_values:
-      - 内部实验
-      - 文献
-      - 专利/预印本
-      - 模型预测
+      description: 证据等级；内部实验 ＞ 同行评议 ＞ 文献 ＞ 模型预测
+      check: evidence_level >= 0 and evidence_level <= 1
     experimental_conditions:
       type: json
       nullable: true
@@ -61,32 +57,40 @@ evidence:
       description: 该证据对应的 Binder ID。
       nullable: true
       index: true
+
     binder.epitope:
       type: string
       nullable: true
-      description: Binder 识别的表位。
+      description: 表位
+      example: "Ig 样 C2 型结构域 2（残基 138-206），构象表位，近膜端" # To be refined
+
     binder.binding_site:
       type: string
       nullable: true
-      description: Binder 的结合位点信息。
+      description: Binder 的结合位点信息
+      example: "抗原侧 R163/W169/Y172/E181；抗体侧 CDR-H3 Y100, W103 + CDR-L1 N32；BSA 782 Å²" # To be refined
+
     binder.kd:
       type: number
       nullable: true
       description: 平衡解离常数 Kd。
       unit: nM
       check: kd >= 0
+
     binder.kon:
       type: number
       nullable: true
       description: 结合速率常数 Kon。
       unit: 1/(M*s)
       check: kon >= 0
+
     binder.koff:
       type: number
       nullable: true
       description: 解离速率常数 Koff。
       unit: 1/s
       check: koff >= 0
+
     binder.measurement_method:
       type: string
       nullable: true
@@ -94,120 +98,282 @@ evidence:
       allowed_values:
       - SPR
       - BLI
+
     binder.measurement_conditions:
       type: json
       nullable: true
-      description: Kd、Kon、Koff 等测量值对应的具体测量条件。
+      description: Kd、Kon、Koff 等测量值对应的具体测量条件
+      item_schema:
+        temperature_c:
+          type: number
+          nullable: true
+          description: 测量温度。实验进行时的温度，单位为摄氏度（°C）。
+        ph:
+          type: number
+          nullable: true
+          description: 缓冲液 pH。实验测量体系的 pH 值。
+          check: 0 <= ph <= 14
+        buffer:
+          type: string
+          nullable: true
+          description: 缓冲液。实验测量所使用的缓冲液名称或组成。
+        instrument:
+          type: string
+          nullable: true
+          description: 测量仪器。用于进行亲和力或结合动力学测量的仪器名称或型号。
+        immobilized_component:
+          type: string
+          nullable: true
+          description: 固定化组分。实验中被固定在传感器、芯片或其他固相表面的组分。
+          allowed_values:
+            - binder
+            - antigen
+        analyte_component:
+          type: string
+          nullable: true
+          description: 分析物组分。实验中以溶液形式流过或接触固定化组分的待测组分。
+          allowed_values:
+            - binder
+            - antigen
+        concentration_series:
+          type: json
+          nullable: true
+          description: 分析物浓度系列。动力学或亲和力测量中使用的各分析物浓度。
+          item_schema:
+            value:
+              type: number
+              nullable: false
+              description: 浓度数值。单个分析物浓度的数值。
+              check: value >= 0
+            unit:
+              type: string
+              nullable: false
+              description: 浓度单位。分析物浓度数值对应的单位。
+              allowed_values:
+                - M
+                - mM
+                - uM
+                - nM
+                - pM
+        flow_rate_ul_min:
+          type: number
+          nullable: true
+          description: 流速。测量过程中溶液通过检测系统的流速，单位为 μL/min。
+          check: flow_rate_ul_min >= 0
+          unit: μL/min
+        fitting_model:
+          type: string
+          nullable: true
+          description: 拟合模型。用于根据实验数据计算结合动力学或亲和力参数的数学拟合模型。
+          allowed_values:
+            - 1:1
+            - bivalent_analyte
+            - heterogeneous_ligand
+            - steady_state
+
     binder.cross_reactivity_protein:
       type: json
       nullable: true
-      description: 蛋白水平的交叉反应性信息。
+      description: 蛋白水平的交叉反应性信息
+      item_schema:
+        tested_protein:
+          type: string
+          nullable: false
+          description: 交叉反应性实验中被检测的蛋白名称或标识。
+        result:
+          type: string
+          nullable: true
+          description: Binder 对该蛋白的交叉反应性检测结果。
+          allowed_values:
+            - positive
+            - negative
+            - weak
+            - inconclusive
+        measurement_value:
+          type: number
+          nullable: true
+          description: 原始来源报告的交叉反应性定量测量值。
+          unit: %
+
     binder.cross_reactivity_cell:
       type: json
       nullable: true
       description: 细胞水平的交叉反应性信息。
+      item_schema:
+        tested_cell:
+          type: string
+          nullable: false
+          description: 交叉反应性实验中被检测的细胞名称或标识。
+        result:
+          type: string
+          nullable: true
+          description: Binder 对该细胞的交叉反应性检测结果。
+          allowed_values:
+            - positive
+            - negative
+            - weak
+            - inconclusive
+        measurement_value:
+          type: number
+          nullable: true
+          description: 原始来源报告的交叉反应性定量测量值。
+          unit: %
+
     binder.species_reactivity:
       type: json
       nullable: true
       description: 对人、鼠、猴等不同物种的反应性信息。
+      item_schema:
+        species:
+          type: string
+          nullable: false
+          description: 物种名称。
+        reactivity:
+          type: string
+          nullable: true
+          description: 该物种对 Binder 的反应性。
+          allowed_values:
+            - positive
+            - negative
+            - weak
+            - inconclusive
+
     binder.tm:
       type: number
       nullable: true
       description: 热稳定性指标 Tm。
       unit: °C
+
     binder.viscosity:
       type: number
       nullable: true
-      description: 黏度测量结果。
+      description: 黏度
       check: viscosity >= 0
+
     binder.aggregation_tendency:
       type: string
       nullable: true
-      description: 聚集倾向。
+      description: 聚集倾向
+      example: "SEC 单体率 97.8 %；AggScore 0.21"
+
     binder.solubility:
-      type: string
+      type: number
       nullable: true
-      description: 溶解度。
+      description: 溶解度
+      unit: mg/mL
+      check: solubility >= 0
+      
     binder.hydrophobicity:
       type: number
       nullable: true
-      description: 疏水性指标。
+      description: 疏水性
+
     binder.charge:
       type: number
       nullable: true
-      description: 电荷相关指标。
+      description: 电荷
+
     binder.immunogenicity_ada_risk:
       type: string
       nullable: true
-      description: 免疫原性或抗药抗体（ADA）风险信息。
+      description: 免疫原性/抗药抗体（ADA）风险
+      example: "预测 MHC-II 高亲和表位 3 个（集中于 linker 接缝处）；临床 ADA 阳性率 11 %（n=64）" # To be refined 
 
     car.car_id:
       type: uuid
       key: foreign
       references: car.car_id
-      description: 该证据对应的 CAR backbone ID。
+      description: 该证据对应的 CAR backbone ID
       nullable: true
       index: true
+
     car.activation_speed:
       type: string
       nullable: true
-      description: CAR 激活速度。
+      description: CAR 激活速度
+      example: "慢；IFN-γ 分泌 48-72 h 达峰（CD28 对照 12-24 h）" # To be refined
+
     car.metabolic_state:
       type: string
       nullable: true
-      description: CAR-T 细胞的代谢状态，例如糖酵解或氧化代谢。
+      description: CAR-T 细胞的代谢状态，例如糖酵解或氧化代谢
       allowed_values:
       - glycolytic
       - oxidative
+
     car.expansion_capacity:
       type: string
       nullable: true
-      description: CAR-T 细胞的扩增能力。
+      description: CAR-T 细胞的扩增能力
+      example: "体外 day 10 扩增 45 倍；体内峰值 12 000 拷贝/µg gDNA（day 14）" # To be refined
+
     car.memory_phenotype:
       type: string
       nullable: true
-      description: CAR-T 细胞的记忆表型。
+      description: CAR-T 细胞的记忆表型
+      example: "Tscm 14 % / Tcm 48 % / Tem 31 % / Teff 7 %" # To be refined
+
     car.persistence:
       type: string
       nullable: true
-      description: CAR-T 细胞的持久性。
+      description: CAR-T 细胞的持久性
+      example: "中位可检出时长 168 天；23 % 患者 > 1 年仍可检出" # To be refined
+
     car.exhaustion_risk:
       type: string
       nullable: true
-      description: CAR-T 细胞的耗竭风险。
+      description: CAR-T 细胞的耗竭风险
+      example: "低；day 14 三标志物共阳性 8 %（CD28 对照 34 %）；TOX 低表达" # To be refined
+
     car.tonic_signaling_tendency:
       type: string
       nullable: true
-      description: CAR 的 tonic signaling 倾向。
-    car.geometric_length:
+      description: CAR 的 tonic signaling 倾向
+      example: "低；无抗原培养 7 天 CD69⁺ 6 %，基础 IFN-γ < 50 pg/mL" # To be refined
+
+    car.binder_length:
       type: number
       nullable: true
-      description: CAR 相关模块或构型的几何长度信息。
-      check: geometric_length >= 0
+      description: 这个模块把识别域顶出细胞膜多远
+      unit: aa
+
     car.epitope_distance_effect:
       type: string
       nullable: true
-      description: 构型对表位距离相关效果的影响。
+      description: 构型对表位距离相关效果的影响
+      example: "适配近膜表位（< 5 nm）" # To be refined
+
     car.immune_synapse_effect:
       type: string
       nullable: true
-      description: 构型对免疫突触形成或性质的影响。
+      description: 构型对免疫突触形成或性质的影响
+      example: "若配远膜表位则突触过宽、CD45 排除不全、杀伤下降约 40 %" # To be refined
+
     car.tonic_signaling_effect:
       type: string
       nullable: true
-      description: 构型对 tonic signaling 的影响。
+      description: 构型对 tonic signaling 的影响
+      example: "本铰链含 Cys，高密度表达时可致二聚化，tonic 风险 +" # To be refined
+
     car.compatible_modules:
-      type: json
+      shape: array
+      type: string
       nullable: true
-      description: 已观察或报告为可兼容的模块组合。
+      description: 已观察或报告为可兼容的模块组合
+      example: ["MOD-0008 (CD8α TM)", "MOD-0031 (CD3ζ)"]
+
     car.incompatible_modules:
-      type: json
+      shape: array
+      type: string
       nullable: true
-      description: 已观察或报告为不兼容的模块组合。
+      description: 已观察或报告为不兼容的模块组合
+
     car.assembly_rules:
-      type: json
+      type: string
       nullable: true
-      description: CAR 模块装配规则或约束。
+      description: CAR 模块装配规则或约束
+      example: "位置: 跨膜区之后、CD3ζ 之前；每条 CAR 至多 1 个（双共刺激为例外，需显式标注为 3rd-gen）；两端不引入终止子，须保持读框" # To be refined
+
 
     manufacturing.manufacturing_id:
       type: uuid
@@ -216,66 +382,77 @@ evidence:
       description: 该证据对应的制造工艺 ID。
       nullable: true
       index: true
+
     manufacturing.cell_viability:
       type: number
       nullable: true
       description: 细胞活率。
       unit: '%'
       check: 0 <= cell_viability <= 100
+
     manufacturing.transduction_efficiency:
       type: number
       nullable: true
       description: 转导效率。
       unit: '%'
       check: 0 <= transduction_efficiency <= 100
+
     manufacturing.vcn:
       type: number
       nullable: true
       description: 载体拷贝数（VCN）。
       unit: copies/cell
       check: vcn >= 0
+
     manufacturing.cd3_positive_ratio:
       type: number
       nullable: true
       description: CD3+ 细胞比例。
       unit: '%'
       check: 0 <= cd3_positive_ratio <= 100
+
     manufacturing.memory_phenotype:
       type: string
       nullable: true
-      description: 产品细胞的记忆表型。
+      description: 产品细胞的记忆表型
+      example: "Tscm 12 % / Tcm 44 %" # TBR
+
     manufacturing.exhaustion_phenotype:
       type: string
       nullable: true
-      description: 产品细胞的耗竭表型。
+      description: 产品细胞的耗竭表型
+      example: "PD-1⁺LAG-3⁺ 9 %" # TBR
+
     manufacturing.treg_phenotype:
       type: string
       nullable: true
       description: 产品细胞的 Treg 相关表型。
+      example: "CD4⁺CD25⁺FoxP3⁺ Treg 1.8 %" # TBR
+
     manufacturing.sterility:
-      type: string
+      type: boolean
       nullable: true
-      description: 无菌检测结果。
+      description: 无菌检测结果
+
     manufacturing.mycoplasma:
-      type: string
+      type: boolean
       nullable: true
-      description: 支原体检测结果。
+      description: 支原体检测结果
+
     manufacturing.endotoxin:
-      type: string
+      type: number
       nullable: true
-      description: 内毒素检测结果。
+      description: 内毒素检测结果
+      unit: EU/mL
+
     manufacturing.killing_activity:
       type: string
       nullable: true
-      description: 杀伤活性结果。
+      description: 杀伤活性结果
+      example: "Nalm-6 靶细胞，E:T 5:1，24 h 特异杀伤 76 %（实时阻抗法）；放行标准 ≥ 40 %" # To be refined
+
     manufacturing.cytokine_release:
       type: json
       nullable: true
-      description: 细胞因子释放结果。
-
-    outcomes:
-      type: json
-      nullable: true
-      description: >
-        该 ABC 组合在该实验中的结果，如杀伤率、细胞因子释放、
-        肿瘤抑制、存活、扩增、持续性或毒性等。
+      description: 细胞因子释放结果
+      example: "IFN-γ 3800 / IL-2 620 / TNF-α 410 / IL-6 95 pg/mL（24 h 共培养上清)" # TBR
