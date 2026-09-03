@@ -1,11 +1,13 @@
 #!/usr/bin/env python
 """把一个或一批文档逐份喂给 extract-cart-data 技能。
 
-每份文档单独起一次 Claude Code 或 Codex：上下文互不污染，一份跑飞不影响后面几份。
+每份文档单独起一次 coding agent：上下文互不污染，一份跑飞不影响后面几份。
 结果由技能自己写进 data/normalised/，这里只负责调度、计时、算钱、报结果。
 
     python scripts/run_extraction_agent.py --agent claude      # Claude Code
     python scripts/run_extraction_agent.py --agent codex --model gpt-5.2-codex
+    python scripts/run_extraction_agent.py --agent kimi --model kimi-code/kimi-for-coding
+    python scripts/run_extraction_agent.py --agent zcode --model zai/glm-5.2
     python scripts/run_extraction_agent.py --dir data/raw/xxx   # 换目录
     python scripts/run_extraction_agent.py --file data/raw/a.pdf # 跑单个文件
     python scripts/run_extraction_agent.py --force              # 重跑已有结果的文档
@@ -76,6 +78,7 @@ def parse_claude(stdout: str) -> dict:
         "ok": not answer.get("is_error", False),
         "cost": answer.get("total_cost_usd"),
         "usage": usage,
+        "usage_known": bool(raw),
         "turns": answer.get("num_turns"),
         "session": answer.get("session_id"),
         "reason": answer.get("result", "")[:500],
@@ -89,11 +92,13 @@ def parse_codex(stdout: str) -> dict:
     reason = ""
     cost = None
     ok = True
+    usage_known = False
     for event in events:
         if event.get("type") == "thread.started":
             session = event.get("thread_id")
         if event.get("type") == "turn.completed":
             raw = event.get("usage") or {}
+            usage_known = bool(raw)
             total_input = raw.get("input_tokens", 0) or 0
             cached_input = raw.get("cached_input_tokens", 0) or 0
             usage = {
@@ -109,8 +114,61 @@ def parse_codex(stdout: str) -> dict:
         item = event.get("item") or {}
         if item.get("type") == "agent_message":
             reason = str(item.get("text", ""))[:500]
-    return {"ok": ok, "cost": cost, "usage": usage, "session": session,
+    return {"ok": ok, "cost": cost, "usage": usage,
+            "usage_known": usage_known, "session": session,
             "turns": None, "reason": reason}
+
+
+def parse_kimi(stdout: str) -> dict:
+    """解析 Kimi Code 的 JSONL；当前格式不提供 token usage。"""
+    session = None
+    reason = ""
+    ok = True
+    for line in stdout.splitlines():
+        if not line.strip():
+            continue
+        event = json.loads(line)
+        if event.get("role") == "assistant":
+            content = event.get("content", "")
+            if isinstance(content, str):
+                reason = content[:500]
+            elif isinstance(content, list):
+                text = "".join(part.get("text", "") for part in content
+                               if part.get("type") == "text")
+                reason = text[:500]
+        if event.get("role") == "meta":
+            session = event.get("session_id") or event.get("sessionId") or session
+        if event.get("role") == "error" or event.get("type") == "error":
+            ok = False
+            reason = str(event.get("message") or event.get("error") or event)[:500]
+
+    return {"ok": ok, "cost": None, "usage": empty_usage(),
+            "usage_known": False, "session": session,
+            "turns": None, "reason": reason}
+
+
+def parse_zcode(stdout: str) -> dict:
+    answer = json.loads(stdout)
+    raw = answer.get("usage") or {}
+    total_input = raw.get("inputTokens", 0) or 0
+    cached_input = raw.get("cacheReadTokens", 0) or 0
+    cache_write = raw.get("cacheWriteTokens", 0) or 0
+    usage = {
+        "input": max(total_input - cached_input - cache_write, 0),
+        "cached_input": cached_input,
+        "cache_write": cache_write,
+        "output": raw.get("outputTokens", 0) or 0,
+    }
+    error = answer.get("error")
+    return {
+        "ok": not error,
+        "cost": answer.get("costUsd"),
+        "usage": usage,
+        "usage_known": bool(raw),
+        "session": answer.get("sessionId"),
+        "turns": None,
+        "reason": str(error or answer.get("response", ""))[:500],
+    }
 
 
 def estimated_cost(usage: dict[str, int], input_price: float | None,
@@ -137,6 +195,7 @@ def run_one(path: Path, *, agent: str, out_dir: Path, timeout: int,
         path=path.as_posix(), stem=path.stem,
         out_dir=out_dir.relative_to(REPO).as_posix(),
     )
+    run_env = env.copy()
     if agent == "claude":
         command = [
             "claude", "-p", prompt, "--output-format", "json",
@@ -147,7 +206,7 @@ def run_one(path: Path, *, agent: str, out_dir: Path, timeout: int,
             command += ["--model", model]
         if budget is not None:
             command += ["--max-budget-usd", str(budget)]
-    else:
+    elif agent == "codex":
         command = ["codex", "exec", prompt, "--json", "--ephemeral",
                    "--approve-for-me", "-C", str(REPO)]
         if settings.openai_base_url:
@@ -161,23 +220,45 @@ def run_one(path: Path, *, agent: str, out_dir: Path, timeout: int,
             ]
         if model:
             command += ["--model", model]
+    elif agent == "kimi":
+        command = ["kimi"]
+        if model:
+            command += ["--model", model]
+        command += ["--prompt", prompt, "--output-format", "stream-json"]
+    else:
+        command = ["zcode", "--prompt", prompt, "--json", "--mode", "yolo",
+                   "--cwd", str(REPO)]
+        if model:
+            run_env["ZCODE_MODEL"] = model
 
     started = time.monotonic()
     try:
         completed = subprocess.run(
-            command, cwd=REPO, env=env, capture_output=True, text=True, timeout=timeout,
+            command, cwd=REPO, env=run_env, capture_output=True, text=True,
+            timeout=timeout,
         )
+    except FileNotFoundError:
+        return {"ok": False, "reason": f"找不到 {command[0]} CLI",
+                "seconds": time.monotonic() - started, "cost": None,
+                "usage": empty_usage(), "usage_known": False}
     except subprocess.TimeoutExpired:
         return {"ok": False, "reason": f"超时（{timeout}s）",
                 "seconds": time.monotonic() - started, "cost": None,
-                "usage": empty_usage()}
+                "usage": empty_usage(), "usage_known": False}
 
     seconds = time.monotonic() - started
     try:
-        result = parse_claude(completed.stdout) if agent == "claude" else parse_codex(completed.stdout)
+        if agent == "claude":
+            result = parse_claude(completed.stdout)
+        elif agent == "codex":
+            result = parse_codex(completed.stdout)
+        elif agent == "kimi":
+            result = parse_kimi(completed.stdout)
+        else:
+            result = parse_zcode(completed.stdout)
     except (json.JSONDecodeError, TypeError):
         return {"ok": False, "seconds": seconds, "cost": None,
-                "usage": empty_usage(),
+                "usage": empty_usage(), "usage_known": False,
                 "reason": (completed.stderr.strip() or
                            f"返回不是 JSON：{completed.stdout[:300]}")}
 
@@ -185,13 +266,15 @@ def run_one(path: Path, *, agent: str, out_dir: Path, timeout: int,
     if completed.returncode != 0:
         result["ok"] = False
         result["reason"] = (result["reason"] or completed.stderr.strip())[:500]
-    if result["cost"] is None:
+    if result["cost"] is None and result["usage_known"]:
         result["cost"] = estimated_cost(
             result["usage"], input_price, cached_input_price, output_price)
     return result
 
 
-def usage_text(usage: dict[str, int]) -> str:
+def usage_text(usage: dict[str, int], known: bool = True) -> str:
+    if not known:
+        return "tokens N/A"
     input_tokens = usage["input"] + usage["cached_input"] + usage["cache_write"]
     total = input_tokens + usage["output"]
     return (f"tokens：input {input_tokens:,}（uncached {usage['input']:,}，"
@@ -233,8 +316,9 @@ def main(argv: list[str] | None = None) -> int:
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--dir", help="文档目录，默认 data/sample")
     source.add_argument("--file", help="单个文档")
-    parser.add_argument("--agent", choices=("claude", "codex"), default="claude")
-    parser.add_argument("--model", help="模型名；Claude 默认 opus，Codex 默认使用本机配置")
+    parser.add_argument("--agent", choices=("claude", "codex", "kimi", "zcode"),
+                        default="claude")
+    parser.add_argument("--model", help="模型名；不传则使用对应 harness 的默认配置")
     parser.add_argument("--effort", default="high", help="Claude effort，默认 high")
     parser.add_argument("--out-dir", help="结果目录；默认按 agent/model 隔离")
     parser.add_argument("--force", action="store_true", help="已有结果的文档也重跑")
@@ -282,12 +366,20 @@ def main(argv: list[str] | None = None) -> int:
               f"{'$%.2f' % budget if budget else '不限'}")
     elif args.agent == "claude":
         print(f"后端：Claude 订阅，模型 {model}（--budget 不生效）")
-    else:
+    elif args.agent == "codex":
         print(f"后端：Codex，模型 {model or '本机默认'}，API "
               f"{settings.openai_base_url or 'OpenAI 默认端点'}")
         if args.input_price is None or args.output_price is None:
             print("费用：后端未返回 cost 时为 N/A；可传 --input-price、"
                   "--cached-input-price、--output-price 计算")
+    elif args.agent == "kimi":
+        print(f"后端：Kimi Code，模型 {model or 'harness 默认'}")
+        print("用量：新版 Kimi Code 不在 stdout 返回 token usage，将显示 N/A")
+    else:
+        print(f"后端：ZCode，模型 {model or 'harness 默认'}")
+        if args.input_price is None or args.output_price is None:
+            print("费用：可传 --input-price、--cached-input-price、"
+                  "--output-price 计算")
 
     print(f"输出：{out_dir.relative_to(REPO)}")
     print(f"待处理 {len(pending)} 份：")
@@ -297,7 +389,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    failures, total_cost, unknown_cost = 0, 0.0, False
+    failures, total_cost, unknown_cost, unknown_usage = 0, 0.0, False, False
     total_usage = empty_usage()
 
     for index, path in enumerate(pending, 1):
@@ -315,18 +407,20 @@ def main(argv: list[str] | None = None) -> int:
             total_cost += result["cost"]
         for key, value in result["usage"].items():
             total_usage[key] += value
+        unknown_usage = unknown_usage or not result["usage_known"]
 
         status = "OK " if result["ok"] else "失败"
         cost_text = f"${result['cost']:.4f}" if result["cost"] is not None else "费用 N/A"
         print(f"  {status} {result['seconds']:.0f}s  {cost_text}  "
-              f"{usage_text(result['usage'])}  {tally(out_dir, path.stem)}")
+              f"{usage_text(result['usage'], result['usage_known'])}  "
+              f"{tally(out_dir, path.stem)}")
         if not result["ok"]:
             failures += 1
             print(f"  ↳ {result['reason']}")
 
     total_cost_text = f"${total_cost:.4f}" + (" + 未知费用" if unknown_cost else "")
     print(f"\n完成 {len(pending) - failures}/{len(pending)}，合计 "
-          f"{total_cost_text}，{usage_text(total_usage)}")
+          f"{total_cost_text}，{usage_text(total_usage, not unknown_usage)}")
     return 1 if failures else 0
 
 
