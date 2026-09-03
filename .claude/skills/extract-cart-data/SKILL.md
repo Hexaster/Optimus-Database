@@ -167,6 +167,8 @@ In particular, never:
 * reconstruct missing sequence regions or unreported experimental values;
 * alter a reported result to resolve a conflict; or
 * create, rename, or repurpose schema fields.
+* add explainatory brackets.
+* quote or summarise a long sentence as the string value.
 * refer other results, you must do this job on your own, do not rely on other results to fill in any information.
 
 ### 1. Extract only supported information
@@ -400,6 +402,8 @@ Handle exceptions at the smallest safe scope:
 ### Exception log
 
 Append every exception to `data/normalised/<source-stem>.errors.jsonl`, one JSON object per line:
+
+Log an exception only when a concrete schema field, candidate record, or the document as a whole cannot be handled normally because its supplied evidence is unreadable, ambiguous, invalid, conflicting, or insufficient for a required constraint. Do not log ordinary unreported optional fields, source-type reasoning, extraction rationale, background material that is intentionally excluded, or information that has no corresponding schema field. Ignore those cases without creating a `notes` field or a `schema_mismatch` entry. A conflict that affects an extracted field or relationship is still an exception and must be logged separately.
 
 ```json
 {
