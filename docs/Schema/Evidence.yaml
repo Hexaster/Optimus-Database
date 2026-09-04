@@ -30,14 +30,18 @@ evidence:
       nullable: false
       description: 证据等级；内部实验 ＞ 同行评议 ＞ 文献 ＞ 模型预测
       check: evidence_level >= 0 and evidence_level <= 1
+
     experimental_conditions:
       type: json
       nullable: true
       description: 产生该证据时的实验条件。
+    
     applicable_scenario:
       type: string
       nullable: true
-      description: 该证据或结果适用的场景。
+      description: 该证据或结果适用的场景
+      example: B-ALL, 儿童及青年
+
     contrary_evidence:
       type: boolean
       nullable: false
@@ -59,16 +63,77 @@ evidence:
       index: true
 
     binder.epitope:
-      type: string
+      type: json
       nullable: true
       description: 表位
-      example: "Ig 样 C2 型结构域 2（残基 138-206），构象表位，近膜端" # To be refined
+      item_schema:
+        identified_area:
+          type: string
+          description: 抗原上被识别的那块区域
+          example: "Ig 样 C2 型结构域 2"
+        epitope_type:
+          type: enum
+          description: 线性表位还是构象表位
+          allowed_values: 
+            - 线性表位
+            - 构象表位
+        location:
+          type: enum
+          description: 离膜远近
+          allowed_values:
+            - 近膜端
+            - 远膜端
 
     binder.binding_site:
-      type: string
+      type: json
       nullable: true
       description: Binder 的结合位点信息
-      example: "抗原侧 R163/W169/Y172/E181；抗体侧 CDR-H3 Y100, W103 + CDR-L1 N32；BSA 782 Å²" # To be refined
+      item_schema:
+        antigen_residues:
+          type: json
+          shape: array
+          nullable: true
+          description: 抗原侧参与结合界面的残基。
+          item_schema:
+            residue:
+              type: string
+              nullable: false
+              description: 抗原侧残基，以单字母氨基酸代码加残基编号表示，例如 R163。
+        binder_residues:
+          type: json
+          shape: array
+          nullable: true
+          description: Binder 侧参与结合界面的残基。
+          item_schema:
+            chain:
+              type: string
+              nullable: false
+              description: 残基所属抗体链。
+              allowed_values:
+                - heavy
+                - light
+            region:
+              type: string
+              nullable: true
+              description: 残基所属 FR/CDR 区域。
+              allowed_values:
+                - FR1
+                - CDR1
+                - FR2
+                - CDR2
+                - FR3
+                - CDR3
+                - FR4
+            residue:
+              type: string
+              nullable: false
+              description: Binder 侧残基，以单字母氨基酸代码加残基编号表示，例如 Y100。
+        buried_surface_area:
+          type: number
+          nullable: true
+          description: Binder-抗原结合界面的埋藏表面积。
+          unit: Å²
+          check: buried_surface_area >= 0
 
     binder.kd:
       type: number
@@ -251,10 +316,23 @@ evidence:
       check: viscosity >= 0
 
     binder.aggregation_tendency:
-      type: string
+      type: json
+      shape: array
       nullable: true
-      description: 聚集倾向
-      example: "SEC 单体率 97.8 %；AggScore 0.21"
+      description: Binder 的聚集倾向实验测量或计算预测结果。
+      item_schema:
+        method:
+          type: string
+          nullable: false
+          description: 聚集倾向的测量或预测方法，例如 SEC、AggScore 或 SAP。
+        value:
+          type: number
+          nullable: false
+          description: 原始来源报告的聚集倾向测量值或预测分数。
+        unit:
+          type: string
+          nullable: true
+          description: 测量值对应的单位；无量纲预测分数可为空。
 
     binder.solubility:
       type: number
@@ -263,15 +341,58 @@ evidence:
       unit: mg/mL
       check: solubility >= 0
       
-    binder.hydrophobicity:
-      type: number
-      nullable: true
-      description: 疏水性
+    #binder.hydrophobicity:
+    #  type: number
+    #  nullable: true
+    #  description: 疏水性
 
-    binder.charge:
+    # 疏水性
+    binder.hic_retention_time:
       type: number
       nullable: true
-      description: 电荷
+      description: Binder 在疏水相互作用色谱（HIC）中的保留时间，用于表征其相对疏水行为。
+      unit: min
+      check: hic_retention_time >= 0
+
+    binder.hydrophobic_patch_area:
+      type: number
+      nullable: true
+      description: Binder 表面最大疏水补丁的表面积。
+      unit: Å²
+      check: hydrophobic_patch_area >= 0
+
+    binder.hydrophobic_patch_location:
+      type: string
+      nullable: true
+      description: 最大表面疏水补丁所在或邻近的结构区域，例如 CDR-H2、CDR-H3 或 VH/VL 界面。
+
+    binder.sap_score:
+      type: number
+      nullable: true
+      description: 来源明确报告的 Spatial Aggregation Propensity（SAP）评分。
+
+    #binder.charge:
+    #  type: number
+    #  nullable: true
+    #  description: 电荷
+
+    # 電荷
+    binder.isoelectric_point:
+      type: number
+      nullable: true
+      description: Binder 的等电点（pI），即分子净电荷为零时对应的 pH。
+      check: 0 <= isoelectric_point <= 14
+
+    binder.net_charge:
+      type: number
+      nullable: true
+      description: Binder 在指定 pH 条件下的净电荷。
+
+    binder.net_charge_ph:
+      type: number
+      nullable: true
+      description: Binder 净电荷数值对应的 pH 条件。
+      check: 0 <= net_charge_ph <= 14
 
     binder.immunogenicity_ada_risk:
       type: string
@@ -287,11 +408,32 @@ evidence:
       nullable: true
       index: true
 
-    car.activation_speed:
+    #car.activation_speed:
+    #  type: string
+    #  nullable: true
+    #  description: CAR 激活速度
+    #  example: "慢；IFN-γ 分泌 48-72 h 达峰（CD28 对照 12-24 h）" # To be refined
+
+    # 激活速度
+    car.activation_peak_time_min:
+      type: number
+      nullable: true
+      description: 来源报告的 CAR-T 激活指标达到峰值的最早时间。
+      unit: h
+      check: activation_peak_time_min >= 0
+
+    car.activation_peak_time_max:
+      type: number
+      nullable: true
+      description: 来源报告的 CAR-T 激活指标达到峰值的最晚时间。
+      unit: h
+      check: activation_peak_time_max >= 0
+
+    car.activation_readout:
       type: string
       nullable: true
-      description: CAR 激活速度
-      example: "慢；IFN-γ 分泌 48-72 h 达峰（CD28 对照 12-24 h）" # To be refined
+      description: 用于判断 CAR-T 激活动力学的实验指标，例如 IFN-γ、IL-2、CD69 或 CD25。
+
 
     car.metabolic_state:
       type: string
@@ -307,23 +449,26 @@ evidence:
       description: CAR-T 细胞的扩增能力
       example: "体外 day 10 扩增 45 倍；体内峰值 12 000 拷贝/µg gDNA（day 14）" # To be refined
 
-    car.memory_phenotype:
-      type: string
-      nullable: true
-      description: CAR-T 细胞的记忆表型
-      example: "Tscm 14 % / Tcm 48 % / Tem 31 % / Teff 7 %" # To be refined
+    # 和manufacturing衝突？
+    #car.memory_phenotype:
+    #  type: string
+    #  nullable: true
+    #  description: CAR-T 细胞的记忆表型
+    #  example: "Tscm 14 % / Tcm 48 % / Tem 31 % / Teff 7 %"
 
     car.persistence:
-      type: string
+      type: number
       nullable: true
-      description: CAR-T 细胞的持久性
-      example: "中位可检出时长 168 天；23 % 患者 > 1 年仍可检出" # To be refined
+      unit: day
+      description: CAR-T 细胞的持久性(中位可检出时长)
+      
 
     car.exhaustion_risk:
       type: string
       nullable: true
       description: CAR-T 细胞的耗竭风险
       example: "低；day 14 三标志物共阳性 8 %（CD28 对照 34 %）；TOX 低表达" # To be refined
+
 
     car.tonic_signaling_tendency:
       type: string
@@ -341,19 +486,19 @@ evidence:
       type: string
       nullable: true
       description: 构型对表位距离相关效果的影响
-      example: "适配近膜表位（< 5 nm）" # To be refined
+      example: "适配近膜表位（< 5 nm）"
 
     car.immune_synapse_effect:
       type: string
       nullable: true
       description: 构型对免疫突触形成或性质的影响
-      example: "若配远膜表位则突触过宽、CD45 排除不全、杀伤下降约 40 %" # To be refined
+      example: "若配远膜表位则突触过宽、CD45 排除不全、杀伤下降约 40 %"
 
     car.tonic_signaling_effect:
       type: string
       nullable: true
       description: 构型对 tonic signaling 的影响
-      example: "本铰链含 Cys，高密度表达时可致二聚化，tonic 风险 +" # To be refined
+      example: "本铰链含 Cys，高密度表达时可致二聚化，tonic 风险 +"
 
     car.compatible_modules:
       shape: array
@@ -368,11 +513,12 @@ evidence:
       nullable: true
       description: 已观察或报告为不兼容的模块组合
 
-    car.assembly_rules:
-      type: string
-      nullable: true
-      description: CAR 模块装配规则或约束
-      example: "位置: 跨膜区之后、CD3ζ 之前；每条 CAR 至多 1 个（双共刺激为例外，需显式标注为 3rd-gen）；两端不引入终止子，须保持读框" # To be refined
+    #暫時不用
+    #car.assembly_rules:
+    #  type: string
+    #  nullable: true
+    #  description: CAR 模块装配规则或约束
+    #  example: "位置: 跨膜区之后、CD3ζ 之前；每条 CAR 至多 1 个（双共刺激为例外，需显式标注为 3rd-gen）；两端不引入终止子，须保持读框" # To be refined
 
 
     manufacturing.manufacturing_id:
@@ -411,11 +557,25 @@ evidence:
       unit: '%'
       check: 0 <= cd3_positive_ratio <= 100
 
-    manufacturing.memory_phenotype:
-      type: string
-      nullable: true
-      description: 产品细胞的记忆表型
-      example: "Tscm 12 % / Tcm 44 %" # TBR
+    #manufacturing.memory_phenotype:
+    #  type: string
+    #  nullable: true
+    #  description: 产品细胞的记忆表型
+    #  example: "Tscm 12 % / Tcm 44 %" # TBR
+
+    #  description: 产品细胞的记忆表型
+    manufacturing.tscm_ratio:
+      type: number
+      unit: %
+    manufacturing.tcm_ratio:
+      type: number
+      unit: %
+    manufacturing.tem_ratio:
+      type: number
+      unit: %
+    manufacturing.teff_ratio:
+      type: number
+      unit: %
 
     manufacturing.exhaustion_phenotype:
       type: string
@@ -446,13 +606,26 @@ evidence:
       unit: EU/mL
 
     manufacturing.killing_activity:
-      type: string
+      type: number
       nullable: true
-      description: 杀伤活性结果
-      example: "Nalm-6 靶细胞，E:T 5:1，24 h 特异杀伤 76 %（实时阻抗法）；放行标准 ≥ 40 %" # To be refined
+      description: 对靶细胞的特异性杀伤率
+      unit: %
+      #example: "Nalm-6 靶细胞，E:T 5:1，24 h 特异杀伤 76 %（实时阻抗法）；放行标准 ≥ 40 %" # To be refined
 
     manufacturing.cytokine_release:
       type: json
+      shape: array
       nullable: true
-      description: 细胞因子释放结果
-      example: "IFN-γ 3800 / IL-2 620 / TNF-α 410 / IL-6 95 pg/mL（24 h 共培养上清)" # TBR
+      description: 释放的细胞因子及其浓度。
+      item_schema:
+        cytokine:
+          type: string
+          nullable: false
+          description: 检测的细胞因子名称。
+
+        concentration:
+          type: number
+          nullable: false
+          description: 该细胞因子的测量浓度。
+          unit: pg/mL
+          check: concentration >= 0

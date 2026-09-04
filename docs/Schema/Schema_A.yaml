@@ -72,21 +72,32 @@ binder:
         end:
           type: integer
           nullable: true
-        cdr_length:
-          type: integer
-          nullable: true
-          check: cdr_length >= 0
-          description: 各 CDR 区域的长度
+        
+    cdr_length:
+      type: string
+      nullable: true
+      check: cdr_length >= 0
+      description: 各 CDR 区域的长度
+      example: "H1:8 H2:8 H3:13 L1:11 L2:3 L3:9"
 
     vdj_genes:
-      type: json
+      type: string
       nullable: true
       description: V(D)J 基因信息
+      example: "IGHV3-23*01 / IGHD3-10*01 / IGHJ4*02; IGKV1-39*01 / IGKJ1*01"
       
     germline_origin:
       type: string
       nullable: true
       description: 胚系来源
+      example: "人源胚系 IGHV3-23"
+    
+    germline_origin_identity:
+      type: number
+      nullable: true
+      description: 胚系來源同一性
+      unit: %
+      check: 0-100
 
     somatic_mutations:
       type: json
@@ -111,7 +122,7 @@ binder:
     target_antigen:
       type: string
       nullable: true
-      description: Binder 的靶抗原，例如 GCC、CDH17
+      description: Binder 的靶抗原
       index: true
 
     glycosylation_sites:
@@ -169,9 +180,27 @@ binder:
         - fully_human
 
     structure_template:
-      type: string
+      type: json
+      shape: array
       nullable: true
-      description: 结构模板
+      description: Binder 结构建模时使用的已知结构模板。
+      item_schema:
+        pdb_id:
+          type: string
+          nullable: false
+          description: 用作结构建模模板的 PDB ID。
+
+        chains:
+          type: string
+          nullable: true
+          description: 用作结构建模模板的 PDB 链，例如 H/L。
+
+        sequence_identity:
+          type: number
+          nullable: true
+          description: Binder 与结构模板之间的序列一致性。
+          unit: "%"
+          check: 0 <= sequence_identity <= 100
 
     complex_structure:
       type: string
