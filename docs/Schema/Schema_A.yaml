@@ -96,7 +96,7 @@ binder:
       type: number
       nullable: true
       description: 胚系來源同一性
-      unit: %
+      unit: '%'
       check: 0-100
 
     somatic_mutations:

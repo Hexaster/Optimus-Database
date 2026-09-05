@@ -1,6 +1,6 @@
 ---
 name: extract-cart-data
-description: Use when extracting structured data from a scientific paper, patent, public database record, or internal research document into this repo's CAR-T database — reads the document, maps it onto docs/Schema/*.yaml, and writes data/normalised/<stem>.jsonl plus an .errors.jsonl sidecar.
+description: Use when extracting structured data from a scientific paper, patent, public database record, or internal research document into this repo's CAR-T database — reads the document, maps it onto docs/Schema/*.yaml, and writes data/normalised/{stem}.jsonl plus an .errors.jsonl sidecar.
 ---
 
 # CAR-T Document Extraction
@@ -26,13 +26,17 @@ Experimental evidence associated with these entities is stored separately from t
 
 1. **Read the schema.** Read every file in `docs/Schema/*.yaml` before extracting. These are authoritative: `Schema_A.yaml` (binder), `Schema_B.yaml` (car), `Schema_C.yaml` (manufacturing), `Schema_DB1.yaml` (abc_combination_db1), `Evidence.yaml` (evidence). Do not work from memory of a previous run — the schema changes.
 2. **Read the document.**
-   * `.md` / `.markdown` / `.xml` / `.nxml` — read the file directly. For JATS XML, ignore the `<ref-list>`, `<back>` and `<ack>` sections; they hold no extractable content.
-   * `.pdf` — the text layer is not readable directly. Extract it first:
-     `$PY -c "import sys; sys.path.insert(0,'src'); from cart_db.extraction import load_document; print(load_document('<path>'))"`
-     where `$PY` is the interpreter in the `Makefile`'s `PY` variable. `load_document` also handles the XML boilerplate stripping above.
+   * `.md` / `.markdown` / `.xml` / `.nxml` / `.pdf` / `.txt` — read the file directly. For JATS XML, ignore the `<ref-list>`, `<back>` and `<ack>` sections; they hold no extractable content.
+   * For XML / NXML figures:
+     * Inspect each `<fig>` label, caption, and `<graphic xlink:href>` to identify images relevant to the fields being extracted.
+     * Look for the image locally first. If absent, use available network tools and the article DOI, PMCID, or source page to resolve and retrieve it. `xlink:href` may be a relative path or filename; do not guess image URLs. Retrieve images on demand; temporary local files are sufficient.
+     * Use an available image-viewing tool to actually inspect the image, together with the body text, caption, legend, and panel labels. Reading a URL or caption alone does not count as viewing the image.
+     * Associate image-derived values with the specific experimental group and retain the figure and panel in the source location, such as `Figure 2B`. Extract explicitly labeled numbers only; do not estimate values from bar heights or curves. SD / SEM must be supported by the text, caption, or legend, not inferred from the appearance of error bars.
+     * If image viewing is unavailable, or an image cannot be retrieved or read, record the reason using the existing exception rules and continue extracting readable content.
+   * For PDF documents, if extracted text loses table alignment, figure content, or sequence characters, render and inspect the relevant pages using an available image-viewing tool before declaring the content unreadable. Read table values together with their row headers, column headers, units, and footnotes. Verify suspected OCR errors against the page image; do not repair them from biological expectations. If the page remains unreadable or cannot be viewed, leave only the affected fields null and log the exception.
    * Any other extension is unsupported — stop and say so.
 3. **Extract** every source-supported record, following the rules below.
-4. **Write** `data/normalised/<source-stem>.jsonl` in the row format below, and append any exceptions to `data/normalised/<source-stem>.errors.jsonl`.
+4. **Write** `data/normalised/<source-stem>.jsonl` in the row format below, and append any exceptions to `data/normalised/<source-stem>.errors.jsonl`. If there are no exceptions, do not create the error file.
 
 ---
 
@@ -146,7 +150,19 @@ For every field:
 * Do not rename schema fields.
 * Do not invent values merely to make a record complete.
 
-If information in the document does not map to any schema field, ignore it.
+Match the reported quantity to the field's meaning before checking its numeric format or readability. Similar names, shared units, or correlated biological effects do not make two measurements equivalent.
+
+In particular:
+
+* EC50 is not Kd.
+* Viral titer is not transduction efficiency.
+* CAR-positive or CD8-positive percentages are not CD3-positive percentages.
+* CD107a and cytokine measurements are not target-cell killing percentages.
+* Clinical Cmax and AUC are not manufacturing VCN in copies/cell.
+
+If information in the document does not map to any schema field, ignore it without logging an exception against a different field.
+
+Apply the same semantic check to descriptive fields: an assessment on day 10 alone does not establish total culture duration. An explicitly identified antigen domain may support `epitope.identified_area` without residue-level mapping, but competition groups alone do not identify a concrete epitope.
 
 Some features have examples, all of them are synthetic. They only exist for hints of the output
 structure but not any real information. You do not have to 100 % follow the examples. 
@@ -169,7 +185,7 @@ In particular, never:
 * create, rename, or repurpose schema fields.
 * add explainatory brackets.
 * quote or summarise a long sentence as the string value.
-* refer other results, you must do this job on your own, do not rely on other results to fill in any information.
+* refer other results. You must do this job on your own, do not rely on any other results completed by either other models or your previous results to fill in any information.
 
 ### 1. Extract only supported information
 
@@ -188,6 +204,8 @@ For example:
 may support a qualitative experimental outcome if an appropriate schema field exists.
 
 It does **not** support inventing a numerical killing rate.
+
+Do not create entity records for names that appear only in background sections, prior-art surveys, general technical discussion, citations, or lists of examples. A name, alias, target, or other isolated descriptive detail does not by itself make the item an extractable entity. Create a record only when the supplied document treats the item as a subject or component of its own claims, embodiments, experiments, or results, or as an actually tested control, and supports meaningful entity data, evidence, or a relationship beyond the mere mention. Otherwise ignore it; do not emit a mostly `null` placeholder row or an exception.
 
 ---
 
@@ -240,6 +258,15 @@ Normalization and entity deduplication are separate downstream steps.
 
 ### 6. Numerical values
 
+For fields declared `measurement`, follow the structure and `kind` definitions at the top of `docs/Schema/Evidence.yaml`:
+
+* Always return an object with `kind`, `value`, `lower`, `upper`, `error`, and `raw`, even for a single number. Write unused numerical members as `null`; write an unreported nullable measurement as `null`.
+* Use only the full, readable `kind` names documented there. Preserve the original quantitative text, unit, and statistical meaning in `raw`.
+* Distinguish mean ± standard deviation from mean ± standard error using the source text or captions. If the meaning of ± is not stated, use `plus_minus_unspecified`; never guess.
+* Keep ranges and comparison bounds as reported. Do not turn mean ± SD into a range or assign a multi-entity summary range to an individual entity.
+* Convert all populated numerical members to the field's unit only when the conversion is deterministic; error magnitudes use the scale factor without any unit offset. When a target unit is specified but the source unit cannot be established, write `null` and log the exception.
+* `number` and `integer` fields keep their scalar types, including sequence lengths, residue positions, and fixed scores. A valid range or ± expression in a `measurement` field is not a type exception.
+
 Extract the numerical value and unit when reported.
 
 Do not perform speculative unit conversion.
@@ -260,23 +287,29 @@ into:
 
 ### 7. Sequences
 
-Copy biological sequences exactly as reported.
+Copy biological sequences exactly as reported. Whitespace used only to group or wrap sequence characters is formatting, not sequence content: remove spaces, tabs, and line breaks, and concatenate the blocks when their reading order is unambiguous. Do not set a sequence to `null` or log an exception solely because it is split into fixed-width blocks such as groups of 10 residues.
+
+After removing layout whitespace, preserve every source-supported residue character. If any character remains unreadable, appears OCR-corrupted, or the block order is ambiguous, do not silently correct or infer it; set the field to `null` and log the specific exception.
 
 Do not reconstruct missing sequence regions.
 
 Do not infer VH, VL, linker, CAR modules, or other sequence components unless their boundaries are explicitly reported or unambiguously defined by the source.
 
-Sequence normalization will be handled downstream.
+Before comparing a sequence listing with a construct description, determine what each represents: the full expression construct, the CAR protein, a CAR fragment, or an individual module. Treat a component as missing or contradictory only when both passages explicitly describe the same sequence scope. Do not force components outside the schema's module categories into another category.
+
+All other sequence normalization will be handled downstream.
 
 ---
 
 ### 8. Conflicting evidence
 
-Different experiments or sources may report conflicting results.
+Distinguish conflicting values from uncertain identity or attribution.
 
-Do not choose which result is correct.
+When the entity and measurement context are clear, preserve conflicting reported values in separate evidence rows with their exact source locations. Do not choose a preferred value, silently correct the source, or present repeated descriptions of the same experiment as independent experiments.
 
-Extract each supported result independently and preserve its provenance.
+When identity or attribution is uncertain, do not assign the disputed values to an entity merely because a label is repeated. Preserve the unambiguous data, leave the affected fields null, and omit a candidate record only when its identity cannot be established.
+
+Log the conflict and make the action match what was actually done.
 
 If the source explicitly presents a result as contrary evidence, record this using the corresponding schema field.
 
@@ -369,7 +402,7 @@ Only for a Binder + CAR + manufacturing process the source ties to the same expe
 Every evidence row carries all three foreign-key columns `binder.binder_id`, `car.car_id` and `manufacturing.manufacturing_id`. For a measurement on a single entity, only that entity's column is filled and the other two are `null`; write only that owner's dotted fields:
 
 ```json
-{"table": "evidence", "data": {"record_id": "<uuid4>", "source_type": "literature", "source_id": "PMC1234567", "evidence_level": "in_vitro", "contrary_evidence": false, "binder.kd": 2.4, "binder.binder_id": "<binder uuid>", "car.car_id": null, "manufacturing.manufacturing_id": null}}
+{"table": "evidence", "data": {"record_id": "<uuid4>", "source_type": "literature", "source_id": "PMC1234567", "evidence_level": "in_vitro", "contrary_evidence": false, "binder.kd": {"kind": "single_value", "value": 2.4, "lower": null, "upper": null, "error": null, "raw": "2.4 nM"}, "binder.binder_id": "<binder uuid>", "car.car_id": null, "manufacturing.manufacturing_id": null}}
 ```
 
 For a result measured on the combination as a whole, all three foreign keys are filled and no dotted measurement fields are written — only the shared fields:
@@ -381,6 +414,8 @@ For a result measured on the combination as a whole, all three foreign keys are 
 `source_id` and `evidence_level` are required. An evidence row missing either one is dropped — log it and move on.
 
 ### Field types
+
+* `measurement` is a single object as defined at the top of `Evidence.yaml`, stored in JSONB.
 
 * A field declared `json` with an `item_schema` is a list of objects with those fields (e.g. a CAR's `modules`).
 * A field declared `json` with an `item_type` is a list of scalars of that type.
@@ -397,7 +432,7 @@ Handle exceptions at the smallest safe scope:
 1. **Field-level:** If one field is unreadable, ambiguous, outside `allowed_values`, type-invalid, or unsupported, write `null` for that field only and continue extracting the record.
 2. **Record-level:** If a record cannot satisfy a required identity, provenance, or relationship constraint without fabrication, omit only that record and continue with the others.
 3. **Document-level:** If the document is empty, unreadable, or cannot be processed reliably as a whole, write an empty `.jsonl` file. Do not fabricate a placeholder record.
-4. **Conflicting evidence:** A supported conflict is not an extraction failure. Write each result as its own row with its own provenance.
+4. **Conflicting evidence:** Follow section 8 to distinguish conflicting values from uncertain identity or attribution; preserve attributable results and log the conflict.
 
 ### Exception log
 
@@ -428,7 +463,7 @@ Use `null` for properties that do not apply. `reason` must use the most specific
 * `unsupported_relationship`
 * `output_validation_error`
 
-`action` must state the actual handling decision: `set_missing`, `omit_record`, or `return_empty_result`.
+`action` must state the actual handling decision: `set_missing`, `omit_record`, `return_empty_result`, or `preserve_conflicting_values` (when conflicting values are retained in separate evidence rows).
 
 The exception log is a sidecar file. Never add exception-log fields to the extracted rows.
 

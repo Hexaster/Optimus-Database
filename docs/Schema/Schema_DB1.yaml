@@ -38,3 +38,4 @@ db1:
         - clinical_phase_1
         - clinical_phase_2
         - clinical_phase_3
+        - unspecified # 未指定

@@ -1,3 +1,36 @@
+# measurement：保留定量结果的原始表达形式，Python 类型为 Measurement。
+# 仅用于可能报告单值、范围、界限或 ± 的结果及工艺参数。
+# 序列长度、残基位置、确定的序列一致性及固定评分仍用原有类型。
+#
+# 结构：
+#   kind: 数值形式，见下方对应关系
+#   value: 单一数值或中心值；统计含义按字段描述和 raw 保留
+#   lower: 范围下限或大于比较的门槛
+#   upper: 范围上限或小于比较的门槛
+#   error: ± 后的数值，不得为负
+#   raw: 原文，保留来源单位及报告的统计含义
+#
+# kind → 使用字段（其他数值子字段填 null）：
+#   single_value → value
+#   range → lower, upper（lower <= upper）
+#   mean_with_standard_deviation → value, error（平均值 ± 标准差）
+#   mean_with_standard_error → value, error（平均值 ± 标准误）
+#   plus_minus_unspecified → value, error（原文未说明 ± 的含义）
+#   greater_than / greater_than_or_equal → lower（> / >=）
+#   less_than / less_than_or_equal → upper（< / <=）
+#
+# 未报告的可空 measurement 整项填 null；不以空对象代替。
+# 即使只报告一个数值，也使用 kind: single_value，不直接填数字。
+# 结构化数值使用字段的 unit；单位可变时使用同层 unit。
+# 未定义 unit 的字段从 raw 保留单位，不自行假定单位。
+# 有目标单位但来源单位不明、无法确定性换算时填 null 并记录异常。
+# 换算时同步处理 value、lower、upper、error；error 仅按尺度换算，不加偏移。
+# 不取范围中点，不把 mean ± SD 转成范围，不猜测 ± 是 SD 还是 SEM。
+# 多实体或多实验的汇总范围不能分配给其中某一个实体或实验。
+# 示例（Kd，目标单位 nM；仅示意结构）：
+#   {kind: range, value: null, lower: 2, upper: 5, error: null, raw: '2–5 nM'}
+#   {kind: mean_with_standard_deviation, value: 12, lower: null, upper: null, error: 2, raw: '12 ± 2 nM (mean ± SD)'}
+
 evidence:
   table: evidence
   description: 合并 record、binder_evidence、car_evidence 和 manufacturing_evidence 的统一证据表。
@@ -136,25 +169,25 @@ evidence:
           check: buried_surface_area >= 0
 
     binder.kd:
-      type: number
+      type: measurement
       nullable: true
       description: 平衡解离常数 Kd。
       unit: nM
-      check: kd >= 0
+      check: "对 value、lower、upper 中每个非 null 的 x，要求 x >= 0"
 
     binder.kon:
-      type: number
+      type: measurement
       nullable: true
       description: 结合速率常数 Kon。
       unit: 1/(M*s)
-      check: kon >= 0
+      check: "对 value、lower、upper 中每个非 null 的 x，要求 x >= 0"
 
     binder.koff:
-      type: number
+      type: measurement
       nullable: true
       description: 解离速率常数 Koff。
       unit: 1/s
-      check: koff >= 0
+      check: "对 value、lower、upper 中每个非 null 的 x，要求 x >= 0"
 
     binder.measurement_method:
       type: string
@@ -255,10 +288,10 @@ evidence:
             - weak
             - inconclusive
         measurement_value:
-          type: number
+          type: measurement
           nullable: true
           description: 原始来源报告的交叉反应性定量测量值。
-          unit: %
+          unit: '%'
 
     binder.cross_reactivity_cell:
       type: json
@@ -279,10 +312,10 @@ evidence:
             - weak
             - inconclusive
         measurement_value:
-          type: number
+          type: measurement
           nullable: true
           description: 原始来源报告的交叉反应性定量测量值。
-          unit: %
+          unit: '%'
 
     binder.species_reactivity:
       type: json
@@ -304,16 +337,16 @@ evidence:
             - inconclusive
 
     binder.tm:
-      type: number
+      type: measurement
       nullable: true
       description: 热稳定性指标 Tm。
       unit: °C
 
     binder.viscosity:
-      type: number
+      type: measurement
       nullable: true
       description: 黏度
-      check: viscosity >= 0
+      check: "对 value、lower、upper 中每个非 null 的 x，要求 x >= 0"
 
     binder.aggregation_tendency:
       type: json
@@ -326,7 +359,7 @@ evidence:
           nullable: false
           description: 聚集倾向的测量或预测方法，例如 SEC、AggScore 或 SAP。
         value:
-          type: number
+          type: measurement
           nullable: false
           description: 原始来源报告的聚集倾向测量值或预测分数。
         unit:
@@ -335,11 +368,11 @@ evidence:
           description: 测量值对应的单位；无量纲预测分数可为空。
 
     binder.solubility:
-      type: number
+      type: measurement
       nullable: true
       description: 溶解度
       unit: mg/mL
-      check: solubility >= 0
+      check: "对 value、lower、upper 中每个非 null 的 x，要求 x >= 0"
       
     #binder.hydrophobicity:
     #  type: number
@@ -348,11 +381,11 @@ evidence:
 
     # 疏水性
     binder.hic_retention_time:
-      type: number
+      type: measurement
       nullable: true
       description: Binder 在疏水相互作用色谱（HIC）中的保留时间，用于表征其相对疏水行为。
       unit: min
-      check: hic_retention_time >= 0
+      check: "对 value、lower、upper 中每个非 null 的 x，要求 x >= 0"
 
     binder.hydrophobic_patch_area:
       type: number
@@ -378,10 +411,10 @@ evidence:
 
     # 電荷
     binder.isoelectric_point:
-      type: number
+      type: measurement
       nullable: true
       description: Binder 的等电点（pI），即分子净电荷为零时对应的 pH。
-      check: 0 <= isoelectric_point <= 14
+      check: "对 value、lower、upper 中每个非 null 的 x，要求 0 <= x <= 14"
 
     binder.net_charge:
       type: number
@@ -457,7 +490,7 @@ evidence:
     #  example: "Tscm 14 % / Tcm 48 % / Tem 31 % / Teff 7 %"
 
     car.persistence:
-      type: number
+      type: measurement
       nullable: true
       unit: day
       description: CAR-T 细胞的持久性(中位可检出时长)
@@ -530,32 +563,32 @@ evidence:
       index: true
 
     manufacturing.cell_viability:
-      type: number
+      type: measurement
       nullable: true
       description: 细胞活率。
       unit: '%'
-      check: 0 <= cell_viability <= 100
+      check: "对 value、lower、upper 中每个非 null 的 x，要求 0 <= x <= 100"
 
     manufacturing.transduction_efficiency:
-      type: number
+      type: measurement
       nullable: true
       description: 转导效率。
       unit: '%'
-      check: 0 <= transduction_efficiency <= 100
+      check: "对 value、lower、upper 中每个非 null 的 x，要求 0 <= x <= 100"
 
     manufacturing.vcn:
-      type: number
+      type: measurement
       nullable: true
       description: 载体拷贝数（VCN）。
       unit: copies/cell
-      check: vcn >= 0
+      check: "对 value、lower、upper 中每个非 null 的 x，要求 x >= 0"
 
     manufacturing.cd3_positive_ratio:
-      type: number
+      type: measurement
       nullable: true
       description: CD3+ 细胞比例。
       unit: '%'
-      check: 0 <= cd3_positive_ratio <= 100
+      check: "对 value、lower、upper 中每个非 null 的 x，要求 0 <= x <= 100"
 
     #manufacturing.memory_phenotype:
     #  type: string
@@ -565,17 +598,17 @@ evidence:
 
     #  description: 产品细胞的记忆表型
     manufacturing.tscm_ratio:
-      type: number
-      unit: %
+      type: measurement
+      unit: '%'
     manufacturing.tcm_ratio:
-      type: number
-      unit: %
+      type: measurement
+      unit: '%'
     manufacturing.tem_ratio:
-      type: number
-      unit: %
+      type: measurement
+      unit: '%'
     manufacturing.teff_ratio:
-      type: number
-      unit: %
+      type: measurement
+      unit: '%'
 
     manufacturing.exhaustion_phenotype:
       type: string
@@ -600,16 +633,16 @@ evidence:
       description: 支原体检测结果
 
     manufacturing.endotoxin:
-      type: number
+      type: measurement
       nullable: true
       description: 内毒素检测结果
       unit: EU/mL
 
     manufacturing.killing_activity:
-      type: number
+      type: measurement
       nullable: true
       description: 对靶细胞的特异性杀伤率
-      unit: %
+      unit: '%'
       #example: "Nalm-6 靶细胞，E:T 5:1，24 h 特异杀伤 76 %（实时阻抗法）；放行标准 ≥ 40 %" # To be refined
 
     manufacturing.cytokine_release:
@@ -624,8 +657,8 @@ evidence:
           description: 检测的细胞因子名称。
 
         concentration:
-          type: number
+          type: measurement
           nullable: false
           description: 该细胞因子的测量浓度。
           unit: pg/mL
-          check: concentration >= 0
+          check: "对 value、lower、upper 中每个非 null 的 x，要求 x >= 0"

@@ -1,3 +1,5 @@
+# measurement 的结构、kind 和抽取规则见 Evidence.yaml 顶部。
+
 manufacturing:
   table: manufacturing
   description: 制造工艺核心实体表。每个产品/工艺版本对应一条记录。
@@ -22,7 +24,7 @@ manufacturing:
         - 异体
 
     cd4_cd8_ratio:
-      type: number
+      type: measurement
       nullable: true
       description: 起始 CD4:CD8 比例
 
@@ -71,10 +73,10 @@ manufacturing:
         - 电转
 
     moi:
-      type: number
+      type: measurement
       nullable: true
       description: 感染复数（MOI）。
-      check: moi >= 0
+      check: "对 value、lower、upper 中每个非 null 的 x，要求 x >= 0"
 
     transduction_transfection_conditions:
       type: json
@@ -98,14 +100,14 @@ manufacturing:
           nullable: false
           description: 细胞因子名称
         concentration:
-          type: number
+          type: measurement
           nullable: true
           description: 细胞因子浓度
           unit: ng/mL
-          check: concentration >= 0
+          check: "对 value、lower、upper 中每个非 null 的 x，要求 x >= 0"
 
     culture_duration:
-      type: number
+      type: measurement
       nullable: true
       description: 培养时长
       unit: day
