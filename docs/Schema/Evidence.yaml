@@ -68,10 +68,10 @@ evidence:
       description: 证据等级；内部实验 ＞ 同行评议 ＞ 文献 ＞ 模型预测，後續程序生成，不由模型填寫
       check: evidence_level >= 0 and evidence_level <= 1
 
-    #experimental_conditions:
-    #  type: json
-    #  nullable: true
-    #  description: 产生该证据时的实验条件
+    experimental_conditions:
+      type: json
+      nullable: true
+      description: 产生该证据时不在本schema内的实验条件
     
     applicable_scenario:
       type: string

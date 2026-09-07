@@ -24,30 +24,44 @@ binder:
       nullable: true
       description: scFv 完整氨基酸序列
 
-    vh_sequence:
-      type: string
+    heavy_chain:
+      type: json
+      shape: object
       nullable: true
-      description: VH 氨基酸序列
+      description: 原文提供的重链序列及其范围；完整保留，不自行裁切。
+      item_schema:
+        sequence:
+          type: string
+          nullable: false
+          description: 原文提供的氨基酸序列。
+        scope:
+          type: string
+          nullable: true
+          allowed_values: [full_chain, variable_region, partial]
+          default: variable_region
+          description: 序列范围，省略时默认为 variable_region；完整链标记 full_chain，其他局部片段标记 partial，无法判断时显式填 null，不单凭长度推断。
 
-    vl_sequence:
-      type: string
+    light_chain:
+      type: json
+      shape: object
       nullable: true
-      description: VL 氨基酸序列
+      description: 原文提供的轻链序列及其范围；完整保留，不自行裁切。
+      item_schema:
+        sequence:
+          type: string
+          nullable: false
+          description: 原文提供的氨基酸序列。
+        scope:
+          type: string
+          nullable: true
+          allowed_values: [full_chain, variable_region, partial]
+          default: variable_region
+          description: 序列范围，省略时默认为 variable_region；完整链标记 full_chain，其他局部片段标记 partial，无法判断时显式填 null，不单凭长度推断。
 
     linker:
       type: string
       nullable: true
       description: 连接 VH 与 VL 的 linker 序列
-
-    numbering_scheme:
-      type: string
-      nullable: true
-      description: 抗体序列编号体系
-      allowed_values:
-        - IMGT
-        - Kabat
-        - Chothia
-        - AHo
 
     fr_cdr_regions:
       type: json
@@ -55,9 +69,18 @@ binder:
       nullable: true
       description: FR/CDR 区域及其位置或序列信息
       item_schema:
+        numbering_scheme:
+          type: string
+          nullable: false
+          description: 抗体序列编号体系
+          allowed_values:
+            - IMGT
+            - Kabat
+            - Chothia
+            - AHo
         chain:
           type: string
-          allowed_values: [VH, VL]
+          allowed_values: [heavy, light]
           nullable: false
         region:
           type: string
@@ -69,9 +92,11 @@ binder:
         start:
           type: integer
           nullable: true
+          description: 相对于对应 heavy_chain.sequence 或 light_chain.sequence 的起始位置，1-based、包含端点；不是编号体系的残基标签，无法定位时为空。
         end:
           type: integer
           nullable: true
+          description: 相对于同一条已存储序列的结束位置，1-based、包含端点；无法定位时为空。
         
     cdr_length:
       type: string
