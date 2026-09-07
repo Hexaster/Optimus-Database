@@ -35,8 +35,22 @@ Experimental evidence associated with these entities is stored separately from t
      * If image viewing is unavailable, or an image cannot be retrieved or read, record the reason using the existing exception rules and continue extracting readable content.
    * For PDF documents, if extracted text loses table alignment, figure content, or sequence characters, render and inspect the relevant pages using an available image-viewing tool before declaring the content unreadable. Read table values together with their row headers, column headers, units, and footnotes. Verify suspected OCR errors against the page image; do not repair them from biological expectations. If the page remains unreadable or cannot be viewed, leave only the affected fields null and log the exception.
    * Any other extension is unsupported — stop and say so.
-3. **Extract** every source-supported record, following the rules below.
+3. **Extract and cross-check** every source-supported record using the independent extraction workflow below and the rules in this skill.
 4. **Write** `data/normalised/<source-stem>.jsonl` in the row format below, and append any exceptions to `data/normalised/<source-stem>.errors.jsonl`. If there are no exceptions, do not create the error file.
+
+### Independent extraction and cross-check
+
+The main agent coordinates this workflow. Subagents perform only their assigned extraction; they must not spawn further subagents or write the final output files.
+
+Respect user-specified subagent models. When model selection is supported and the user has not specified a model, prefer an available lower-cost model capable of full-document extraction, including the required context length, image understanding, and tool use. Apply the choice through actual tool parameters or agent configuration, not merely the task description. If model selection is unavailable, use the inherited model without claiming a different model was used.
+
+1. **Independent drafts.** Start two subagents, each tasked with extracting the entire supplied document. Give both the source path, this skill, the schema paths, and separate temporary output locations. Each must read the full skill, all schema files, and the document. Neither may see the other draft or previous extraction results before submitting its own draft.
+2. **Source support.** Each subagent returns candidate rows and exceptions, with supporting passages and source locations for populated values and relationships, including page, table, figure, or panel identifiers where available. Keep review material separately from the candidate JSONL; do not add fields to the schema.
+3. **Compare.** After both drafts are complete, the main agent aligns records by source-supported entity identity, experimental group, and measurement conditions, not row order or generated UUIDs. Compare values, attribution, missing records, and cases where only one draft supplies a value.
+4. **Resolve from the source.** Re-read the relevant text, tables, or images to resolve differences. Another agent's answer, agreement, or majority vote is not evidence. Also spot-check agreeing results against the source, especially numerical values and entity relationships. Apply the existing missing-information and conflicting-evidence rules when the source remains ambiguous or contradictory; a disagreement between drafts alone is not a conflict in the source.
+5. **Final output.** Only the main agent writes the final JSONL and exception sidecar. Reconcile identifiers and references across accepted records, and log exceptions according to the final decisions rather than copying both draft logs. Follow the existing output format and completion checks.
+
+If subagents are unavailable or two independent drafts cannot be completed, finish using the single-agent workflow and disclose the limitation in the final response. State whether the cross-check was completed; do not claim it occurred when it did not. Keep this execution status out of the extracted rows and source-exception sidecar.
 
 ---
 
@@ -185,7 +199,7 @@ In particular, never:
 * create, rename, or repurpose schema fields.
 * add explainatory brackets.
 * quote or summarise a long sentence as the string value.
-* refer other results. You must do this job on your own, do not rely on any other results completed by either other models or your previous results to fill in any information.
+* use previous extraction results to fill in information. Independent drafts must be produced without consulting other results; the main agent may compare the current drafts only through the cross-check workflow above and must ground final decisions in the source.
 
 ### 1. Extract only supported information
 
@@ -260,18 +274,19 @@ Normalization and entity deduplication are separate downstream steps.
 
 For fields declared `measurement`, follow the structure and `kind` definitions at the top of `docs/Schema/Evidence.yaml`:
 
-* Always return an object with `kind`, `value`, `lower`, `upper`, `error`, and `raw`, even for a single number. Write unused numerical members as `null`; write an unreported nullable measurement as `null`.
+* Always return an object with `kind`, `value`, `lower`, `upper`, `error`, `unit`, and `raw`, even for a single number. Write unused numerical members as `null`; write an unreported nullable measurement as `null`.
 * Use only the full, readable `kind` names documented there. Preserve the original quantitative text, unit, and statistical meaning in `raw`.
 * Distinguish mean ± standard deviation from mean ± standard error using the source text or captions. If the meaning of ± is not stated, use `plus_minus_unspecified`; never guess.
 * Keep ranges and comparison bounds as reported. Do not turn mean ± SD into a range or assign a multi-entity summary range to an individual entity.
-* Convert all populated numerical members to the field's unit only when the conversion is deterministic; error magnitudes use the scale factor without any unit offset. When a target unit is specified but the source unit cannot be established, write `null` and log the exception.
+* Extract numerical members and `unit` as reported; do not convert them yourself. `preferred_unit` is a normalization preference, not an allowed-unit restriction. If the source omits the unit, retain the number with `unit: null`; never infer the unit from the preference. An unconvertible unit is not a `schema_mismatch` and does not make the measurement missing.
+* Keep the measurement's unit inside the measurement object, not in a sibling field. Preserve denominators and methods in experimental conditions; shared units do not make different indicators comparable.
 * `number` and `integer` fields keep their scalar types, including sequence lengths, residue positions, and fixed scores. A valid range or ± expression in a `measurement` field is not a type exception.
 
 Extract the numerical value and unit when reported.
 
 Do not perform speculative unit conversion.
 
-If the schema specifies a canonical unit and the conversion is deterministic, conversion may be performed only when the original value and unit are preserved or otherwise traceable.
+For measurements, run the normalization command below after writing the JSONL. It applies supported fixed conversions to all numerical members, scales errors without offsets, and leaves `raw` unchanged. Unsupported conversions retain the source values and units.
 
 Ranges must remain ranges unless the schema explicitly requires another representation.
 
@@ -369,6 +384,14 @@ Write `data/normalised/<source-stem>.jsonl`: one JSON object per line, UTF-8, **
 
 You assign the identifiers. Every `*_id` and `record_id` is a UUID4 string you get from the uuid package, the package is under the fosun conda environment.
 
+After writing the JSONL, normalize its measurement units using the repository's Python environment (replace the path with the actual output file, including any output-directory override):
+
+```bash
+PYTHONPATH=src /home/zzz010122/anaconda3/envs/fosun/bin/python -m cart_db.measurements data/normalised/<source-stem>.jsonl
+```
+
+This updates the file in place. Do not rewrite the normalized values afterward. Missing or unsupported units are retained; they do not require an exception.
+
 ### Row order
 
 Rows must appear in this order, because a row may only reference an identifier that already appeared above it:
@@ -402,7 +425,7 @@ Only for a Binder + CAR + manufacturing process the source ties to the same expe
 Every evidence row carries all three foreign-key columns `binder.binder_id`, `car.car_id` and `manufacturing.manufacturing_id`. For a measurement on a single entity, only that entity's column is filled and the other two are `null`; write only that owner's dotted fields:
 
 ```json
-{"table": "evidence", "data": {"record_id": "<uuid4>", "source_type": "literature", "source_id": "PMC1234567", "evidence_level": "in_vitro", "contrary_evidence": false, "binder.kd": {"kind": "single_value", "value": 2.4, "lower": null, "upper": null, "error": null, "raw": "2.4 nM"}, "binder.binder_id": "<binder uuid>", "car.car_id": null, "manufacturing.manufacturing_id": null}}
+{"table": "evidence", "data": {"record_id": "<uuid4>", "source_type": "literature", "source_id": "PMC1234567", "evidence_level": "in_vitro", "contrary_evidence": false, "binder.kd": {"kind": "single_value", "value": 2.4, "lower": null, "upper": null, "error": null, "unit": "nM", "raw": "2.4 nM"}, "binder.binder_id": "<binder uuid>", "car.car_id": null, "manufacturing.manufacturing_id": null}}
 ```
 
 For a result measured on the combination as a whole, all three foreign keys are filled and no dotted measurement fields are written — only the shared fields:

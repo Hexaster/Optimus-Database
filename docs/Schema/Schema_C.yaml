@@ -103,14 +103,14 @@ manufacturing:
           type: measurement
           nullable: true
           description: 细胞因子浓度
-          unit: ng/mL
+          preferred_unit: ng/mL
           check: "对 value、lower、upper 中每个非 null 的 x，要求 x >= 0"
 
     culture_duration:
       type: measurement
       nullable: true
       description: 培养时长
-      unit: day
+      preferred_unit: day
 
     cryopreservation_conditions:
       type: json

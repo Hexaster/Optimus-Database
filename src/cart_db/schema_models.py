@@ -34,6 +34,23 @@ _SCALARS: dict[str, type] = {
 }
 
 
+class Measurement(BaseModel):
+    """定量结果；kind 对应的字段和抽取规则见 Evidence.yaml 顶部。"""
+
+    kind: Literal[
+        "single_value", "range", "mean_with_standard_deviation",
+        "mean_with_standard_error", "plus_minus_unspecified",
+        "greater_than", "greater_than_or_equal",
+        "less_than", "less_than_or_equal",
+    ]
+    value: float | None = None
+    lower: float | None = None
+    upper: float | None = None
+    error: float | None = None
+    unit: str | None = None
+    raw: str
+
+
 @dataclass(frozen=True)
 class EntitySpec:
     """一张实体表，以及挂在它下面的证据模型。"""
@@ -49,6 +66,7 @@ class EntitySpec:
 class ExtractionSchema:
     """构建好的一整套模型，外加 flatten() 需要的元信息。"""
 
+    tables: dict[str, dict]
     extraction: type[BaseModel]
     entities: tuple[EntitySpec, ...]
     shared_evidence_fields: tuple[str, ...]
@@ -78,6 +96,9 @@ def _annotation(spec: dict, *, nested_name: str) -> Any:
     """把一条 YAML 字段定义翻译成 Python 类型标注。"""
     declared = spec.get("type")
 
+    if declared == "measurement":
+        return Measurement | None if spec.get("nullable", True) else Measurement
+
     if declared == "json":
         if "item_schema" in spec:
             return list[_build_model(nested_name, spec["item_schema"])]
@@ -98,11 +119,12 @@ def _annotation(spec: dict, *, nested_name: str) -> Any:
 def _build_model(name: str, fields: dict, *, skip_keys: bool = False) -> type[BaseModel]:
     """按 YAML 字段定义造一个 Pydantic 模型。
 
-    字段一律非 Optional，靠 Field(default=None) 给默认值：`X | None` 的
+    普通字段非 Optional，靠 Field(default=None) 给默认值：`X | None` 的
     anyOf 联合是压垮强制格式 grammar 的元凶（见阻塞报告），去掉 `| None`
     换成普通默认值不影响约束 —— llm._strict() 本就会给没有 required 的
     对象补上「全部字段必填」。列表字段（json 的 item_schema/item_type 分支）
     用 default_factory=list，其余标量/枚举字段用 default=None。
+    measurement 按 nullable 接受显式 null，其未使用的数值子字段也可为空。
     """
     definitions: dict[str, tuple] = {}
     for field_name, spec in fields.items():
@@ -111,6 +133,8 @@ def _build_model(name: str, fields: dict, *, skip_keys: bool = False) -> type[Ba
         if skip_keys and spec.get("key") in {"primary", "foreign"}:
             continue
         annotation = _annotation(spec, nested_name=f"{name}{_camel(field_name)}")
+        if field_name == "unit" and spec.get("nullable"):
+            annotation = annotation | None
         if get_origin(annotation) is list:
             definitions[field_name] = (annotation, Field(default_factory=list))
         else:
@@ -216,6 +240,7 @@ def _load_schema_cached(schema_dir: Path) -> ExtractionSchema:
     )
 
     return ExtractionSchema(
+        tables=tables,
         extraction=create_model("Extraction", **root_fields),
         entities=tuple(entities),
         shared_evidence_fields=tuple(evidence_base.model_fields),

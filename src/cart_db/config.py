@@ -34,6 +34,8 @@ class Settings:
 
     # LLM —— API key 现在可以留空，本地建库不需要它
     anthropic_api_key: str | None = os.getenv("ANTHROPIC_API_KEY") or None
+    openai_api_key: str | None = os.getenv("OPENAI_API_KEY") or None
+    openai_base_url: str | None = os.getenv("OPENAI_BASE_URL") or None
     llm_model: str = os.getenv("CART_LLM_MODEL", "claude-sonnet-5")
     llm_effort: str = os.getenv("CART_LLM_EFFORT", "high")
     llm_daily_cap_cny: float = float(os.getenv("CART_LLM_DAILY_CAP_CNY", "800"))

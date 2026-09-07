@@ -1,22 +1,21 @@
 """从 PDF / XML / Markdown 文档中抽取结构化数据。
 
 与结构化通道（parser/therasabdab.py）的区别只在字段值从哪里来：
-那边靠 docs/Mapping/*.yaml 的列名映射，这边靠模型通读全文。
+那边靠 docs/Mapping/*.yaml 的列名映射，这边靠 Claude Code 通读全文
+（抽取规则见 .claude/skills/extract-cart-data/SKILL.md）。
 两边最后都产出 NormalizedData。
 """
 from __future__ import annotations
 
-import json
 import logging
 import re
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from . import llm
 from .basemodel import NormalizedData
-from .config import cost_cny, settings
-from .schema_models import SCHEMA_DIR, ExtractionSchema, load_schema
+from .measurements import normalize_rows
+from .schema_models import ExtractionSchema, load_schema
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +89,7 @@ def _evidence_data(
     if not (getattr(evidence, "source_id", None) or "").strip():
         logger.warning("证据缺少出处（source_id 为空），丢弃该行：%r", evidence.model_dump())
         return None
-    if not (getattr(evidence, "evidence_level", None) or "").strip():
+    if evidence.evidence_level is None:
         logger.warning("证据缺少证据等级，丢弃该行（出处 %s）", evidence.source_id)
         return None
 
@@ -113,25 +112,6 @@ def _at(ids: list[str], index: int) -> str | None:
     """按序号取实体编号；越界或负数返回 None。"""
     return ids[index] if 0 <= index < len(ids) else None
 
-
-def _index_hint(parts: dict[str, list]) -> str:
-    """把已抽取的 binder/car/manufacturing 列一份编号清单，喂给 combinations 那次调用。
-
-    combinations 那次调用只看得到这份清单，不看得到前三次调用的原始返回，
-    所以它填的 *_index 必须能在这份清单里查到对应的名字。
-    """
-    lines = ["Entities already extracted from this document, with the indices to use:"]
-    for kind in ("binders", "cars", "manufacturings"):
-        items = parts.get(kind, [])
-        if not items:
-            lines.append(f"{kind}: (none)")
-            continue
-        named = ", ".join(
-            f"{i}={getattr(item, 'name', None) or '(unnamed)'}"
-            for i, item in enumerate(items)
-        )
-        lines.append(f"{kind}: {named}")
-    return "\n".join(lines)
 
 
 def flatten(result, schema: ExtractionSchema | None = None) -> list[NormalizedData]:
@@ -203,109 +183,4 @@ def flatten(result, schema: ExtractionSchema | None = None) -> list[NormalizedDa
                 evidence_rows.append(
                     NormalizedData(table=schema.evidence_table, data=row))
 
-    return entity_rows + combination_rows + evidence_rows
-
-
-PROMPT_PATH = Path(__file__).with_name("article_extraction_prompt.txt")
-
-# article_extraction_prompt.txt 讲「抽什么」，这段讲「怎么摆」。
-#
-# 每次调用只问四张表里的一张（binders / cars / manufacturings / combinations），
-# 单表整份塞进一次调用会让强制格式的 grammar 超出接口上限（见阻塞报告）。
-# combinations 那次调用额外收到一份前三次抽取结果的编号清单（_index_hint()），
-# 好让它填的 *_index 有真实对象可指。这段文字本身对每次调用都完全一样，
-# 不会破坏 system_prompt 的缓存前缀。
-OUTPUT_GUIDE = """\
-# Output Structure
-
-Each call returns one JSON object with exactly one list: `binders`, `cars`,
-`manufacturings`, or `combinations`, depending on which one this call asks
-for.
-
-- Nest every experimental result inside the entity it describes, in that
-  entity's `evidence` list. Do not emit identifiers of your own; the pipeline
-  assigns them.
-- A schema field of type `json` that has no declared item structure is
-  written here as a single free-text string, not as key/value pairs. A field
-  with a declared item structure (e.g. a CAR's `modules`) is still a list of
-  objects with those fields.
-- The `combinations` call is made after binders, cars and manufacturings have
-  already been extracted; the prompt for that call lists them with their
-  zero-based indices. A combination refers to its three parts by that
-  position: `binder_index: 0` means the first entry of `binders`. Emit a
-  combination only when the source ties a binder, a CAR backbone and a
-  manufacturing process to the same experimental system or product. A
-  combination whose index does not exist will be discarded.
-- Results measured on the combination as a whole go in that combination's
-  `experiments` list, with the measured values written as free text under
-  `outcomes`.
-- Field names here omit the table prefix used in Evidence.yaml: inside a
-  binder's evidence write `kd`, not `binder.kd`.
-- Use `null` for anything the source does not report. Never guess.
-"""
-
-
-def build_system_prompt() -> str:
-    """抽取规则 + 全部表结构 + 输出格式说明。
-
-    对每篇文档都完全一样，llm.py 会把它标为可缓存内容，
-    第二篇起这部分按输入价的 0.1× 计费。
-    """
-    schema = "\n\n".join(
-        f"# {path.name}\n{path.read_text(encoding='utf-8')}"
-        for path in sorted(SCHEMA_DIR.glob("*.yaml"))
-    )
-    return "\n\n".join([
-        PROMPT_PATH.read_text(encoding="utf-8"),
-        f"# Database Schema\n\n```yaml\n{schema}\n```",
-        OUTPUT_GUIDE,
-    ])
-
-
-def extract_document(
-    path: str | Path,
-    *,
-    out_dir: str | Path | None = None,
-    dry_run: bool = False,
-) -> list[NormalizedData]:
-    """读文件 → 调模型 → 拆平 → 写 data/normalised/<文件名>.jsonl。
-
-    dry_run=True 时只估算 token 与费用，不调模型、不写文件，返回空列表。
-    """
-    path = Path(path)
-    document = load_document(path)
-    system_prompt = build_system_prompt()
-
-    if dry_run:
-        input_tokens = llm.count_tokens(document=document, system_prompt=system_prompt)
-        logger.info(
-            "%s：输入 %d token，预计约 ¥%.2f（输出按 3000 token 估）",
-            path.name, input_tokens, cost_cny(input_tokens, 3000),
-        )
-        return []
-
-    schema = load_schema()
-    parts: dict[str, list] = {}
-    for field_name, request_model in schema.requests:
-        payload = document
-        if field_name == "combinations":
-            payload = f"{document}\n\n{_index_hint(parts)}"
-        answer = llm.extract(
-            schema=request_model,
-            document=payload,
-            system_prompt=system_prompt,
-            purpose=f"article_extraction:{field_name}",
-        )
-        parts[field_name] = getattr(answer, field_name)
-    result = schema.extraction(**parts)
-    rows = flatten(result, schema)
-
-    out_dir = Path(out_dir) if out_dir else settings.data_root / "normalised"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{path.stem}.jsonl"
-    with out_path.open("w", encoding="utf-8") as handle:
-        for row in rows:
-            handle.write(json.dumps(row.model_dump(), ensure_ascii=False) + "\n")
-
-    logger.info("%s → %s（%d 行）", path.name, out_path, len(rows))
-    return rows
+    return normalize_rows(entity_rows + combination_rows + evidence_rows, schema)

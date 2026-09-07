@@ -8,6 +8,7 @@
 #   lower: 范围下限或大于比较的门槛
 #   upper: 范围上限或小于比较的门槛
 #   error: ± 后的数值，不得为负
+#   unit: 这组结构化数值的实际单位；来源未注明或无量纲时填 null
 #   raw: 原文，保留来源单位及报告的统计含义
 #
 # kind → 使用字段（其他数值子字段填 null）：
@@ -21,15 +22,18 @@
 #
 # 未报告的可空 measurement 整项填 null；不以空对象代替。
 # 即使只报告一个数值，也使用 kind: single_value，不直接填数字。
-# 结构化数值使用字段的 unit；单位可变时使用同层 unit。
-# 未定义 unit 的字段从 raw 保留单位，不自行假定单位。
-# 有目标单位但来源单位不明、无法确定性换算时填 null 并记录异常。
-# 换算时同步处理 value、lower、upper、error；error 仅按尺度换算，不加偏移。
+# 抽取时数值与 unit 按来源填写，不自行换算；未知单位不从 preferred_unit 补全。
+# preferred_unit 仅为归一化偏好，不限制可保存的来源单位。
+# 程序仅做已列明的固定倍率或偏移换算；不能换算时保留数值与实际单位，不置空或报 schema_mismatch。
+# 换算时同步处理 value、lower、upper、error；error 仅按尺度换算，不加偏移；raw 不变。
+# 数值检查按实际单位解释；0–100 的百分比上限只适用于 %。
+# 单位相同不代表指标或分母相同；保持字段语义，分母及测量方法保留在实验条件中。
+# 比较或筛选数值前须确认指标、分母及单位一致；无法归一化的记录不参与该次比较。
 # 不取范围中点，不把 mean ± SD 转成范围，不猜测 ± 是 SD 还是 SEM。
 # 多实体或多实验的汇总范围不能分配给其中某一个实体或实验。
-# 示例（Kd，目标单位 nM；仅示意结构）：
-#   {kind: range, value: null, lower: 2, upper: 5, error: null, raw: '2–5 nM'}
-#   {kind: mean_with_standard_deviation, value: 12, lower: null, upper: null, error: 2, raw: '12 ± 2 nM (mean ± SD)'}
+# 示例（Kd，偏好单位 nM；仅示意结构）：
+#   {kind: range, value: null, lower: 2, upper: 5, error: null, unit: nM, raw: '2–5 nM'}
+#   {kind: mean_with_standard_deviation, value: 12, lower: null, upper: null, error: 2, unit: nM, raw: '12 ± 2 nM (mean ± SD)'}
 
 evidence:
   table: evidence
@@ -61,13 +65,13 @@ evidence:
     evidence_level:
       type: number
       nullable: false
-      description: 证据等级；内部实验 ＞ 同行评议 ＞ 文献 ＞ 模型预测
+      description: 证据等级；内部实验 ＞ 同行评议 ＞ 文献 ＞ 模型预测，後續程序生成，不由模型填寫
       check: evidence_level >= 0 and evidence_level <= 1
 
-    experimental_conditions:
-      type: json
-      nullable: true
-      description: 产生该证据时的实验条件。
+    #experimental_conditions:
+    #  type: json
+    #  nullable: true
+    #  description: 产生该证据时的实验条件
     
     applicable_scenario:
       type: string
@@ -172,21 +176,21 @@ evidence:
       type: measurement
       nullable: true
       description: 平衡解离常数 Kd。
-      unit: nM
+      preferred_unit: nM
       check: "对 value、lower、upper 中每个非 null 的 x，要求 x >= 0"
 
     binder.kon:
       type: measurement
       nullable: true
       description: 结合速率常数 Kon。
-      unit: 1/(M*s)
+      preferred_unit: 1/(M*s)
       check: "对 value、lower、upper 中每个非 null 的 x，要求 x >= 0"
 
     binder.koff:
       type: measurement
       nullable: true
       description: 解离速率常数 Koff。
-      unit: 1/s
+      preferred_unit: 1/s
       check: "对 value、lower、upper 中每个非 null 的 x，要求 x >= 0"
 
     binder.measurement_method:
@@ -245,14 +249,8 @@ evidence:
               check: value >= 0
             unit:
               type: string
-              nullable: false
-              description: 浓度单位。分析物浓度数值对应的单位。
-              allowed_values:
-                - M
-                - mM
-                - uM
-                - nM
-                - pM
+              nullable: true
+              description: 分析物浓度数值的实际单位，按来源填写；未注明时为 null。
         flow_rate_ul_min:
           type: number
           nullable: true
@@ -291,7 +289,7 @@ evidence:
           type: measurement
           nullable: true
           description: 原始来源报告的交叉反应性定量测量值。
-          unit: '%'
+          preferred_unit: '%'
 
     binder.cross_reactivity_cell:
       type: json
@@ -315,7 +313,7 @@ evidence:
           type: measurement
           nullable: true
           description: 原始来源报告的交叉反应性定量测量值。
-          unit: '%'
+          preferred_unit: '%'
 
     binder.species_reactivity:
       type: json
@@ -340,7 +338,7 @@ evidence:
       type: measurement
       nullable: true
       description: 热稳定性指标 Tm。
-      unit: °C
+      preferred_unit: °C
 
     binder.viscosity:
       type: measurement
@@ -362,16 +360,12 @@ evidence:
           type: measurement
           nullable: false
           description: 原始来源报告的聚集倾向测量值或预测分数。
-        unit:
-          type: string
-          nullable: true
-          description: 测量值对应的单位；无量纲预测分数可为空。
 
     binder.solubility:
       type: measurement
       nullable: true
       description: 溶解度
-      unit: mg/mL
+      preferred_unit: mg/mL
       check: "对 value、lower、upper 中每个非 null 的 x，要求 x >= 0"
       
     #binder.hydrophobicity:
@@ -384,7 +378,7 @@ evidence:
       type: measurement
       nullable: true
       description: Binder 在疏水相互作用色谱（HIC）中的保留时间，用于表征其相对疏水行为。
-      unit: min
+      preferred_unit: min
       check: "对 value、lower、upper 中每个非 null 的 x，要求 x >= 0"
 
     binder.hydrophobic_patch_area:
@@ -492,7 +486,7 @@ evidence:
     car.persistence:
       type: measurement
       nullable: true
-      unit: day
+      preferred_unit: day
       description: CAR-T 细胞的持久性(中位可检出时长)
       
 
@@ -566,28 +560,28 @@ evidence:
       type: measurement
       nullable: true
       description: 细胞活率。
-      unit: '%'
+      preferred_unit: '%'
       check: "对 value、lower、upper 中每个非 null 的 x，要求 0 <= x <= 100"
 
     manufacturing.transduction_efficiency:
       type: measurement
       nullable: true
       description: 转导效率。
-      unit: '%'
+      preferred_unit: '%'
       check: "对 value、lower、upper 中每个非 null 的 x，要求 0 <= x <= 100"
 
     manufacturing.vcn:
       type: measurement
       nullable: true
       description: 载体拷贝数（VCN）。
-      unit: copies/cell
+      preferred_unit: copies/cell
       check: "对 value、lower、upper 中每个非 null 的 x，要求 x >= 0"
 
     manufacturing.cd3_positive_ratio:
       type: measurement
       nullable: true
       description: CD3+ 细胞比例。
-      unit: '%'
+      preferred_unit: '%'
       check: "对 value、lower、upper 中每个非 null 的 x，要求 0 <= x <= 100"
 
     #manufacturing.memory_phenotype:
@@ -599,16 +593,16 @@ evidence:
     #  description: 产品细胞的记忆表型
     manufacturing.tscm_ratio:
       type: measurement
-      unit: '%'
+      preferred_unit: '%'
     manufacturing.tcm_ratio:
       type: measurement
-      unit: '%'
+      preferred_unit: '%'
     manufacturing.tem_ratio:
       type: measurement
-      unit: '%'
+      preferred_unit: '%'
     manufacturing.teff_ratio:
       type: measurement
-      unit: '%'
+      preferred_unit: '%'
 
     manufacturing.exhaustion_phenotype:
       type: string
@@ -636,13 +630,13 @@ evidence:
       type: measurement
       nullable: true
       description: 内毒素检测结果
-      unit: EU/mL
+      preferred_unit: EU/mL
 
     manufacturing.killing_activity:
       type: measurement
       nullable: true
       description: 对靶细胞的特异性杀伤率
-      unit: '%'
+      preferred_unit: '%'
       #example: "Nalm-6 靶细胞，E:T 5:1，24 h 特异杀伤 76 %（实时阻抗法）；放行标准 ≥ 40 %" # To be refined
 
     manufacturing.cytokine_release:
@@ -660,5 +654,5 @@ evidence:
           type: measurement
           nullable: false
           description: 该细胞因子的测量浓度。
-          unit: pg/mL
+          preferred_unit: pg/mL
           check: "对 value、lower、upper 中每个非 null 的 x，要求 x >= 0"
