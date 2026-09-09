@@ -28,10 +28,67 @@ manufacturing:
       nullable: true
       description: 起始 CD4:CD8 比例
 
+    selection_steps:
+      type: json
+      shape: array
+      nullable: true
+      description: 起始细胞的分离或分选步骤，按原文报告的顺序记录；允许直接分选或分支，不补推未报告的中间步骤。未报告时为 null。
+      item_schema:
+        input:
+          type: string
+          nullable: true
+          description: 本步骤的输入材料或细胞群，如全血、PBMC、T 细胞、CD4+ T 细胞或 CD8+ T 细胞；按原文记录。
+        output:
+          type: string
+          nullable: true
+          description: 本步骤获得的材料或细胞群；CD4+ 与 CD8+ T 细胞若分别分选，则分别记录步骤。
+        method:
+          type: string
+          nullable: true
+          description: 本步骤的分离或分选方法，按原文记录。
+        reagents:
+          type: json
+          shape: array
+          nullable: true
+          description: 本步骤使用的试剂；未报告时为 null，不在顶层 reagents 重复记录。
+          item_schema:
+            reagent_brand:
+              type: string
+              nullable: true
+              description: 试剂品牌或供应商
+            reagent_name:
+              type: string
+              nullable: false
+              description: 原文报告的试剂名称。
+            amount:
+              type: measurement
+              nullable: true
+              description: 试剂用量、浓度或使用比例，保留原文单位；raw 保留加入量或终浓度、细胞数量基准及比例方向。未报告时为空，不依据试剂名称或说明书补填。
+
     starting_cell_quality:
       type: json
+      shape: object
       nullable: true
-      description: 起始细胞质量
+      description: 进入激活或基因导入前的投料细胞质量，按原文记录测量阶段；不混入成品细胞结果、患者前序治疗史或单采前 ALC。CD4:CD8 比例记录在 cd4_cd8_ratio。未报告时为空。
+      item_schema:
+        cell_viability:
+          type: measurement
+          nullable: true
+          description: 该阶段投料细胞的活细胞比率。
+          preferred_unit: '%'
+          check: "对 value、lower、upper 中每个非 null 的 x，要求 0 <= x <= 100"
+        memory_phenotype:
+          type: string
+          nullable: true
+          default: null
+          description: 起始细胞的分化或记忆亚型，按原文保留亚型名称、比例及分母或门控细胞群；合并报告的亚型比例不拆分，不推断为衰老或耗竭。
+          example: "CD8+ T 细胞中，Tn 30%、Tscm 12%、Tcm 40%；或 Tn/Tscm 合计 21%（分母未报告）"
+        measurement_stage:
+          type: string
+          nullable: true
+          default: null
+          description: 上述质量指标对应的测量阶段，按原文记录；未报告时为空，不推断。
+          example: "分选后；或解冻后、激活前"
       
     activation_method:
       type: string
@@ -42,12 +99,20 @@ manufacturing:
       shape: array
       type: json
       nullable: true
-      description: 制造过程中使用的关键试剂
+      description: 制造过程中使用的关键试剂；已记录在 selection_steps 中的试剂不重复记录。无法对应具体分选步骤的分选试剂可在此记录。培养基记录在 culture_system.culture_medium，不在此重复记录。
       item_schema:
+        reagent_brand:
+          type: string
+          nullable: true
+          description: 试剂品牌或供应商
         reagent_name:
           type: string
           nullable: false
           description: 试剂名称
+        amount:
+          type: measurement
+          nullable: true
+          description: 试剂用量、浓度或使用比例，保留原文单位；raw 保留加入量或终浓度、细胞数量基准及比例方向。未报告时为空，不依据试剂名称或说明书补填。
         reagent_type:
           type: string
           nullable: false
@@ -80,18 +145,68 @@ manufacturing:
 
     transduction_transfection_conditions:
       type: json
+      shape: object
       nullable: true
-      description: 转导或转染条件
-      example: "激活后 24 h 转导；RetroNectin 包被板；鱼精蛋白 10 µg/mL；32 ℃ 离心 1000×g 60 min；24 h 后换液" # To be refined
+      description: 转导或转染条件，仅记录原文报告的信息；未报告的子项为空，不将未知视为否。
+      item_schema:
+        time_after_activation:
+          type: measurement
+          nullable: true
+          description: 从激活到开始转导或转染的间隔。
+          preferred_unit: 'h'
+        enhancer_used:
+          type: boolean
+          nullable: true
+          default: null
+          description: 是否使用转导或转染增强剂；名称和用量记录在顶层 reagents。
+        spinoculation:
+          type: boolean
+          nullable: true
+          default: null
+          description: 是否采用离心辅助转导。
+        contact_duration:
+          type: measurement
+          nullable: true
+          description: 细胞与载体或转染体系的接触时长，不以总培养时长替代。
+          preferred_unit: 'h'
 
     culture_system:
-      type: string
+      type: json
+      shape: object
       nullable: true
-      description: 细胞培养体系
-      example: "封闭式自动化生物反应器，摇摆式灌流培养，起始 5×10⁷ 细胞 / 300 mL"
+      description: 细胞扩增的培养体系；仅记录原文报告的信息。
+      item_schema:
+        container:
+          type: string
+          nullable: true
+          default: null
+          description: 培养容器，如培养袋、透气板或生物反应器。
+        culture_mode:
+          type: string
+          nullable: true
+          default: null
+          description: 培养模式，如静态、摇摆或灌流。
+        openness:
+          type: string
+          nullable: true
+          default: null
+          description: 培养体系开放或封闭。
+          allowed_values: [open, closed]
+        automation:
+          type: string
+          nullable: true
+          default: null
+          description: 培养操作的自动化程度。
+          allowed_values: [manual, semi_automated, automated]
+        culture_medium:
+          type: string
+          nullable: true
+          default: null
+          description: 培养基名称、品牌及原文报告的组成或配比；不在顶层 reagents 重复记录。
 
     cytokine_combination:
       type: json
+      shape: array
       nullable: true
       description: 细胞因子组合
       item_schema:
@@ -114,15 +229,56 @@ manufacturing:
 
     cryopreservation_conditions:
       type: json
+      shape: object
       nullable: true
-      description: 冻存条件
-      example: "CryoStor CS10（10 % DMSO），程序降温 −1 ℃/min 至 −80 ℃，转液氮气相 ≤ −150 ℃"
-      
+      description: 冻存条件，仅记录原文报告的信息。
+      item_schema:
+        medium:
+          type: string
+          nullable: true
+          default: null
+          description: 冻存介质名称及原文报告的组成。
+        dmso_concentration:
+          type: measurement
+          nullable: true
+          description: 冻存体系中 DMSO 的浓度，raw 保留体积分数等限定。
+          preferred_unit: '%'
+        cell_density:
+          type: measurement
+          nullable: true
+          description: 冻存时细胞密度，raw 保留计数细胞群。
+          preferred_unit: 'cells/mL'
+        cooling_method:
+          type: string
+          nullable: true
+          default: null
+          description: 降温方式，如程序降温或被动降温。
+        cooling_rate:
+          type: measurement
+          nullable: true
+          description: 降温速率，保留原文正负号及分段条件。
+          preferred_unit: '°C/min'
+
     formulation:
       type: json
+      shape: object
       nullable: true
-      description: 制剂
-      example: "输注袋 50 mL，1×10⁷ CAR⁺ 细胞/mL，目标剂量 2×10⁶ CAR⁺/kg，床旁解冻后直接输注"
+      description: 最终制剂的装量、细胞浓度与剂量；仅记录原文，不自行乘算。
+      item_schema:
+        fill_volume:
+          type: measurement
+          nullable: true
+          description: 每袋或每瓶的装液体积，raw 保留包装基准。
+          preferred_unit: 'mL'
+        cell_concentration:
+          type: measurement
+          nullable: true
+          description: 制剂细胞浓度，raw 保留总细胞、活细胞或 CAR+ 细胞等计数口径。
+          preferred_unit: 'cells/mL'
+        total_dose:
+          type: measurement
+          nullable: true
+          description: 来源报告的总细胞剂量；若仅报告按体重计的剂量，保留 cells/kg 等原单位，不换算为绝对总量；raw 区分目标与实际剂量。
 
     corresponding_car_product:
       type: string

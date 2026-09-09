@@ -11,11 +11,14 @@
     python scripts/run_extraction_agent.py --dir data/raw/xxx   # 换目录
     python scripts/run_extraction_agent.py --file data/raw/a.pdf # 跑单个文件
     python scripts/run_extraction_agent.py --force              # 重跑已有结果的文档
+    python scripts/run_extraction_agent.py --subagent true     # 启用两个子代理独立抽取
+    python scripts/run_extraction_agent.py --workers 3          # 同时处理三份文档
     python scripts/run_extraction_agent.py --dry-run            # 只列出要跑什么
 """
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
 import subprocess
@@ -34,7 +37,9 @@ SUFFIXES = {".pdf", ".xml", ".nxml", ".md", ".markdown"}
 
 PROMPT = """Read {skill_path} completely, then follow that skill to extract structured data from {path}.
 
-Follow the skill exactly except that this run's output directory is {out_dir}.
+Follow the skill with this run's overrides:
+- Output directory: {out_dir}.
+- Subagent mode: {subagent_mode}
 Read docs/Schema/*.yaml first, then the document, then write
 {out_dir}/{stem}.jsonl and, if there are exceptions,
 {out_dir}/{stem}.errors.jsonl.
@@ -187,13 +192,19 @@ def estimated_cost(usage: dict[str, int], input_price: float | None,
 def run_one(path: Path, *, agent: str, out_dir: Path, timeout: int,
     budget: float | None, env: dict[str, str], model: str | None,
     effort: str, input_price: float | None, cached_input_price: float | None,
-    output_price: float | None,
+    output_price: float | None, subagent: bool = False,
 ) -> dict:
     """跑一份文档，返回这次调用的结果摘要。"""
     prompt = PROMPT.format(
         skill=SKILL, skill_path=".claude/skills/extract-cart-data/SKILL.md",
         path=path.as_posix(), stem=path.stem,
         out_dir=out_dir.relative_to(REPO).as_posix(),
+        subagent_mode=(
+            "enabled. Use the skill's two-subagent independent extraction and cross-check workflow."
+            if subagent else
+            "disabled. Do not spawn subagents or launch additional agent processes. "
+            "Extract the full document and cross-check against the source yourself."
+        ),
     )
     run_env = env.copy()
     if agent == "claude":
@@ -323,6 +334,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out-dir", help="结果目录；默认按 agent/model 隔离")
     parser.add_argument("--force", action="store_true", help="已有结果的文档也重跑")
     parser.add_argument("--dry-run", action="store_true", help="只列出要跑什么")
+    parser.add_argument("--subagent", choices=("true", "false"), default="false",
+                        help="是否启用两个子代理独立抽取，默认 false")
     parser.add_argument("--timeout", type=int, default=1800, help="单份超时秒数")
     parser.add_argument("--budget", type=float, default=5.0,
                         help="Claude 单份费用上限（美元），0 表示不限")
@@ -332,7 +345,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="每百万 cached input tokens 美元价")
     parser.add_argument("--output-price", type=float,
                         help="每百万 output tokens 美元价")
+    parser.add_argument("--workers", type=int, default=1,
+                        help="同时处理的文档数，默认 1")
     args = parser.parse_args(argv)
+    if args.workers < 1:
+        parser.error("--workers 必须为正整数")
 
     input_path = (REPO / (args.file or args.dir or "data/sample")).resolve()
     model = args.model or ("opus" if args.agent == "claude" else None)
@@ -359,6 +376,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{input_path} 没有待处理的文档（加 --force 可重跑）")
         return 0
 
+    if args.workers > 1 and len({p.stem for p in pending}) != len(pending):
+        parser.error("并行文档有重复文件名主干，会写入同一输出文件；请先重命名")
+
     budget = args.budget if args.budget > 0 else None
     env = child_env(args.agent)
     if args.agent == "claude" and settings.anthropic_api_key:
@@ -382,6 +402,8 @@ def main(argv: list[str] | None = None) -> int:
                   "--output-price 计算")
 
     print(f"输出：{out_dir.relative_to(REPO)}")
+    print(f"Subagents: {args.subagent}")
+    print(f"Workers: {args.workers}")
     print(f"待处理 {len(pending)} 份：")
     for path in pending:
         print(f"  {path.name}")
@@ -392,31 +414,37 @@ def main(argv: list[str] | None = None) -> int:
     failures, total_cost, unknown_cost, unknown_usage = 0, 0.0, False, False
     total_usage = empty_usage()
 
-    for index, path in enumerate(pending, 1):
-        print(f"\n[{index}/{len(pending)}] {path.name}", flush=True)
-        result = run_one(
-            path, agent=args.agent, out_dir=out_dir, timeout=args.timeout,
-            budget=budget, env=env, model=model, effort=args.effort,
-            input_price=args.input_price,
-            cached_input_price=args.cached_input_price,
-            output_price=args.output_price,
-        )
-        if result["cost"] is None:
-            unknown_cost = True
-        else:
-            total_cost += result["cost"]
-        for key, value in result["usage"].items():
-            total_usage[key] += value
-        unknown_usage = unknown_usage or not result["usage_known"]
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        futures = {
+            pool.submit(
+                run_one, path, agent=args.agent, out_dir=out_dir, timeout=args.timeout,
+                budget=budget, env=env, model=model, effort=args.effort,
+                input_price=args.input_price,
+                cached_input_price=args.cached_input_price,
+                output_price=args.output_price,
+                subagent=args.subagent == "true",
+            ): path for path in pending
+        }
+        for index, future in enumerate(as_completed(futures), 1):
+            path = futures[future]
+            result = future.result()
+            print(f"\n[{index}/{len(pending)}] {path.name}", flush=True)
+            if result["cost"] is None:
+                unknown_cost = True
+            else:
+                total_cost += result["cost"]
+            for key, value in result["usage"].items():
+                total_usage[key] += value
+            unknown_usage = unknown_usage or not result["usage_known"]
 
-        status = "OK " if result["ok"] else "失败"
-        cost_text = f"${result['cost']:.4f}" if result["cost"] is not None else "费用 N/A"
-        print(f"  {status} {result['seconds']:.0f}s  {cost_text}  "
-              f"{usage_text(result['usage'], result['usage_known'])}  "
-              f"{tally(out_dir, path.stem)}")
-        if not result["ok"]:
-            failures += 1
-            print(f"  ↳ {result['reason']}")
+            status = "OK " if result["ok"] else "失败"
+            cost_text = f"${result['cost']:.4f}" if result["cost"] is not None else "费用 N/A"
+            print(f"  {status} {result['seconds']:.0f}s  {cost_text}  "
+                  f"{usage_text(result['usage'], result['usage_known'])}  "
+                  f"{tally(out_dir, path.stem)}")
+            if not result["ok"]:
+                failures += 1
+                print(f"  ↳ {result['reason']}")
 
     total_cost_text = f"${total_cost:.4f}" + (" + 未知费用" if unknown_cost else "")
     print(f"\n完成 {len(pending) - failures}/{len(pending)}，合计 "

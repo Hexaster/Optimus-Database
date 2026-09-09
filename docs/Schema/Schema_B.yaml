@@ -13,6 +13,7 @@ car:
       nullable: true
     modules:
       type: json
+      shape: array
       description: 按 CAR 中实际顺序保存的模块列表；每个模块记录模块类型、来源分子、序列与长度。Binder 识别域作为 A 实体独立管理，不参与 B 实体的 backbone 去重。
       item_schema:
         module_type:

@@ -15,7 +15,8 @@ binder:
 
     aliases:
       shape: array
-      type: string
+      type: json
+      item_type: string
       nullable: true
       description: 該 Binder 的其他名稱
 
@@ -38,8 +39,8 @@ binder:
           type: string
           nullable: true
           allowed_values: [full_chain, variable_region, partial]
-          default: variable_region
-          description: 序列范围，省略时默认为 variable_region；完整链标记 full_chain，其他局部片段标记 partial，无法判断时显式填 null，不单凭长度推断。
+          default: null
+          description: 序列范围，未报告时为 null；完整链标记 full_chain，其他局部片段标记 partial，无法判断时显式填 null，不单凭长度推断。
 
     light_chain:
       type: json
@@ -55,8 +56,8 @@ binder:
           type: string
           nullable: true
           allowed_values: [full_chain, variable_region, partial]
-          default: variable_region
-          description: 序列范围，省略时默认为 variable_region；完整链标记 full_chain，其他局部片段标记 partial，无法判断时显式填 null，不单凭长度推断。
+          default: null
+          description: 序列范围，未报告时为 null；完整链标记 full_chain，其他局部片段标记 partial，无法判断时显式填 null，不单凭长度推断。
 
     linker:
       type: string
@@ -200,7 +201,7 @@ binder:
       description: 人源化程度
       allowed_values:
         - non_human
-        - chimetric
+        - chimeric
         - humanized
         - fully_human
 

@@ -62,16 +62,16 @@ evidence:
       type: string
       nullable: true
       description: 该证据对应的引用信息。
-    evidence_level:
-      type: number
-      nullable: false
-      description: 证据等级；内部实验 ＞ 同行评议 ＞ 文献 ＞ 模型预测，後續程序生成，不由模型填寫
-      check: evidence_level >= 0 and evidence_level <= 1
+    #evidence_level:
+    #  type: number
+    #  nullable: false
+    #  description: 证据等级；内部实验 ＞ 同行评议 ＞ 文献 ＞ 模型预测，後續程序生成，不由模型填寫
+    #  check: evidence_level >= 0 and evidence_level <= 1
 
-    experimental_conditions:
-      type: json
-      nullable: true
-      description: 产生该证据时不在本schema内的实验条件
+    #experimental_conditions:
+    #  type: json
+    #  nullable: true
+    #  description: 产生该证据时不在本schema内的实验条件
     
     applicable_scenario:
       type: string
@@ -81,9 +81,9 @@ evidence:
 
     contrary_evidence:
       type: boolean
-      nullable: false
+      nullable: true
       description: 该记录是否属于与主要结论相反的证据。
-      default: false
+      default: null
     time_of_upload:
       type: date
       description: 源數據上傳時間
@@ -101,6 +101,7 @@ evidence:
 
     binder.epitope:
       type: json
+      shape: object
       nullable: true
       description: 表位
       item_schema:
@@ -123,6 +124,7 @@ evidence:
 
     binder.binding_site:
       type: json
+      shape: object
       nullable: true
       description: Binder 的结合位点信息
       item_schema:
@@ -203,6 +205,7 @@ evidence:
 
     binder.measurement_conditions:
       type: json
+      shape: object
       nullable: true
       description: Kd、Kon、Koff 等测量值对应的具体测量条件
       item_schema:
@@ -239,6 +242,7 @@ evidence:
             - antigen
         concentration_series:
           type: json
+          shape: array
           nullable: true
           description: 分析物浓度系列。动力学或亲和力测量中使用的各分析物浓度。
           item_schema:
@@ -262,13 +266,14 @@ evidence:
           nullable: true
           description: 拟合模型。用于根据实验数据计算结合动力学或亲和力参数的数学拟合模型。
           allowed_values:
-            - 1:1
+            - "1:1"
             - bivalent_analyte
             - heterogeneous_ligand
             - steady_state
 
     binder.cross_reactivity_protein:
       type: json
+      shape: array
       nullable: true
       description: 蛋白水平的交叉反应性信息
       item_schema:
@@ -293,6 +298,7 @@ evidence:
 
     binder.cross_reactivity_cell:
       type: json
+      shape: array
       nullable: true
       description: 细胞水平的交叉反应性信息。
       item_schema:
@@ -317,6 +323,7 @@ evidence:
 
     binder.species_reactivity:
       type: json
+      shape: array
       nullable: true
       description: 对人、鼠、猴等不同物种的反应性信息。
       item_schema:
@@ -469,6 +476,7 @@ evidence:
       allowed_values:
       - glycolytic
       - oxidative
+      - both
 
     car.expansion_capacity:
       type: string
@@ -476,12 +484,42 @@ evidence:
       description: CAR-T 细胞的扩增能力
       example: "体外 day 10 扩增 45 倍；体内峰值 12 000 拷贝/µg gDNA（day 14）" # To be refined
 
-    # 和manufacturing衝突？
-    #car.memory_phenotype:
-    #  type: string
-    #  nullable: true
-    #  description: CAR-T 细胞的记忆表型
-    #  example: "Tscm 14 % / Tcm 48 % / Tem 31 % / Teff 7 %"
+    # CAR 与工艺使用相同的表型字段；仅在证据明确关联相应构型或工艺时记录，不自动互相复制。
+    car.tscm_ratio:
+      type: measurement
+      nullable: true
+      description: 干细胞样记忆 T 细胞（Tscm）的比例。raw 保留原文分母及门控定义，测量时间和方法记录在 experimental_conditions；合并亚型比例不拆分。
+      preferred_unit: '%'
+
+    car.tcm_ratio:
+      type: measurement
+      nullable: true
+      description: 中央记忆 T 细胞（Tcm）的比例。raw 保留原文分母及门控定义，测量时间和方法记录在 experimental_conditions；合并亚型比例不拆分。
+      preferred_unit: '%'
+
+    car.tem_ratio:
+      type: measurement
+      nullable: true
+      description: 效应记忆 T 细胞（Tem）的比例。raw 保留原文分母及门控定义，测量时间和方法记录在 experimental_conditions；合并亚型比例不拆分。
+      preferred_unit: '%'
+
+    car.teff_ratio:
+      type: measurement
+      nullable: true
+      description: 效应 T 细胞（Teff）的比例。raw 保留原文分母及门控定义，测量时间和方法记录在 experimental_conditions；合并亚型比例不拆分。
+      preferred_unit: '%'
+
+    car.exhaustion_phenotype:
+      type: string
+      nullable: true
+      default: null
+      description: 细胞的耗竭表型，保留原文标志物组合、比例及门控细胞群；测量时间和方法记录在 experimental_conditions，不根据单个标志物推断功能状态。
+
+    car.treg_phenotype:
+      type: string
+      nullable: true
+      default: null
+      description: 细胞的Treg 相关表型，保留原文标志物组合、比例及门控细胞群；测量时间和方法记录在 experimental_conditions，不根据单个标志物推断功能状态。
 
     car.persistence:
       type: measurement
@@ -489,13 +527,6 @@ evidence:
       preferred_unit: day
       description: CAR-T 细胞的持久性(中位可检出时长)
       
-
-    car.exhaustion_risk:
-      type: string
-      nullable: true
-      description: CAR-T 细胞的耗竭风险
-      example: "低；day 14 三标志物共阳性 8 %（CD28 对照 34 %）；TOX 低表达" # To be refined
-
 
     car.tonic_signaling_tendency:
       type: string
@@ -529,14 +560,16 @@ evidence:
 
     car.compatible_modules:
       shape: array
-      type: string
+      type: json
+      item_type: string
       nullable: true
       description: 已观察或报告为可兼容的模块组合
       example: ["MOD-0008 (CD8α TM)", "MOD-0031 (CD3ζ)"]
 
     car.incompatible_modules:
       shape: array
-      type: string
+      type: json
+      item_type: string
       nullable: true
       description: 已观察或报告为不兼容的模块组合
 
@@ -566,9 +599,43 @@ evidence:
     manufacturing.transduction_efficiency:
       type: measurement
       nullable: true
-      description: 转导效率。
+      description: 来源报告的转导效率。若该指标明确以 CAR 表达阳性细胞比例定义，记录在 car_positive_ratio，不重复填此字段；其他定义保留原文检测方法和分母。
       preferred_unit: '%'
       check: "对 value、lower、upper 中每个非 null 的 x，要求 0 <= x <= 100"
+
+    manufacturing.car_positive_ratio:
+      type: measurement
+      nullable: true
+      description: 表达 CAR 的阳性细胞比例。raw 保留分母或门控细胞群；测量阶段、检测方法及直接检测或替代标志物记录在 experimental_conditions。不以 CD3+ 比例、VCN 或未说明检测定义的转导效率推算。仅存实测结果，不把放行门槛当作结果。
+      preferred_unit: '%'
+      check: "对 value、lower、upper 中每个非 null 的 x，要求 0 <= x <= 100"
+
+    manufacturing.turbidity:
+      type: json
+      shape: object
+      nullable: true
+      description: 细胞制剂的浑浊程度。记录来源报告的观察或测量，不据此推断污染、无菌性或放行合格；培养液微生物检测结果不混入此处。
+      item_schema:
+        observation:
+          type: string
+          nullable: true
+          default: null
+          description: 原文报告的浑浊或澄清外观，例如轻微浑浊；不从定量值推断。
+        value:
+          type: measurement
+          nullable: true
+          description: 来源报告的定量浊度，保留实际单位；仅有文字观察时为空，不换算为 NTU 或其他方法的读数。
+        method:
+          type: string
+          nullable: true
+          default: null
+          description: 原文检测方法或仪器；若报告光学读数，保留波长等条件。未报告时为空。
+
+    manufacturing.ifn_gamma_release:
+      type: measurement
+      nullable: true
+      description: 体外细胞功能试验的 IFN-γ（干扰素 γ）分泌或释放结果，保留实际指标和单位。experimental_conditions 记录刺激物或靶细胞及抗原状态、对照、E:T 比（适用时）、时长、方法及归一化基准。不得混入患者血清水平或将细胞内 IFN-γ 阳性比例当作释放量；不同刺激条件分别记录证据。仅存实测结果，不把放行门槛当作结果。
+      preferred_unit: pg/mL
 
     manufacturing.vcn:
       type: measurement
@@ -584,47 +651,51 @@ evidence:
       preferred_unit: '%'
       check: "对 value、lower、upper 中每个非 null 的 x，要求 0 <= x <= 100"
 
-    #manufacturing.memory_phenotype:
-    #  type: string
-    #  nullable: true
-    #  description: 产品细胞的记忆表型
-    #  example: "Tscm 12 % / Tcm 44 %" # TBR
-
-    #  description: 产品细胞的记忆表型
     manufacturing.tscm_ratio:
       type: measurement
+      nullable: true
+      description: 干细胞样记忆 T 细胞（Tscm）的比例。raw 保留原文分母及门控定义，测量时间和方法记录在 experimental_conditions；合并亚型比例不拆分。
       preferred_unit: '%'
+
     manufacturing.tcm_ratio:
       type: measurement
+      nullable: true
+      description: 中央记忆 T 细胞（Tcm）的比例。raw 保留原文分母及门控定义，测量时间和方法记录在 experimental_conditions；合并亚型比例不拆分。
       preferred_unit: '%'
+
     manufacturing.tem_ratio:
       type: measurement
+      nullable: true
+      description: 效应记忆 T 细胞（Tem）的比例。raw 保留原文分母及门控定义，测量时间和方法记录在 experimental_conditions；合并亚型比例不拆分。
       preferred_unit: '%'
+
     manufacturing.teff_ratio:
       type: measurement
+      nullable: true
+      description: 效应 T 细胞（Teff）的比例。raw 保留原文分母及门控定义，测量时间和方法记录在 experimental_conditions；合并亚型比例不拆分。
       preferred_unit: '%'
 
     manufacturing.exhaustion_phenotype:
       type: string
       nullable: true
-      description: 产品细胞的耗竭表型
-      example: "PD-1⁺LAG-3⁺ 9 %" # TBR
+      default: null
+      description: 细胞的耗竭表型，保留原文标志物组合、比例及门控细胞群；测量时间和方法记录在 experimental_conditions，不根据单个标志物推断功能状态。
 
     manufacturing.treg_phenotype:
       type: string
       nullable: true
-      description: 产品细胞的 Treg 相关表型。
-      example: "CD4⁺CD25⁺FoxP3⁺ Treg 1.8 %" # TBR
+      default: null
+      description: 细胞的Treg 相关表型，保留原文标志物组合、比例及门控细胞群；测量时间和方法记录在 experimental_conditions，不根据单个标志物推断功能状态。
 
     manufacturing.sterility:
       type: boolean
       nullable: true
-      description: 无菌检测结果
+      description: 无菌检测结果；true 表示检测阳性（检出微生物），false 表示检测阴性，未报告为 null，不以 true 表示合格。
 
     manufacturing.mycoplasma:
       type: boolean
       nullable: true
-      description: 支原体检测结果
+      description: 支原体检测结果；true 表示检测阳性，false 表示检测阴性，未报告为 null。
 
     manufacturing.endotoxin:
       type: measurement
@@ -635,15 +706,41 @@ evidence:
     manufacturing.killing_activity:
       type: measurement
       nullable: true
-      description: 对靶细胞的特异性杀伤率
+      description: 对靶细胞的特异性杀伤率；对应条件记录在 killing_assay_conditions，不把放行门槛当作实测结果。
       preferred_unit: '%'
       #example: "Nalm-6 靶细胞，E:T 5:1，24 h 特异杀伤 76 %（实时阻抗法）；放行标准 ≥ 40 %" # To be refined
+
+    manufacturing.killing_assay_conditions:
+      type: json
+      shape: object
+      nullable: true
+      description: 本条 killing_activity 对应的杀伤实验条件，仅记录原文；不同靶细胞、E:T 比或时长对应的结果分别记录证据，不把多组条件与结果混合。未报告时为空。
+      item_schema:
+        target_cell_line:
+          type: string
+          nullable: true
+          default: null
+          description: 靶细胞系名称；若使用原代靶细胞，保留原文细胞名称，不编造细胞系。
+        effector_target_ratio:
+          type: measurement
+          nullable: true
+          description: 效应细胞数与靶细胞数之比（E:T）。明确报告 5:1 时 value 为 5，unit 为 E/T，raw 保留原文比例及效应细胞计数口径；未报告时为空，不推断。
+        duration:
+          type: measurement
+          nullable: true
+          description: 杀伤检测对应的效应细胞与靶细胞共培养时长，不以制造培养时长替代。
+          preferred_unit: h
+        method:
+          type: string
+          nullable: true
+          default: null
+          description: 原文报告的杀伤检测方法，如流式细胞术、LDH 释放法、荧光素酶法或实时阻抗法。
 
     manufacturing.cytokine_release:
       type: json
       shape: array
       nullable: true
-      description: 释放的细胞因子及其浓度。
+      description: 释放的其他细胞因子及其浓度；体外 IFN-γ 分泌或释放结果统一记录在 ifn_gamma_release，不在此重复。
       item_schema:
         cytokine:
           type: string
