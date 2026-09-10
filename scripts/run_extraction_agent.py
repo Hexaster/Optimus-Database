@@ -43,6 +43,8 @@ PROMPT = """Read {skill_path} completely, then follow that skill to extract stru
 
 Follow the skill with this run's overrides:
 - Output directory: {out_dir}.
+- Other documents may be processed concurrently. Keep all scratch files and writes
+  inside this output directory; do not modify shared code, schemas, or other outputs.
 - Subagent mode: {subagent_mode}
 - Active YAML fields are the output contract; commented fields must not be emitted.
 - IDs are document-local non-empty string labels (existing UUID labels are also accepted).
@@ -103,14 +105,22 @@ def parse_codex(stdout: str) -> dict:
     events = [json.loads(line) for line in stdout.splitlines() if line.strip()]
     usage = empty_usage()
     session = None
-    reason = ""
+    summary = ""
+    error = ""
     cost = None
-    ok = True
+    ok = False
     usage_known = False
     for event in events:
+        if not isinstance(event, dict):
+            raise TypeError("Codex event must be an object")
+        if event.get("type") == "turn.started":
+            ok = False
+            error = ""
         if event.get("type") == "thread.started":
             session = event.get("thread_id")
         if event.get("type") == "turn.completed":
+            ok = True
+            error = ""
             raw = event.get("usage") or {}
             usage_known = bool(raw)
             total_input = raw.get("input_tokens", 0) or 0
@@ -121,16 +131,17 @@ def parse_codex(stdout: str) -> dict:
                 "cache_write": 0,
                 "output": raw.get("output_tokens", 0) or 0,
             }
-            cost = raw.get("cost_usd") or event.get("cost_usd")
+            cost = raw.get("cost_usd", event.get("cost_usd"))
         if event.get("type") in {"error", "turn.failed"}:
             ok = False
-            reason = str(event.get("message") or event.get("error") or event)[:500]
+            error = str(event.get("message") or event.get("error") or event)[:500]
         item = event.get("item") or {}
         if item.get("type") == "agent_message":
-            reason = str(item.get("text", ""))[:500]
+            summary = str(item.get("text", ""))[:500]
+    reason = summary if ok else error or "Codex 未返回 turn.completed，输出流可能不完整"
     return {"ok": ok, "cost": cost, "usage": usage,
             "usage_known": usage_known, "session": session,
-            "turns": None, "reason": reason}
+            "turns": None, "reason": reason, "error": error or None}
 
 
 def parse_kimi(stdout: str) -> dict:
@@ -203,6 +214,7 @@ def _run_agent(path: Path, *, agent: str, out_dir: Path, timeout: int,
     effort: str, input_price: float | None, cached_input_price: float | None,
     output_price: float | None, subagent: bool = False,
     correction: str = "",
+    diagnostics_dir: Path | None = None,
 ) -> dict:
     """跑一份文档，返回这次调用的结果摘要。"""
     prompt = PROMPT.format(
@@ -231,13 +243,17 @@ def _run_agent(path: Path, *, agent: str, out_dir: Path, timeout: int,
     elif agent == "codex":
         command = ["codex", "exec", prompt, "--json", "--ephemeral",
                    "--approve-for-me", "-C", str(REPO)]
-        if settings.openai_base_url:
-            base_url = json.dumps(settings.openai_base_url.rstrip("/"))
+        command += ["-c", f"model_reasoning_effort={json.dumps(effort)}"]
+        if settings.openai_base_url or settings.openai_api_key:
+            base_url = json.dumps(
+                (settings.openai_base_url or "https://api.openai.com/v1").rstrip("/")
+            )
             command += [
                 "-c", 'model_provider="openai_compatible"',
                 "-c", 'model_providers.openai_compatible.name="OpenAI compatible"',
                 "-c", f"model_providers.openai_compatible.base_url={base_url}",
                 "-c", 'model_providers.openai_compatible.env_key="OPENAI_API_KEY"',
+                "-c", 'model_providers.openai_compatible.requires_openai_auth=false',
                 "-c", 'model_providers.openai_compatible.wire_api="responses"',
             ]
         if model:
@@ -263,12 +279,17 @@ def _run_agent(path: Path, *, agent: str, out_dir: Path, timeout: int,
         return {"ok": False, "reason": f"找不到 {command[0]} CLI",
                 "seconds": time.monotonic() - started, "cost": None,
                 "usage": empty_usage(), "usage_known": False}
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
+        if diagnostics_dir is not None:
+            save_diagnostics(diagnostics_dir, env, exc.stdout, exc.stderr, None)
         return {"ok": False, "reason": f"超时（{timeout}s）",
                 "seconds": time.monotonic() - started, "cost": None,
                 "usage": empty_usage(), "usage_known": False}
 
     seconds = time.monotonic() - started
+    if diagnostics_dir is not None:
+        save_diagnostics(diagnostics_dir, env, completed.stdout,
+                         completed.stderr, completed.returncode)
     try:
         if agent == "claude":
             result = parse_claude(completed.stdout)
@@ -286,12 +307,31 @@ def _run_agent(path: Path, *, agent: str, out_dir: Path, timeout: int,
 
     result["seconds"] = seconds
     if completed.returncode != 0:
+        detail = result.get("error") or completed.stderr.strip() or (
+            result["reason"] if not result["ok"] else "未提供 stderr")
         result["ok"] = False
-        result["reason"] = (result["reason"] or completed.stderr.strip())[:500]
+        result["reason"] = f"CLI 退出码 {completed.returncode}：{detail}"[:500]
     if result["cost"] is None and result["usage_known"]:
         result["cost"] = estimated_cost(
             result["usage"], input_price, cached_input_price, output_price)
     return result
+
+
+def save_diagnostics(directory, env, stdout, stderr, returncode):
+    """Keep per-attempt output in the private draft directory, without env secrets."""
+    def redact(value):
+        if isinstance(value, bytes):
+            value = value.decode("utf-8", errors="replace")
+        value = value or ""
+        for key, secret in env.items():
+            if secret and any(word in key.upper() for word in ("KEY", "TOKEN", "SECRET", "PASSWORD")):
+                value = value.replace(secret, "[REDACTED]")
+        return value
+
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", prefix="agent-run-",
+                                     suffix=".json", dir=directory, delete=False) as log:
+        json.dump(dict(returncode=returncode, stdout=redact(stdout), stderr=redact(stderr)),
+                  log, ensure_ascii=False)
 
 
 def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
@@ -318,7 +358,8 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
             break
         attempt_budget = budget - cost if budget is not None else None
         result = _run_agent(path, out_dir=draft_dir, timeout=remaining,
-                            budget=attempt_budget, correction=correction, **kwargs)
+                            budget=attempt_budget, correction=correction,
+                            diagnostics_dir=draft_dir, **kwargs)
         for key in usage:
             usage[key] += result["usage"][key]
         known_usage = known_usage and result["usage_known"]
@@ -330,15 +371,7 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
             break
         try:
             output = prepare_output(candidate)
-            candidate.write_text(output, encoding="utf-8")
-            candidate.replace(out_dir / candidate.name)
-            sidecar = draft_dir / f"{path.stem}.errors.jsonl"
-            final_sidecar = out_dir / sidecar.name
-            if sidecar.exists():
-                sidecar.replace(final_sidecar)
-            else:
-                final_sidecar.unlink(missing_ok=True)
-        except (OutputError, OSError, ValueError) as exc:
+        except (OutputError, ValueError) as exc:
             result.update(ok=False, reason=f"输出校验失败：{exc}")
             if attempt == validation_retries:
                 break
@@ -354,11 +387,40 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
                 + str(exc)
             )
             continue
-        shutil.rmtree(draft_dir)
+        sidecar_changed = False
+        previous_sidecar = draft_dir / "previous.errors.jsonl"
+        final_sidecar = out_dir / f"{path.stem}.errors.jsonl"
+        try:
+            staged = draft_dir / "normalized.jsonl"
+            staged.write_text(output, encoding="utf-8")
+            sidecar = draft_dir / f"{path.stem}.errors.jsonl"
+            if final_sidecar.exists():
+                shutil.copyfile(final_sidecar, previous_sidecar)
+            if sidecar.exists():
+                staged_sidecar = draft_dir / "staged.errors.jsonl"
+                shutil.copyfile(sidecar, staged_sidecar)
+                staged_sidecar.replace(final_sidecar)
+            else:
+                final_sidecar.unlink(missing_ok=True)
+            sidecar_changed = True
+            staged.replace(out_dir / candidate.name)
+        except OSError as exc:
+            result.update(ok=False, reason=f"输出发布失败（未自动调用模型修正）：{exc}")
+            if sidecar_changed:
+                try:
+                    if previous_sidecar.exists():
+                        previous_sidecar.replace(final_sidecar)
+                    else:
+                        final_sidecar.unlink(missing_ok=True)
+                except OSError as rollback_error:
+                    result['reason'] += f"；异常清单恢复失败：{rollback_error}"
+            break
+        shutil.rmtree(draft_dir, ignore_errors=True)
         result["reason"] = "输出已校验并规范化"
         break
     if not result["ok"]:
         result["reason"] += f"；草稿保留于 {draft_dir}"
+        result["draft_dir"] = str(draft_dir)
     result.update(seconds=time.monotonic() - started, usage=usage,
                   usage_known=known_usage, cost=cost if known_cost else None)
     return result
@@ -380,7 +442,7 @@ def tally(out_dir: Path, stem: str) -> str:
     rows = out_dir / f"{stem}.jsonl"
     errors = out_dir / f"{stem}.errors.jsonl"
     if not rows.exists():
-        return "没有写出 jsonl"
+        return "没有 jsonl 文件"
 
     tables: dict[str, int] = {}
     bad = 0
@@ -411,7 +473,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--agent", choices=("claude", "codex", "kimi", "zcode"),
                         default="claude")
     parser.add_argument("--model", help="模型名；不传则使用对应 harness 的默认配置")
-    parser.add_argument("--effort", default="high", help="Claude effort，默认 high")
+    parser.add_argument("--effort", default="high", help="Claude/Codex 推理强度，默认 high")
     parser.add_argument("--out-dir", help="结果目录；默认按 agent/model 隔离")
     parser.add_argument("--force", action="store_true", help="已有结果的文档也重跑")
     parser.add_argument("--dry-run", action="store_true", help="只列出要跑什么")
@@ -461,8 +523,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{input_path} 没有待处理的文档（加 --force 可重跑）")
         return 0
 
-    if args.workers > 1 and len({p.stem for p in pending}) != len(pending):
-        parser.error("并行文档有重复文件名主干，会写入同一输出文件；请先重命名")
+    if len({p.stem for p in pending}) != len(pending):
+        parser.error("文档有重复文件名主干，会写入同一输出文件；请先重命名")
 
     budget = args.budget if args.budget > 0 else None
     env = child_env(args.agent)
@@ -474,6 +536,8 @@ def main(argv: list[str] | None = None) -> int:
     elif args.agent == "codex":
         print(f"后端：Codex，模型 {model or '本机默认'}，API "
               f"{settings.openai_base_url or 'OpenAI 默认端点'}")
+        if budget is not None:
+            print("预算：Codex 单次调用不受 --budget 硬限额控制；该值仅限制自动校验修正")
         if args.input_price is None or args.output_price is None:
             print("费用：后端未返回 cost 时为 N/A；可传 --input-price、"
                   "--cached-input-price、--output-price 计算")
@@ -513,7 +577,11 @@ def main(argv: list[str] | None = None) -> int:
         }
         for index, future in enumerate(as_completed(futures), 1):
             path = futures[future]
-            result = future.result()
+            try:
+                result = future.result()
+            except Exception as exc:
+                result = dict(ok=False, reason=f"任务异常：{type(exc).__name__}: {exc}",
+                              cost=None, usage=empty_usage(), usage_known=False, seconds=0)
             print(f"\n[{index}/{len(pending)}] {path.name}", flush=True)
             if result["cost"] is None:
                 unknown_cost = True
@@ -525,9 +593,13 @@ def main(argv: list[str] | None = None) -> int:
 
             status = "OK " if result["ok"] else "失败"
             cost_text = f"${result['cost']:.4f}" if result["cost"] is not None else "费用 N/A"
+            output_text = (
+                "草稿（未发布）：" + tally(Path(result['draft_dir']), path.stem)
+                if result.get('draft_dir') else tally(out_dir, path.stem)
+            )
             print(f"  {status} {result['seconds']:.0f}s  {cost_text}  "
                   f"{usage_text(result['usage'], result['usage_known'])}  "
-                  f"{tally(out_dir, path.stem)}")
+                  f"{output_text}")
             if not result["ok"]:
                 failures += 1
                 print(f"  ↳ {result['reason']}")

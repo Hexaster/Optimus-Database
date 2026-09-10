@@ -101,7 +101,10 @@ def _annotation(spec: dict, *, nested_name: str) -> Any:
 
     if declared == "json":
         if "item_schema" in spec:
-            return list[_build_model(nested_name, spec["item_schema"])]
+            model = _build_model(nested_name, spec["item_schema"])
+            if spec.get("shape") == "object":
+                return model | None if spec.get("nullable") else model
+            return list[model]
         item_type = _SCALARS.get(spec.get("item_type"))
         if item_type is not None:                  # YAML 可以写 item_type: string
             return list[item_type]
@@ -117,15 +120,7 @@ def _annotation(spec: dict, *, nested_name: str) -> Any:
 
 
 def _build_model(name: str, fields: dict, *, skip_keys: bool = False) -> type[BaseModel]:
-    """按 YAML 字段定义造一个 Pydantic 模型。
-
-    普通字段非 Optional，靠 Field(default=None) 给默认值：`X | None` 的
-    anyOf 联合是压垮强制格式 grammar 的元凶（见阻塞报告），去掉 `| None`
-    换成普通默认值不影响约束 —— llm._strict() 本就会给没有 required 的
-    对象补上「全部字段必填」。列表字段（json 的 item_schema/item_type 分支）
-    用 default_factory=list，其余标量/枚举字段用 default=None。
-    measurement 按 nullable 接受显式 null，其未使用的数值子字段也可为空。
-    """
+    """按 YAML 构建模型；可空字段省略时为 None，必需列表仍允许空列表。"""
     definitions: dict[str, tuple] = {}
     for field_name, spec in fields.items():
         if not isinstance(spec, dict):
@@ -133,19 +128,19 @@ def _build_model(name: str, fields: dict, *, skip_keys: bool = False) -> type[Ba
         if skip_keys and spec.get("key") in {"primary", "foreign"}:
             continue
         annotation = _annotation(spec, nested_name=f"{name}{_camel(field_name)}")
-        if field_name == "unit" and spec.get("nullable"):
+        if spec.get("nullable", True):
             annotation = annotation | None
-        if get_origin(annotation) is list:
+        if get_origin(annotation) is list and not spec.get("nullable", True):
             definitions[field_name] = (annotation, Field(default_factory=list))
         else:
-            definitions[field_name] = (annotation, Field(default=None))
+            definitions[field_name] = (annotation, Field(default=spec.get("default")))
     return create_model(name, **definitions)
 
 
 def _split_evidence(fields: dict) -> tuple[dict, dict[str, dict]]:
     """把证据表拆成「共享字段」和「按前缀分组的字段」。
 
-    car.memory_phenotype 与 manufacturing.memory_phenotype 同名不同表，
+    car.exhaustion_phenotype 与 manufacturing.exhaustion_phenotype 同名不同表，
     分组正是为了让它们落进两个不同的模型。
     """
     shared: dict[str, dict] = {}
@@ -221,6 +216,8 @@ def _load_schema_cached(schema_dir: Path) -> ExtractionSchema:
             combination_definitions[f"{target}_index"] = (int, ...)
             continue
         annotation = _annotation(spec, nested_name=f"Combination{_camel(name)}")
+        if spec.get("nullable", True):
+            annotation = annotation | None
         combination_definitions[name] = (annotation, Field(default=None))
 
     evidence_base = _build_model("EvidenceBase", shared_fields, skip_keys=True)

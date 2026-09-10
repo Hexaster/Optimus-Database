@@ -1,6 +1,6 @@
 ---
 name: extract-cart-data
-description: Use when extracting structured data from a scientific paper, patent, public database record, or internal research document into this repo's CAR-T database — reads the document, maps it onto docs/Schema/*.yaml, and writes data/normalised/{stem}.jsonl plus an .errors.jsonl sidecar.
+description: Use when extracting structured data from a scientific paper, patent, public database record, or internal research document into this repo's CAR-T database — reads the document, maps it onto docs/Schema/*.yaml, and writes data.jsonl, optional error_log.jsonl, and reasoning.md together in data/normalised/{stem}/.
 ---
 
 # CAR-T Document Extraction
@@ -36,7 +36,7 @@ Experimental evidence associated with these entities is stored separately from t
    * For PDF documents, if extracted text loses table alignment, figure content, or sequence characters, render and inspect the relevant pages using an available image-viewing tool before declaring the content unreadable. Read table values together with their row headers, column headers, units, and footnotes. Verify suspected OCR errors against the page image; do not repair them from biological expectations. If the page remains unreadable or cannot be viewed, leave only the affected fields null and log the exception.
    * Any other extension is unsupported — stop and say so.
 3. **Extract and cross-check** every source-supported record using the independent extraction workflow below and the rules in this skill.
-4. **Write** `data/normalised/<source-stem>.jsonl` in the row format below, and append any exceptions to `data/normalised/<source-stem>.errors.jsonl`. If there are no exceptions, do not create the error file.
+4. **Write** the final artifacts in `data/normalised/<source-stem>/`: `data.jsonl` in the row format below, `reasoning.md` with the evidence and decision summary, and `error_log.jsonl` only when exceptions occur. Follow the output-folder rules below.
 
 ### Independent extraction and cross-check
 
@@ -48,9 +48,9 @@ Respect user-specified subagent models. When model selection is supported and th
 2. **Source support.** Each subagent returns candidate rows and exceptions, with supporting passages and source locations for populated values and relationships, including page, table, figure, or panel identifiers where available. Keep review material separately from the candidate JSONL; do not add fields to the schema.
 3. **Compare.** After both drafts are complete, the main agent aligns records by source-supported entity identity, experimental group, and measurement conditions, not row order or generated UUIDs. Compare values, attribution, missing records, and cases where only one draft supplies a value.
 4. **Resolve from the source.** Re-read the relevant text, tables, or images to resolve differences. Another agent's answer, agreement, or majority vote is not evidence. Also spot-check agreeing results against the source, especially numerical values and entity relationships. Apply the existing missing-information and conflicting-evidence rules when the source remains ambiguous or contradictory; a disagreement between drafts alone is not a conflict in the source.
-5. **Final output.** Only the main agent writes the final JSONL and exception sidecar. Reconcile identifiers and references across accepted records, and log exceptions according to the final decisions rather than copying both draft logs. Follow the existing output format and completion checks.
+5. **Final output.** Only the main agent writes the final `data.jsonl`, optional `error_log.jsonl`, and `reasoning.md`. Reconcile identifiers and references across accepted records, and log exceptions according to the final decisions rather than copying both draft logs. Follow the existing output format and completion checks.
 
-If subagents are unavailable or two independent drafts cannot be completed, finish using the single-agent workflow and disclose the limitation in the final response. State whether the cross-check was completed; do not claim it occurred when it did not. Keep this execution status out of the extracted rows and source-exception sidecar.
+If subagents are unavailable or two independent drafts cannot be completed, finish using the single-agent workflow and disclose the limitation in the final response. State whether the cross-check was completed; do not claim it occurred when it did not. Record this execution status in `reasoning.md`, keeping it out of the extracted rows and source-exception sidecar.
 
 ---
 
@@ -95,7 +95,7 @@ For a continuous numerical field:
 * Preserve the reported unit, range, bound, and measurement context whenever the schema provides a place for them.
 * Do not turn qualitative wording into a number or collapse a range to a single value.
 
-Perform this assessment internally. Do not write the assessment or its explanation into the output file.
+Perform this assessment internally. Record a concise, source-grounded summary of consequential mapping decisions in `reasoning.md`; do not include internal step-by-step deliberation or add explanations to `data.jsonl`.
 
 ---
 
@@ -143,7 +143,6 @@ Examples:
 * source
 * experimental conditions
 * citation
-* evidence level
 * applicable scenario
 * whether the evidence contradicts another reported conclusion
 
@@ -244,7 +243,9 @@ A measurement is meaningful only together with the experiment that produced it.
 
 Do not combine results from different experiments into one evidence record merely because they concern the same Binder, CAR, or manufacturing process.
 
-If the document reports multiple experiments under materially different conditions, write separate evidence rows.
+For the same ABC combination, keep multiple readouts from the same experiment under the same conditions in one evidence row. Do not split that row merely because the readouts are different indicators or appear in different figure panels.
+
+If the ABC combination, experiment, or conditions differ (for example, target cells, E:T ratio, time point, or stimulation round), write separate evidence rows. Do not assume experiments are identical merely because they share a figure or entity IDs.
 
 ---
 
@@ -279,7 +280,7 @@ For fields declared `measurement`, follow the structure and `kind` definitions a
 * Distinguish mean ± standard deviation from mean ± standard error using the source text or captions. If the meaning of ± is not stated, use `plus_minus_unspecified`; never guess.
 * Keep ranges and comparison bounds as reported. Do not turn mean ± SD into a range or assign a multi-entity summary range to an individual entity.
 * Extract numerical members and `unit` as reported; do not convert them yourself. `preferred_unit` is a normalization preference, not an allowed-unit restriction. If the source omits the unit, retain the number with `unit: null`; never infer the unit from the preference. An unconvertible unit is not a `schema_mismatch` and does not make the measurement missing.
-* Keep the measurement's unit inside the measurement object, not in a sibling field. Preserve denominators and methods in experimental conditions; shared units do not make different indicators comparable.
+* Keep the measurement's unit inside the measurement object, not in a sibling field. Preserve denominators and methods in the schema-defined fields where supported; shared units do not make different indicators comparable.
 * `number` and `integer` fields keep their scalar types, including sequence lengths, residue positions, and fixed scores. A valid range or ± expression in a `measurement` field is not a type exception.
 
 Extract the numerical value and unit when reported.
@@ -380,14 +381,40 @@ Do not invent source identifiers.
 
 ## Output
 
-Write `data/normalised/<source-stem>.jsonl`: one JSON object per line, UTF-8, **not** ASCII-escaped (Chinese must stay readable). Every line is `{"table": ..., "data": {...}}`.
+### One folder per document
+
+Use `data/normalised/<source-stem>/` for each document. If the user overrides the output root, keep the same per-document folder structure under that root. Each document has at most three final files:
+
+```text
+<source-stem>/
+  data.jsonl
+  error_log.jsonl   # only when exceptions occur
+  reasoning.md
+```
+
+Always write `data.jsonl` and `reasoning.md`, including when extraction returns no records. Keep independent drafts, review material, downloaded images, rendered pages, and other temporary artifacts outside this folder in temporary locations. Do not create additional per-document reports, alternate data formats, or timestamped copies. On a rerun, refresh these final artifacts for the current extraction; do not append new data or reasoning to a previous run. Start the exception log fresh for this run, removing a previous generated `error_log.jsonl` if the current run has no exceptions.
+
+### Reasoning summary
+
+Write `reasoning.md` as a concise evidence and decision summary, not a transcript of private internal reasoning. Include:
+
+* the source identity and content inspected, including any unavailable content;
+* consequential extraction decisions: entity and experimental-group attribution, schema mappings, record grouping, exclusions, and handling of ambiguity or conflicts;
+* source locations supporting those decisions (page, section, table, figure, or panel), linked to final record IDs or field names when applicable;
+* whether the independent cross-check and final validation completed, plus any limitations.
+
+Summarize final decisions and their supporting evidence; do not reproduce step-by-step internal deliberation or the agents' private reasoning. Ordinary extraction rationale belongs here. Actual exceptions still belong in `error_log.jsonl`; this summary does not replace the exception log or add fields to the schema.
+
+### Data file
+
+Write `data/normalised/<source-stem>/data.jsonl`: one JSON object per line, UTF-8, **not** ASCII-escaped (Chinese must stay readable). Every line is `{"table": ..., "data": {...}}`.
 
 You assign the identifiers. Every `*_id` and `record_id` is a UUID4 string you get from the uuid package, the package is under the fosun conda environment.
 
 After writing the JSONL, normalize its measurement units using the repository's Python environment (replace the path with the actual output file, including any output-directory override):
 
 ```bash
-PYTHONPATH=src /home/zzz010122/anaconda3/envs/fosun/bin/python -m cart_db.measurements data/normalised/<source-stem>.jsonl
+PYTHONPATH=src /home/zzz010122/anaconda3/envs/fosun/bin/python -m cart_db.measurements data/normalised/<source-stem>/data.jsonl
 ```
 
 This updates the file in place. Do not rewrite the normalized values afterward. Missing or unsupported units are retained; they do not require an exception.
@@ -420,21 +447,17 @@ Only for a Binder + CAR + manufacturing process the source ties to the same expe
 
 ### Evidence rows
 
-`Evidence.yaml` has two kinds of field. Fields without a dot (`source_type`, `source_id`, `citation`, `evidence_level`, `experimental_conditions`, `applicable_scenario`, `contrary_evidence`, `time_of_upload`, `time_of_download`) are shared by every evidence row. Fields with a dot belong to one owner: `binder.kd` is a Binder measurement, `car.memory_phenotype` and `manufacturing.memory_phenotype` are different columns despite the shared name — write the dotted name exactly as the YAML spells it.
+`Evidence.yaml` has two kinds of field. Fields without a dot (`source_type`, `source_id`, `citation`, `applicable_scenario`, `contrary_evidence`, `time_of_upload`, `time_of_download`) are shared by every evidence row. Fields with a dot belong to one owner: `binder.kd` is a Binder measurement, `car.memory_phenotype` and `manufacturing.memory_phenotype` are different columns despite the shared name — write the dotted name exactly as the YAML spells it.
 
 Every evidence row carries all three foreign-key columns `binder.binder_id`, `car.car_id` and `manufacturing.manufacturing_id`. For a measurement on a single entity, only that entity's column is filled and the other two are `null`; write only that owner's dotted fields:
 
 ```json
-{"table": "evidence", "data": {"record_id": "<uuid4>", "source_type": "literature", "source_id": "PMC1234567", "evidence_level": "in_vitro", "contrary_evidence": false, "binder.kd": {"kind": "single_value", "value": 2.4, "lower": null, "upper": null, "error": null, "unit": "nM", "raw": "2.4 nM"}, "binder.binder_id": "<binder uuid>", "car.car_id": null, "manufacturing.manufacturing_id": null}}
+{"table": "evidence", "data": {"record_id": "<uuid4>", "source_type": "literature", "source_id": "PMC1234567", "contrary_evidence": false, "binder.kd": {"kind": "single_value", "value": 2.4, "lower": null, "upper": null, "error": null, "unit": "nM", "raw": "2.4 nM"}, "binder.binder_id": "<binder uuid>", "car.car_id": null, "manufacturing.manufacturing_id": null}}
 ```
 
-For a result measured on the combination as a whole, all three foreign keys are filled and no dotted measurement fields are written — only the shared fields:
+For a result measured on the combination as a whole, fill all three foreign keys and include the source-supported readouts in their appropriate active Schema fields, including dotted measurement fields. Keep readouts from the same experiment and conditions together as specified above; filling all three foreign keys does not exclude measurement fields.
 
-```json
-{"table": "evidence", "data": {"record_id": "<uuid4>", "source_type": "literature", "source_id": "PMC1234567", "evidence_level": "in_vivo", "contrary_evidence": false, "binder.binder_id": "<binder uuid>", "car.car_id": "<car uuid>", "manufacturing.manufacturing_id": "<manufacturing uuid>"}}
-```
-
-`source_id` and `evidence_level` are required. An evidence row missing either one is dropped — log it and move on.
+`source_id` is required. An evidence row missing it is dropped — log it and move on.
 
 ### Field types
 
@@ -454,12 +477,12 @@ Handle exceptions at the smallest safe scope:
 
 1. **Field-level:** If one field is unreadable, ambiguous, outside `allowed_values`, type-invalid, or unsupported, write `null` for that field only and continue extracting the record.
 2. **Record-level:** If a record cannot satisfy a required identity, provenance, or relationship constraint without fabrication, omit only that record and continue with the others.
-3. **Document-level:** If the document is empty, unreadable, or cannot be processed reliably as a whole, write an empty `.jsonl` file. Do not fabricate a placeholder record.
+3. **Document-level:** If the document is empty, unreadable, or cannot be processed reliably as a whole, write an empty `data.jsonl` and summarize the limitation in `reasoning.md`. Do not fabricate a placeholder record.
 4. **Conflicting evidence:** Follow section 8 to distinguish conflicting values from uncertain identity or attribution; preserve attributable results and log the conflict.
 
 ### Exception log
 
-Append every exception to `data/normalised/<source-stem>.errors.jsonl`, one JSON object per line:
+Append every exception to `data/normalised/<source-stem>/error_log.jsonl`, one JSON object per line:
 
 Log an exception only when a concrete schema field, candidate record, or the document as a whole cannot be handled normally because its supplied evidence is unreadable, ambiguous, invalid, conflicting, or insufficient for a required constraint. Do not log ordinary unreported optional fields, source-type reasoning, extraction rationale, background material that is intentionally excluded, or information that has no corresponding schema field. Ignore those cases without creating a `notes` field or a `schema_mismatch` entry. A conflict that affects an extracted field or relationship is still an exception and must be logged separately.
 
@@ -505,4 +528,5 @@ Verify that:
 7. continuous numerical fields contain only explicitly supported quantitative values;
 8. relationships between Binder, CAR, manufacturing process, and ABC combinations are supported by the source;
 9. every identifier referenced by a row was assigned by a row above it;
-10. each line of the output file is valid JSON with exactly the keys `table` and `data`.
+10. each line of the output file is valid JSON with exactly the keys `table` and `data`;
+11. the document output folder contains only `data.jsonl`, `reasoning.md`, and, when exceptions occurred, `error_log.jsonl`; the reasoning summary reflects the final records and actual cross-check/validation status.

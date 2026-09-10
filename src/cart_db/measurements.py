@@ -56,7 +56,10 @@ def _normalize_fields(data: dict, fields: dict) -> dict:
         if spec.get("type") == "measurement":
             result[name] = convert(value, spec.get("preferred_unit"))
         elif "item_schema" in spec:
-            result[name] = [_normalize_fields(item, spec["item_schema"]) for item in value]
+            if spec.get("shape") == "object":
+                result[name] = _normalize_fields(value, spec["item_schema"])
+            else:
+                result[name] = [_normalize_fields(item, spec["item_schema"]) for item in value]
     return result
 
 

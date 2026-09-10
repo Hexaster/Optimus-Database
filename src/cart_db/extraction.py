@@ -81,18 +81,14 @@ def _evidence_data(
     owner_ids: dict[str, str | None],
     fk_columns: dict[str, str],
 ) -> dict[str, Any] | None:
-    """证据行。出处或证据等级为空就丢弃这一行（返回 None）。
+    """证据行。出处为空就丢弃这一行（返回 None）。
 
-    prefix 决定字段前缀：car 的 memory_phenotype 写成 car.memory_phenotype，
-    manufacturing 的写成 manufacturing.memory_phenotype —— 两者同名不同列。
+    prefix 决定字段前缀：car 的 exhaustion_phenotype 写成 car.exhaustion_phenotype，
+    manufacturing 的写成 manufacturing.exhaustion_phenotype —— 两者同名不同列。
     """
     if not (getattr(evidence, "source_id", None) or "").strip():
         logger.warning("证据缺少出处（source_id 为空），丢弃该行：%r", evidence.model_dump())
         return None
-    if evidence.evidence_level is None:
-        logger.warning("证据缺少证据等级，丢弃该行（出处 %s）", evidence.source_id)
-        return None
-
     dumped = evidence.model_dump()
     data: dict[str, Any] = {"record_id": str(uuid4())}
     for name in shared:
