@@ -43,6 +43,8 @@ PROMPT = """Read {skill_path} completely, then follow that skill to extract stru
 
 Follow the skill with this run's overrides:
 - Output directory: {out_dir}.
+  This is a private staging workspace.
+  Write final artifacts directly here; the runner publishes them in the document folder.
 - Other documents may be processed concurrently. Keep all scratch files and writes
   inside this output directory; do not modify shared code, schemas, or other outputs.
 - Subagent mode: {subagent_mode}
@@ -52,8 +54,11 @@ Follow the skill with this run's overrides:
 - The runner fills omitted nullable fields with null, orders fields, and normalizes units.
   Preserve source values, raw text, row order, and all list order; do not deduplicate.
 Read docs/Schema/*.yaml first, then the document, then write
-{out_dir}/{stem}.jsonl and, if there are exceptions,
-{out_dir}/{stem}.errors.jsonl.
+{out_dir}/data.jsonl, {out_dir}/reasoning.md (a concise evidence and decision summary),
+and, if there are exceptions, {out_dir}/error_log.jsonl.
+In reasoning.md, reference records by table, row number, and field name rather than
+local IDs, because the runner replaces IDs during publication. Keep scratch material
+separate from these three files; only these final artifacts will be published.
 
 Report at the end how many rows you wrote, broken down by table."""
 
@@ -344,7 +349,8 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     draft_dir = Path(tempfile.mkdtemp(prefix=f".{path.stem}-", dir=out_dir))
-    candidate = draft_dir / f"{path.stem}.jsonl"
+    candidate = draft_dir / "data.jsonl"
+    final_dir = out_dir / path.stem
     started = time.monotonic()
     usage = empty_usage()
     cost = 0.0
@@ -371,6 +377,9 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
             break
         try:
             output = prepare_output(candidate)
+            reasoning = draft_dir / "reasoning.md"
+            if not reasoning.is_file() or not reasoning.read_text(encoding="utf-8").strip():
+                raise OutputError("reasoning.md: missing or empty evidence and decision summary")
         except (OutputError, ValueError) as exc:
             result.update(ok=False, reason=f"输出校验失败：{exc}")
             if attempt == validation_retries:
@@ -387,33 +396,38 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
                 + str(exc)
             )
             continue
-        sidecar_changed = False
-        previous_sidecar = draft_dir / "previous.errors.jsonl"
-        final_sidecar = out_dir / f"{path.stem}.errors.jsonl"
+        changed = []
+        backups = {}
         try:
+            final_dir.mkdir(parents=True, exist_ok=True)
             staged = draft_dir / "normalized.jsonl"
             staged.write_text(output, encoding="utf-8")
-            sidecar = draft_dir / f"{path.stem}.errors.jsonl"
-            if final_sidecar.exists():
-                shutil.copyfile(final_sidecar, previous_sidecar)
-            if sidecar.exists():
-                staged_sidecar = draft_dir / "staged.errors.jsonl"
-                shutil.copyfile(sidecar, staged_sidecar)
-                staged_sidecar.replace(final_sidecar)
-            else:
-                final_sidecar.unlink(missing_ok=True)
-            sidecar_changed = True
-            staged.replace(out_dir / candidate.name)
+            for name, source in (("error_log.jsonl", draft_dir / "error_log.jsonl"),
+                                 ("reasoning.md", reasoning), ("data.jsonl", staged)):
+                target = final_dir / name
+                if target.exists():
+                    backup = draft_dir / ("previous." + name)
+                    shutil.copyfile(target, backup)
+                    backups[name] = backup
+                if source.exists():
+                    publish = source
+                    if source != staged:
+                        publish = draft_dir / ("staged." + name)
+                        shutil.copyfile(source, publish)
+                    publish.replace(target)
+                else:
+                    target.unlink(missing_ok=True)
+                changed.append(name)
         except OSError as exc:
             result.update(ok=False, reason=f"输出发布失败（未自动调用模型修正）：{exc}")
-            if sidecar_changed:
+            for name in reversed(changed):
                 try:
-                    if previous_sidecar.exists():
-                        previous_sidecar.replace(final_sidecar)
+                    if name in backups:
+                        backups[name].replace(final_dir / name)
                     else:
-                        final_sidecar.unlink(missing_ok=True)
+                        (final_dir / name).unlink(missing_ok=True)
                 except OSError as rollback_error:
-                    result['reason'] += f"；异常清单恢复失败：{rollback_error}"
+                    result["reason"] += f"；{name} 恢复失败：{rollback_error}"
             break
         shutil.rmtree(draft_dir, ignore_errors=True)
         result["reason"] = "输出已校验并规范化"
@@ -439,8 +453,8 @@ def usage_text(usage: dict[str, int], known: bool = True) -> str:
 
 def tally(out_dir: Path, stem: str) -> str:
     """数一下技能到底写出了什么 —— 它自己报的行数不算数。"""
-    rows = out_dir / f"{stem}.jsonl"
-    errors = out_dir / f"{stem}.errors.jsonl"
+    rows = out_dir / "data.jsonl"
+    errors = out_dir / "error_log.jsonl"
     if not rows.exists():
         return "没有 jsonl 文件"
 
@@ -517,7 +531,7 @@ def main(argv: list[str] | None = None) -> int:
 
     pending = [input_path] if args.file else documents(input_path)
     if not args.force:
-        pending = [p for p in pending if not (out_dir / f"{p.stem}.jsonl").exists()]
+        pending = [p for p in pending if not (out_dir / p.stem / "data.jsonl").exists()]
 
     if not pending:
         print(f"{input_path} 没有待处理的文档（加 --force 可重跑）")
@@ -555,7 +569,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Workers: {args.workers}")
     print(f"待处理 {len(pending)} 份：")
     for path in pending:
-        print(f"  {path.name}")
+        print(f"  {path.name} → {out_dir.relative_to(REPO) / path.stem}")
     if args.dry_run:
         return 0
 
@@ -595,7 +609,7 @@ def main(argv: list[str] | None = None) -> int:
             cost_text = f"${result['cost']:.4f}" if result["cost"] is not None else "费用 N/A"
             output_text = (
                 "草稿（未发布）：" + tally(Path(result['draft_dir']), path.stem)
-                if result.get('draft_dir') else tally(out_dir, path.stem)
+                if result.get('draft_dir') else tally(out_dir / path.stem, path.stem)
             )
             print(f"  {status} {result['seconds']:.0f}s  {cost_text}  "
                   f"{usage_text(result['usage'], result['usage_known'])}  "
