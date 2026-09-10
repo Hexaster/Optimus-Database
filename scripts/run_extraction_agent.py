@@ -2,7 +2,7 @@
 """把一个或一批文档逐份喂给 extract-cart-data 技能。
 
 每份文档单独起一次 coding agent：上下文互不污染，一份跑飞不影响后面几份。
-结果由技能自己写进 data/normalised/，这里只负责调度、计时、算钱、报结果。
+结果由技能自己写进 data/normalised/，runner 校验、规范化后才发布正式结果。
 
     python scripts/run_extraction_agent.py --agent claude      # Claude Code
     python scripts/run_extraction_agent.py --agent codex --model gpt-5.2-codex
@@ -13,6 +13,7 @@
     python scripts/run_extraction_agent.py --force              # 重跑已有结果的文档
     python scripts/run_extraction_agent.py --subagent true     # 启用两个子代理独立抽取
     python scripts/run_extraction_agent.py --workers 3          # 同时处理三份文档
+    python scripts/run_extraction_agent.py --validation-retries 0 # 校验失败不自动修正
     python scripts/run_extraction_agent.py --dry-run            # 只列出要跑什么
 """
 from __future__ import annotations
@@ -22,6 +23,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
 import subprocess
+import shutil
+import tempfile
 import sys
 import time
 from pathlib import Path
@@ -29,6 +32,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
+from cart_db.agent_output import OutputError, prepare_output
 from cart_db.config import settings      # noqa: E402  —— 唯一一份 .env 解析
 SKILL = "extract-cart-data"
 
@@ -40,6 +44,11 @@ PROMPT = """Read {skill_path} completely, then follow that skill to extract stru
 Follow the skill with this run's overrides:
 - Output directory: {out_dir}.
 - Subagent mode: {subagent_mode}
+- Active YAML fields are the output contract; commented fields must not be emitted.
+- IDs are document-local non-empty string labels (existing UUID labels are also accepted).
+  Keep references consistent; the runner generates final UUIDs and rewrites references.
+- The runner fills omitted nullable fields with null, orders fields, and normalizes units.
+  Preserve source values, raw text, row order, and all list order; do not deduplicate.
 Read docs/Schema/*.yaml first, then the document, then write
 {out_dir}/{stem}.jsonl and, if there are exceptions,
 {out_dir}/{stem}.errors.jsonl.
@@ -189,10 +198,11 @@ def estimated_cost(usage: dict[str, int], input_price: float | None,
             + usage["output"] * output_price) / 1_000_000
 
 
-def run_one(path: Path, *, agent: str, out_dir: Path, timeout: int,
+def _run_agent(path: Path, *, agent: str, out_dir: Path, timeout: int,
     budget: float | None, env: dict[str, str], model: str | None,
     effort: str, input_price: float | None, cached_input_price: float | None,
     output_price: float | None, subagent: bool = False,
+    correction: str = "",
 ) -> dict:
     """跑一份文档，返回这次调用的结果摘要。"""
     prompt = PROMPT.format(
@@ -206,6 +216,7 @@ def run_one(path: Path, *, agent: str, out_dir: Path, timeout: int,
             "Extract the full document and cross-check against the source yourself."
         ),
     )
+    prompt += correction
     run_env = env.copy()
     if agent == "claude":
         command = [
@@ -283,6 +294,76 @@ def run_one(path: Path, *, agent: str, out_dir: Path, timeout: int,
     return result
 
 
+def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
+            validation_retries: int = 1, **kwargs) -> dict:
+    """Publish only validated output; retain failed drafts for inspection.
+
+    Repairs share the document timeout and remaining known budget. Unknown
+    spending with a budget disables automatic repair. Existing output is kept
+    on validation failure; successful empty output means no extracted records.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    draft_dir = Path(tempfile.mkdtemp(prefix=f".{path.stem}-", dir=out_dir))
+    candidate = draft_dir / f"{path.stem}.jsonl"
+    started = time.monotonic()
+    usage = empty_usage()
+    cost = 0.0
+    known_cost = known_usage = True
+    correction = ""
+    result = dict(ok=False, reason="", usage=usage, cost=None, usage_known=False)
+    for attempt in range(validation_retries + 1):
+        remaining = timeout - (time.monotonic() - started)
+        if remaining <= 0:
+            result.update(ok=False, reason="单份总超时（包含校验修正）")
+            break
+        attempt_budget = budget - cost if budget is not None else None
+        result = _run_agent(path, out_dir=draft_dir, timeout=remaining,
+                            budget=attempt_budget, correction=correction, **kwargs)
+        for key in usage:
+            usage[key] += result["usage"][key]
+        known_usage = known_usage and result["usage_known"]
+        if result["cost"] is None:
+            known_cost = False
+        else:
+            cost += result["cost"]
+        if not result["ok"]:
+            break
+        try:
+            output = prepare_output(candidate)
+            candidate.write_text(output, encoding="utf-8")
+            candidate.replace(out_dir / candidate.name)
+            sidecar = draft_dir / f"{path.stem}.errors.jsonl"
+            final_sidecar = out_dir / sidecar.name
+            if sidecar.exists():
+                sidecar.replace(final_sidecar)
+            else:
+                final_sidecar.unlink(missing_ok=True)
+        except (OutputError, OSError, ValueError) as exc:
+            result.update(ok=False, reason=f"输出校验失败：{exc}")
+            if attempt == validation_retries:
+                break
+            # Never grant a new full budget when prior spending is unknown.
+            if budget is not None and (not known_cost or cost >= budget):
+                result["reason"] += "；剩余预算不足或无法确定，未自动修正"
+                break
+            correction = (
+                "\nThis is a validation repair of the existing draft, not a new extraction. "
+                "Read the existing JSONL and fix the following error, then check all rows "
+                "against active YAML fields. Consult the source if needed; do not guess, "
+                "deduplicate, or remove valid records to pass validation.\n"
+                + str(exc)
+            )
+            continue
+        shutil.rmtree(draft_dir)
+        result["reason"] = "输出已校验并规范化"
+        break
+    if not result["ok"]:
+        result["reason"] += f"；草稿保留于 {draft_dir}"
+    result.update(seconds=time.monotonic() - started, usage=usage,
+                  usage_known=known_usage, cost=cost if known_cost else None)
+    return result
+
+
 def usage_text(usage: dict[str, int], known: bool = True) -> str:
     if not known:
         return "tokens N/A"
@@ -347,7 +428,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="每百万 output tokens 美元价")
     parser.add_argument("--workers", type=int, default=1,
                         help="同时处理的文档数，默认 1")
+    parser.add_argument("--validation-retries", type=int, default=1,
+                        help="输出校验失败后的最大修正次数，默认 1，0 表示不重试")
     args = parser.parse_args(argv)
+    if args.validation_retries < 0:
+        parser.error("--validation-retries 不能为负数")
     if args.workers < 1:
         parser.error("--workers 必须为正整数")
 
@@ -423,6 +508,7 @@ def main(argv: list[str] | None = None) -> int:
                 cached_input_price=args.cached_input_price,
                 output_price=args.output_price,
                 subagent=args.subagent == "true",
+                validation_retries=args.validation_retries,
             ): path for path in pending
         }
         for index, future in enumerate(as_completed(futures), 1):
