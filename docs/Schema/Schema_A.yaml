@@ -62,7 +62,7 @@ binder:
     linker:
       type: string
       nullable: true
-      description: Binder 内部连接 VH 与 VL（或 VL 与 VH）的 linker 氨基酸序列；不包含 CAR 模块之间的连接肽，也不重复写入 car.modules
+      description: Binder 内部连接 VH 与 VL（或 VL 与 VH）的 linker 氨基酸序列；不包含 CAR 模块之间的连接肽，也不重复写入 car.modules。原文只给出 linker 类型或名称（如 GS linker、(G4S)3）而未给序列时，照记该名称，不因缺序列而留空。
 
     fr_cdr_regions:
       type: json
