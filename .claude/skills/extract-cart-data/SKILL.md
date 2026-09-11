@@ -9,8 +9,9 @@ description: Extract source-supported CAR-T entities and experimental evidence f
 
 1. Read all current `docs/Schema/*.yaml` files. Active YAML fields, types, descriptions, and enums are authoritative; commented-out definitions are not fields.
 2. Read the supplied document, including relevant tables, figures, captions, and supplied supplements. Follow the source-reading rules below.
-3. Extract distinct entities, combinations, and evidence; cross-check values and relationships against the source.
-4. Write `data.jsonl`, `reasoning.md`, and any current-run `error_log.jsonl` in the document's output folder, normalize measurements, and complete the checks below. Apply explicit runner overrides as described under Output.
+3. Build a temporary inventory of source-described experiments and independent processes, then extract their distinct entities, combinations, and evidence into active schema fields. Follow Coverage and semantic review below.
+4. Return to the source to check coverage, then check attribution and meaning. Update the inventory and draft for omissions found during review.
+5. Write `data.jsonl`, `reasoning.md`, and any current-run `error_log.jsonl` in the document's output folder, normalize measurements, and complete the checks below. Apply explicit runner overrides as described under Output.
 
 Use one agent by default. Do not spawn subagents or launch other agent processes unless the user or runner explicitly enables them (`--subagent true`). When enabled, follow the Independent extraction and cross-check section below. Subagents assigned a draft must not delegate further. Report whether independent cross-checking actually completed; ordinary single-agent extraction is not an incomplete run.
 
@@ -24,10 +25,10 @@ The main agent coordinates this workflow. Subagents perform only their assigned 
 
 Respect user-specified subagent models. When model selection is supported and the user has not specified a model, prefer an available lower-cost model capable of full-document extraction, including the required context length, image understanding, and tool use. Apply the choice through actual tool parameters or agent configuration, not merely the task description. If model selection is unavailable, use the inherited model without claiming a different model was used.
 
-1. **Independent drafts.** Start two subagents, each tasked with extracting the entire supplied document. Give both the source path, this skill, the schema paths, and separate temporary output locations. Each must read the full skill, all schema files, and the document. Neither may see the other draft or previous extraction results before submitting its own draft.
-2. **Source support.** Each subagent returns candidate rows and exceptions, with supporting passages and source locations for populated values and relationships, including page, table, figure, or panel identifiers where available. Keep review material separately from the candidate JSONL; do not add fields to the schema.
-3. **Compare.** After both drafts are complete, the main agent aligns records by source-supported entity identity, experimental group, and measurement conditions, not row order or generated UUIDs. Compare values, attribution, missing records, and cases where only one draft supplies a value.
-4. **Resolve from the source.** Re-read the relevant text, tables, or images to resolve differences. Another agent's answer, agreement, or majority vote is not evidence. Also spot-check agreeing results against the source, especially numerical values and entity relationships. Apply the existing missing-information and conflicting-evidence rules when the source remains ambiguous or contradictory; a disagreement between drafts alone is not a conflict in the source.
+1. **Independent drafts.** Start two subagents, each tasked with extracting the entire supplied document. Give both the source path, this skill, the schema paths, and separate temporary output locations. Each must read the full skill, all schema files, and the document, independently build its own experiment/process inventory, and perform the coverage and semantic reviews. Neither may see the other inventory, draft, or previous extraction results before submitting its own draft.
+2. **Source support.** Each subagent returns its inventory with coverage outcomes, candidate rows, and exceptions, with supporting passages and source locations for populated values and relationships, including page, table, figure, or panel identifiers where available. Keep review material separately from the candidate JSONL; do not add fields to the schema.
+3. **Compare.** After both drafts are complete, the main agent aligns records by source-supported entity identity, experimental group, and measurement conditions, not row order or generated UUIDs. Compare inventories as well as values, attribution, parameter coverage, missing records, and cases where only one draft identifies an experiment, group, or value.
+4. **Resolve from the source.** Re-read the relevant text, tables, or images to resolve differences. Another agent's answer, agreement, or majority vote is not evidence. Also review source sections, Methods, captions, and tables for omissions shared by both drafts; agreement between inventories does not establish complete coverage. Spot-check agreeing results against the source, especially numerical values and entity relationships. Apply the existing missing-information and conflicting-evidence rules when the source remains ambiguous or contradictory; a disagreement between drafts alone is not a conflict in the source.
 5. **Final output.** Only the main agent writes final `data.jsonl`, optional `error_log.jsonl`, and `reasoning.md`. Reconcile identifiers and references across accepted records, and log exceptions according to the final decisions rather than copying both draft logs. Follow the existing output format and completion checks.
 
 If subagents are unavailable or two independent drafts cannot be completed, finish using the single-agent workflow and disclose the limitation in the final response. State whether the cross-check was completed; do not claim it occurred when it did not. Record this execution status in `reasoning.md`, keeping it out of the extracted rows and source-exception sidecar.
@@ -48,6 +49,31 @@ Supported input formats match `scripts/run_extraction_agent.py`: `.pdf`, `.xml`,
 - Read measurements with their row/column headers, units, footnotes, groups, and panels. Extract explicitly labeled numbers, not estimates from bar heights or curves. Identify SD/SEM from the source, not the appearance of error bars.
 - Verify suspected OCR errors against the page image. If content remains unreadable or image tools are unavailable, preserve readable information and log only the affected fields or records.
 
+## Coverage and semantic review
+
+Apply these steps in both single-agent and enabled independent-extraction modes.
+
+### Inventory before extraction
+
+Build a temporary inventory from Methods, Results, captions, and tables, with one entry per source-described experiment or independent process, not per parameter. Include source locations, the measured or processed subject, actual groups and conditions, and readouts where applicable. Add source-supported entities from claims or embodiments under the extraction-scope rules below; an experiment inventory must not exclude otherwise eligible entity data.
+
+Keep the inventory open to additions during extraction and review. Record only combinations of conditions actually reported; do not generate a Cartesian product of doses, time points, or groups. Distinguish inaccessible source content from information not reported, using the source-recovery rules above.
+
+### Coverage review: what was missed?
+
+After drafting, return to source sections, Methods, captions, and tables rather than checking only populated fields or the initial inventory. For source-reported information with an active schema destination, check:
+
+- **Operations:** subject, steps, reagent names and product identifiers, amounts or concentrations, times, temperatures, equipment, and post-processing.
+- **Experiments:** experimental and control groups, doses or E:T ratios, time points, tissues, sample sizes, replicates, and readouts.
+
+Do not replace explicit parameters or enumerated groups with a broad summary. An experiment without exact numerical results may still support qualitative or method information where an active field permits it; do not force that information into a numerical or unrelated field. Facts already fully stored in the correct location need not be duplicated for coverage. Do not invent unreported checklist items.
+
+Give each inventory entry a final disposition: covered, partially covered, or not stored. For gaps, distinguish unavailable input, unresolved source evidence, no active schema destination, and exclusion under the collection scope. Resolve omissions that the source and schema permit before finishing; a disposition alone does not justify leaving an extractable fact out. Summarize these outcomes in the existing `reasoning.md`, not a new output file.
+
+### Semantic review: was the meaning changed?
+
+Check the source against the draft for subject and foreign-key agreement, molecular format, process stage, measurement meaning, units, comparison bounds, negation scope, comparison groups, and unresolved conflicts. In particular, a subject named in descriptive context must agree with the structured links. Apply the detailed attribution, value, and conflict rules below; remove unsupported assertions and retain unresolved source conflicts without selecting a preferred answer.
+
 ## Decide what to extract
 
 **Entities:** A is the Binder, B is the CAR backbone, and C is the manufacturing process. Follow their YAML definitions to separate entity properties from measured evidence. Extract all source-supported records, not just one record per document.
@@ -55,6 +81,12 @@ Supported input formats match `scripts/run_extraction_agent.py`: `.pdf`, `.xml`,
 Create an entity only when the document treats it as part of its own claims, embodiments, experiments, results, or actually tested controls, with meaningful data or relationships beyond a name. Ignore background mentions, prior-art surveys, citations, and generic example lists without creating placeholder rows or exceptions.
 
 Reuse an entity across its experiments when identity is clear. Do not merge entities merely because names are similar. Preserve source names and identifiers; broader entity deduplication happens downstream.
+
+Before assigning a fact to a field or foreign key, establish its subject, molecular format, and process stage. Viral production, T-cell manufacturing, functional assays, and animal administration do not inherit one another's parameters merely because they belong to the same study. A shared clone identifier does not make monovalent and bivalent formats interchangeable; follow source identity and current schema definitions. Vector or reagent catalog/lot identifiers are not Binder aliases.
+
+Different Binders do not automatically require different B entities: B represents the backbone. Where the source establishes a shared backbone, preserve distinct product combinations and experiment attribution through the appropriate relationships. Missing backbone information in multiple products is not evidence that their backbones are identical.
+
+Distinguish generic options, concrete proposed embodiments, and experimentally used constructs. Do not populate an experimental construct's actual modules from a generic candidate list without an explicit source link. Apply the collection-scope rule above to concrete claims and embodiments; do not exclude them solely because they are untested.
 
 **Combinations:** create an ABC combination only when the source links all three components to the same experimental system or product. Extract identifiable components when A, B, or C is missing, but do not fabricate a complete combination.
 
@@ -70,7 +102,8 @@ Match the quantity's meaning before its format: EC50 is not Kd, viral titer is n
 - Do not omit an applicable field's key. If a required member cannot be supported, omit the affected item or record at the smallest valid scope and apply the exception rules; do not fabricate a value.
 - `json` with `shape: object` is one object. `shape: array` is a list, using `item_schema` for object members or `item_type` for scalar items. `string` is text, not an invented JSON structure. Scalars retain their declared types; dates use ISO 8601.
 - Interpret booleans according to the field description. For sterility and mycoplasma tests, `true` means positive and `false` means negative, not pass/fail. Unknown is `null`.
-- Keep descriptive values concise while preserving source terminology and necessary qualifications. Do not add your own explanations or bracketed reasoning. Source parentheses, measurement `raw`, and necessary experimental details may be retained.
+- Keep descriptive values concise, but do not delete source-supported facts to shorten a field. Use defined subfields for structured content and retain only field-relevant facts in strings, preserving source terminology and necessary qualifications. Do not add your own explanations or bracketed reasoning. Source parentheses, measurement `raw`, and necessary experimental details may be retained.
+- Distinguish not reported, not detected, no significant difference, no antigen-dependent increase, and zero; do not substitute one for another. Low bars or absent numerical labels do not support a claim of non-detection.
 - Use active condition fields for the corresponding assay. Do not emit commented-out `experimental_conditions` or invent a replacement field. Preserve context in `raw` where its field definition permits; information without a current schema destination is omitted without an exception against another field.
 - `evidence_level` is assigned downstream: do not emit it, invent a score, or drop evidence because it is absent. For dates, distinguish source upload/download metadata from publication dates and the extraction date; unreported dates remain `null`.
 
@@ -80,6 +113,8 @@ For `measurement`, follow the structure and `kind` definitions at the top of `Ev
 
 Preserve source values, units, statistical meaning, and denominators. Do not collapse ranges, turn mean ± SD into a range, guess SD versus SEM, or assign a pooled range to one entity. Missing units stay `null`; `preferred_unit` does not establish the source unit. Follow any field-specific ratio representation. Otherwise leave conversion to the normalization command below; unsupported conversions are not extraction exceptions.
 
+Preserve the inclusiveness of bounds: `minimum of` and `at least` mean ≥ (`greater_than_or_equal`), whereas `more than` means > (`greater_than`). Keep the source comparison object and scope; do not strengthen a bounded or qualified claim.
+
 Copy sequences exactly, removing only layout whitespace and joining blocks in unambiguous reading order. Verify unreadable or OCR-corrupted characters against the source image; never repair them from expected biology. If unresolved, leave the affected sequence field `null` and log the exception.
 
 Do not reconstruct missing regions or infer VH/VL/linker/module boundaries without explicit or unambiguous source support. Before comparing sequences, distinguish full expression constructs, CAR proteins, fragments, and individual modules. Differences in scope alone do not establish a conflict. Use the schema's coordinate and chain-scope definitions.
@@ -88,7 +123,7 @@ Do not reconstruct missing regions or infer VH/VL/linker/module boundaries witho
 
 For conflicting measurements with clear identity and context, retain the attributable values in separate evidence rows with exact source locations and log the conflict. Do not select a preferred value or alter the source. When identity or attribution is uncertain, retain unambiguous data and leave affected nullable fields `null`; omit a record only if its identity cannot be established.
 
-Use actual source identifiers such as DOI, PMCID, patent accession, or internal document ID. Never invent them. In `citation`, include the source reference and available page, section, table, figure, or panel location for the evidence. Do not invent page numbers. Interpret `contrary_evidence` from source-supported context, not merely from disagreement between extraction drafts.
+Use actual source identifiers such as DOI, PMCID, patent accession, or internal document ID. Never invent them. In `citation`, include the source reference and available page, section, table, figure, or panel location for the evidence. Do not invent page numbers. Interpret `contrary_evidence` from source-supported context: it identifies evidence contrary to the main conclusion, not merely a negative result, a weaker result, a control group, or disagreement between extraction drafts.
 
 ## Output
 
@@ -112,7 +147,8 @@ Write `reasoning.md` as a concise evidence and decision summary, not a transcrip
 * the source identity and content inspected, including any unavailable content;
 * consequential extraction decisions: entity and experimental-group attribution, schema mappings, record grouping, exclusions, and handling of ambiguity or conflicts;
 * source locations supporting those decisions (page, section, table, figure, or panel), linked to table, row number, and field name when applicable; final record IDs may also be used when they will not be rewritten by the runner;
-* whether the independent cross-check and final validation completed, plus any limitations.
+* a compact coverage table with one row per inventory entry: experiment/process or eligible entity and source location; covered/partially covered/not stored; output table, row number, and field, or the reason for a gap. Use one-based physical line numbers in final `data.jsonl`, refreshing references after edits. Summarize parameter coverage within the entry rather than listing every parameter separately;
+* whether the coverage review, semantic review, independent cross-check (when enabled), and final validation completed, plus any limitations.
 
 Summarize final decisions and their supporting evidence; do not reproduce step-by-step internal deliberation or the agents' private reasoning. Ordinary extraction rationale belongs here. Actual exceptions still belong in `error_log.jsonl`; this summary does not replace the exception log or add fields to the schema.
 
@@ -164,7 +200,8 @@ Handle errors at the smallest valid scope. For an entirely empty or unreadable d
 
 Before reporting completion:
 
-- Cross-check values, entity links, groups, and source locations; resolve discrepancies from the document rather than another model's answer.
+- Verify the inventory was checked against the source, including Methods, Results, captions, and tables, and that each entry has a final disposition. Check for missing parameters, groups, controls, time points, and tissues wherever the active schema can store them.
+- Complete the semantic review of attribution, molecular formats, process stages, comparison bounds, and negation scope. Cross-check values, entity links, groups, and source locations; resolve discrepancies from the document rather than another model's answer.
 - Parse each output line and check field names, shapes, types, enums, missing values, and required provenance against active YAML. Check identifiers against the active execution contract (UUIDs by default or document-local labels under the runner override), foreign-key targets, and row order. YAML `check`/`pattern` rules are not automatically enforced by every project parser; do not claim validation merely because JSON parses.
 - Verify normalization succeeded (or was explicitly delegated to the runner), and only current-run exceptions remain. Verify the final document folder contains only `data.jsonl`, `reasoning.md`, and optional `error_log.jsonl`; scratch files in runner staging must remain separate from these publishable artifacts. Check that the non-empty reasoning summary reflects the final records and actual cross-check/validation status.
 - Count written rows by table and exceptions from the files. Report counts, unresolved failures, and whether extraction was single-agent or independently cross-checked.
