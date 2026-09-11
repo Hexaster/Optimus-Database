@@ -66,8 +66,7 @@ Table evidence {
   "manufacturing.sterility" boolean [note: '无菌检测：true 阳性（检出微生物），false 阴性，未报告 null。']
   "manufacturing.mycoplasma" boolean [note: '支原体检测：true 阳性，false 阴性，未报告 null。']
   "manufacturing.endotoxin" varchar [note: '内毒素检测结果。']
-  "manufacturing.killing_activity" varchar [note: '杀伤活性结果。']
-  "manufacturing.killing_assay_conditions" json [note: '杀伤实验条件：target_cell_line、effector_target_ratio（measurement，E/T）、duration（measurement）、method；对应本条 killing_activity']
+  "manufacturing.killing_activity" json [note: '杀伤活性：target_cell_line、effector_target_ratio（measurement，E/T）、duration（measurement）、method']
   "manufacturing.cytokine_release" json [note: '其他细胞因子释放结果；IFN-γ 单独记录在 ifn_gamma_release。']
 
   outcomes json [note: '该 ABC 组合在该实验中的结果，如杀伤率、细胞因子释放、肿瘤抑制、存活、扩增、持续性或毒性等。']

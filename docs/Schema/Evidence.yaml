@@ -76,8 +76,8 @@ evidence:
     applicable_scenario:
       type: string
       nullable: true
-      description: 该证据或结果适用的场景
-      example: B-ALL, 儿童及青年
+      description: 结论成立的范围
+      example: 适用 B-ALL, 儿童及青年
 
     contrary_evidence:
       type: boolean
@@ -704,17 +704,10 @@ evidence:
       preferred_unit: EU/mL
 
     manufacturing.killing_activity:
-      type: measurement
-      nullable: true
-      description: 对靶细胞的特异性杀伤率；对应条件记录在 killing_assay_conditions，不把放行门槛当作实测结果。
-      preferred_unit: '%'
-      #example: "Nalm-6 靶细胞，E:T 5:1，24 h 特异杀伤 76 %（实时阻抗法）；放行标准 ≥ 40 %" # To be refined
-
-    manufacturing.killing_assay_conditions:
       type: json
       shape: object
       nullable: true
-      description: 本条 killing_activity 对应的杀伤实验条件，仅记录原文；不同靶细胞、E:T 比或时长对应的结果分别记录证据，不把多组条件与结果混合。未报告时为空。
+      description: 杀伤活性实验条件，仅包含靶细胞系、E:T 比、时长和方法；仅记录原文，不同实验条件分别记录证据，未报告时为空。
       item_schema:
         target_cell_line:
           type: string

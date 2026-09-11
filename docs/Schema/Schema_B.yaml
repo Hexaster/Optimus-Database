@@ -21,7 +21,7 @@ car:
           description: CAR 模块类型。
           nullable: false
           allowed_values:
-          - linker
+          - linker # 连接 CAR 不同模块的连接肽，不包含 Binder 内部连接 VH/VL 的 linker；后者写入 binder.linker。原文明确定义为 hinge 的部分仍归为 hinge。
           - hinge
           - transmembrane_region
           - costimulatory_domain
