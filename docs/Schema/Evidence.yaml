@@ -728,6 +728,10 @@ evidence:
           nullable: true
           default: null
           description: 原文报告的杀伤检测方法，如流式细胞术、LDH 释放法、荧光素酶法或实时阻抗法。
+        killing_rate:
+          type: measurement
+          description: 对靶细胞的特异性杀伤率
+          preferred_unit: '%'
 
     manufacturing.cytokine_release:
       type: json
