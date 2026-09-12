@@ -18,7 +18,11 @@ binder:
       type: json
       item_type: string
       nullable: true
-      description: 該 Binder 的其他名稱
+      description: 該 Binder 的其他名稱——指同一 binder 实体的其他称呼（克隆号、
+        原文中的不同写法、文献别名）。不含包含该 binder 的上层对象：CAR 构建体、
+        细胞产品、商品名都不是它的别名，那些关系由 car / manufacturing 表及外键表达。
+        例：IC78 的别名是 "anti-CD19 IC78 scFv"；CABA19-IC78（构建体）和
+        CABA-201（产品）不是别名。
 
     scfv_sequence:
       type: string
