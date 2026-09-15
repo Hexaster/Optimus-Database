@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 import argparse
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 import json
 import os
 import subprocess
@@ -33,6 +33,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
 from cart_db.agent_output import OutputError, prepare_output
+from cart_db.extraction_progress import ExtractionProgress, stream_agent, codex_status, claude_status
 from cart_db.config import settings      # noqa: E402  —— 唯一一份 .env 解析
 SKILL = "extract-cart-data"
 
@@ -53,6 +54,11 @@ Follow the skill with this run's overrides:
   Keep references consistent; the runner generates final UUIDs and rewrites references.
 - The runner fills omitted nullable fields with null, orders fields, and normalizes units.
   Preserve source values, raw text, row order, and all list order; do not deduplicate.
+- Write reasoning.md headings and explanatory prose in Simplified Chinese.
+  In error_log.jsonl, retain the skill's keys and machine-readable category codes,
+  and add a message field to every exception with a Simplified Chinese explanation
+  of the specific problem and the action taken. Keep source quotes, raw_value,
+  identifiers, schema field names, and scientific sequences unchanged.
 Read docs/Schema/*.yaml first, then the document, then write
 {out_dir}/data.jsonl, {out_dir}/reasoning.md (a concise evidence and decision summary),
 and, if there are exceptions, {out_dir}/error_log.jsonl.
@@ -104,6 +110,27 @@ def parse_claude(stdout: str) -> dict:
         "session": answer.get("session_id"),
         "reason": answer.get("result", "")[:500],
     }
+
+
+def parse_claude_stream(stdout: str) -> dict:
+    """Only the terminal result owns run-wide usage and cost."""
+    result = None
+    for line in stdout.splitlines():
+        if not line.strip():
+            continue
+        event = json.loads(line)
+        if not isinstance(event, dict):
+            raise TypeError("Claude event must be an object")
+        if event.get("type") == "result":
+            result = event
+    if result is None:
+        result = {"is_error": True, "result": "Claude 未返回 result，输出流可能不完整"}
+    elif result.get("subtype") != "success":
+        result["is_error"] = True
+        result["result"] = result.get("result") or "；".join(
+            str(error) for error in result.get("errors", [])
+        ) or f"Claude 调用失败：{result.get('subtype', '未知状态')}"
+    return parse_claude(json.dumps(result))
 
 
 def parse_codex(stdout: str) -> dict:
@@ -220,6 +247,8 @@ def _run_agent(path: Path, *, agent: str, out_dir: Path, timeout: int,
     output_price: float | None, subagent: bool = False,
     correction: str = "",
     diagnostics_dir: Path | None = None,
+    on_status=None,
+    cancel_event=None,
 ) -> dict:
     """跑一份文档，返回这次调用的结果摘要。"""
     prompt = PROMPT.format(
@@ -234,13 +263,23 @@ def _run_agent(path: Path, *, agent: str, out_dir: Path, timeout: int,
         ),
     )
     prompt += correction
+    if agent in {"codex", "claude"}:
+        prompt += (
+            "\nAt meaningful workflow transitions, emit a short public progress message "
+            "in Simplified Chinese on a single line beginning exactly with 进度：. "
+            "Describe the current observable task (reading, extracting, source checking, "
+            "or writing), not private reasoning. Report actual work only; do not invent "
+            "progress, percentages, or completion. Continue working after each update.\n"
+        )
     run_env = env.copy()
     if agent == "claude":
         command = [
-            "claude", "-p", prompt, "--output-format", "json",
+            "claude", "-p", prompt, "--output-format", "stream-json" if on_status is not None else "json",
             "--allowedTools", "Read", "Write", "Edit", "Bash", "Glob", "Grep",
             "--permission-mode", "acceptEdits", "--effort", effort,
         ]
+        if on_status is not None:
+            command += ["--verbose"]
         if model:
             command += ["--model", model]
         if budget is not None:
@@ -276,10 +315,16 @@ def _run_agent(path: Path, *, agent: str, out_dir: Path, timeout: int,
 
     started = time.monotonic()
     try:
-        completed = subprocess.run(
-            command, cwd=REPO, env=run_env, capture_output=True, text=True,
-            timeout=timeout,
-        )
+        if agent in {"codex", "claude"} and on_status is not None:
+            completed = stream_agent(command, cwd=REPO, env=run_env,
+                                     timeout=timeout, on_status=on_status,
+                                     cancel_event=cancel_event,
+                                     status_parser=claude_status if agent == "claude" else codex_status)
+        else:
+            completed = subprocess.run(
+                command, cwd=REPO, env=run_env, capture_output=True, text=True,
+                timeout=timeout,
+            )
     except FileNotFoundError:
         return {"ok": False, "reason": f"找不到 {command[0]} CLI",
                 "seconds": time.monotonic() - started, "cost": None,
@@ -297,7 +342,8 @@ def _run_agent(path: Path, *, agent: str, out_dir: Path, timeout: int,
                          completed.stderr, completed.returncode)
     try:
         if agent == "claude":
-            result = parse_claude(completed.stdout)
+            result = (parse_claude_stream(completed.stdout) if on_status is not None
+                      else parse_claude(completed.stdout))
         elif agent == "codex":
             result = parse_codex(completed.stdout)
         elif agent == "kimi":
@@ -340,13 +386,15 @@ def save_diagnostics(directory, env, stdout, stderr, returncode):
 
 
 def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
-            validation_retries: int = 1, **kwargs) -> dict:
+            validation_retries: int = 1, on_status=None, **kwargs) -> dict:
     """Publish only validated output; retain failed drafts for inspection.
 
     Repairs share the document timeout and remaining known budget. Unknown
     spending with a budget disables automatic repair. Existing output is kept
     on validation failure; successful empty output means no extracted records.
     """
+    notify = on_status or (lambda message: None)
+    notify("正在启动抽取 agent")
     out_dir.mkdir(parents=True, exist_ok=True)
     draft_dir = Path(tempfile.mkdtemp(prefix=f".{path.stem}-", dir=out_dir))
     candidate = draft_dir / "data.jsonl"
@@ -365,7 +413,7 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
         attempt_budget = budget - cost if budget is not None else None
         result = _run_agent(path, out_dir=draft_dir, timeout=remaining,
                             budget=attempt_budget, correction=correction,
-                            diagnostics_dir=draft_dir, **kwargs)
+                            diagnostics_dir=draft_dir, on_status=on_status, **kwargs)
         for key in usage:
             usage[key] += result["usage"][key]
         known_usage = known_usage and result["usage_known"]
@@ -376,6 +424,7 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
         if not result["ok"]:
             break
         try:
+            notify("正在校验字段、记录引用和计量单位")
             output = prepare_output(candidate)
             reasoning = draft_dir / "reasoning.md"
             if not reasoning.is_file() or not reasoning.read_text(encoding="utf-8").strip():
@@ -395,10 +444,12 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
                 "deduplicate, or remove valid records to pass validation.\n"
                 + str(exc)
             )
+            notify(f"输出校验未通过，正在启动第 {attempt + 1} 次修正")
             continue
         changed = []
         backups = {}
         try:
+            notify("校验通过，正在保存正式结果")
             final_dir.mkdir(parents=True, exist_ok=True)
             staged = draft_dir / "normalized.jsonl"
             staged.write_text(output, encoding="utf-8")
@@ -491,6 +542,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out-dir", help="结果目录；默认按 agent/model 隔离")
     parser.add_argument("--force", action="store_true", help="已有结果的文档也重跑")
     parser.add_argument("--dry-run", action="store_true", help="只列出要跑什么")
+    parser.add_argument("--no-progress", action="store_true", help="关闭终端动态状态面板")
     parser.add_argument("--subagent", choices=("true", "false"), default="false",
                         help="是否启用两个子代理独立抽取，默认 false")
     parser.add_argument("--timeout", type=int, default=1800, help="单份超时秒数")
@@ -577,7 +629,9 @@ def main(argv: list[str] | None = None) -> int:
     failures, total_cost, unknown_cost, unknown_usage = 0, 0.0, False, False
     total_usage = empty_usage()
 
-    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+    reports = []
+    with ExtractionProgress(pending, enabled=args.agent in {"codex", "claude"} and not args.no_progress) as progress, \
+            progress.workers(args.workers) as pool:
         futures = {
             pool.submit(
                 run_one, path, agent=args.agent, out_dir=out_dir, timeout=args.timeout,
@@ -587,6 +641,8 @@ def main(argv: list[str] | None = None) -> int:
                 output_price=args.output_price,
                 subagent=args.subagent == "true",
                 validation_retries=args.validation_retries,
+                on_status=(lambda message, p=path: progress.update(p, message)) if progress.enabled else None,
+                cancel_event=progress.cancel_event,
             ): path for path in pending
         }
         for index, future in enumerate(as_completed(futures), 1):
@@ -596,7 +652,7 @@ def main(argv: list[str] | None = None) -> int:
             except Exception as exc:
                 result = dict(ok=False, reason=f"任务异常：{type(exc).__name__}: {exc}",
                               cost=None, usage=empty_usage(), usage_known=False, seconds=0)
-            print(f"\n[{index}/{len(pending)}] {path.name}", flush=True)
+            report = [f"\n[{index}/{len(pending)}] {path.name}"]
             if result["cost"] is None:
                 unknown_cost = True
             else:
@@ -611,12 +667,22 @@ def main(argv: list[str] | None = None) -> int:
                 "草稿（未发布）：" + tally(Path(result['draft_dir']), path.stem)
                 if result.get('draft_dir') else tally(out_dir / path.stem, path.stem)
             )
-            print(f"  {status} {result['seconds']:.0f}s  {cost_text}  "
+            report.append(f"  {status} {result['seconds']:.0f}s  {cost_text}  "
                   f"{usage_text(result['usage'], result['usage_known'])}  "
                   f"{output_text}")
             if not result["ok"]:
                 failures += 1
-                print(f"  ↳ {result['reason']}")
+                report.append(f"  ↳ {result['reason']}")
+            progress.finish(path, result["ok"],
+                            f"已完成 · {output_text} · 校验通过" if result["ok"] else result["reason"],
+                            result["seconds"])
+            if progress.enabled:
+                reports.extend(report)
+            else:
+                print("\n".join(report), flush=True)
+
+    if reports:
+        print("\n".join(reports))
 
     total_cost_text = f"${total_cost:.4f}" + (" + 未知费用" if unknown_cost else "")
     print(f"\n完成 {len(pending) - failures}/{len(pending)}，合计 "
