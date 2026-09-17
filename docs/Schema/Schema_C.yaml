@@ -99,7 +99,7 @@ manufacturing:
       shape: array
       type: json
       nullable: true
-      description: 制造过程中使用的关键试剂；已记录在 selection_steps 中的试剂不重复记录。无法对应具体分选步骤的分选试剂可在此记录。培养基记录在 culture_system.culture_medium，不在此重复记录。
+      description: 制造过程中使用的关键试剂；已记录在 selection_steps 中的试剂不重复记录。无法对应具体分选步骤的分选试剂可在此记录。培养基记录在 culture_system.culture_medium，不在此重复记录。**只收进入制造流程的试剂**——流式抗体、染料、检测抗体等仅用于分析读出的试剂不属于此列，载体上的选择基因也不是外加试剂。反过来，原文明确用于制造的试剂要收全（如 RetroNectin、聚凝胺、BSA 封闭液、浓缩病毒），不因已在别处提及而略过。
       item_schema:
         reagent_brand:
           type: string
@@ -208,7 +208,7 @@ manufacturing:
       type: json
       shape: array
       nullable: true
-      description: 细胞因子组合
+      description: 制备过程中**外加到培养体系**的细胞因子及其浓度。不含 CAR 构建体自身携带的细胞因子模块——装甲 CAR 上转基因表达的 IL-15、IL-15Rα、IL-7 等属于 CAR 结构，记于 car.modules，不是培养时添加的试剂。例：填「IL-2 100 IU/mL」「IL-7 10 ng/mL + IL-15 5 ng/mL（培养基中）」；不填装甲 CAR 转基因表达的 IL-15/IL-15Rα。
       item_schema:
         cytokine_name:
           type: string
@@ -263,7 +263,7 @@ manufacturing:
       type: json
       shape: object
       nullable: true
-      description: 最终制剂的装量、细胞浓度与剂量；仅记录原文，不自行乘算。
+      description: 最终细胞制剂本身的装量、细胞浓度与剂量；仅记录原文，不自行乘算。**不含给药环节的信息**——动物或患者的给药途径、注射体积、给药时间表，以及输注前后伴随给予的药物（如注射后另行给予的 IL-2、预处理化疗）都不属于制剂，那些记录在 evidence 的实验条件里。例：填「CryoStor B/CryoStor 10，1×10^7 cells/mL」；不填「尾静脉注射 200 μL」「注射后皮下给予 45,000 IU IL-2」。
       item_schema:
         fill_volume:
           type: measurement

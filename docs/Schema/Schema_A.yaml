@@ -27,13 +27,13 @@ binder:
     scfv_sequence:
       type: string
       nullable: true
-      description: scFv 完整氨基酸序列
+      description: scFv 完整氨基酸序列（含 VL–linker–VH 或 VH–linker–VL 全长）。填了本字段并不代表 heavy_chain / light_chain / linker 可以留空——能从本序列识别出三段时，三个字段都要填，本字段仍保留全长。
 
     heavy_chain:
       type: json
       shape: object
       nullable: true
-      description: 原文提供的重链序列及其范围；完整保留，不自行裁切。
+      description: 重链可变区（VH）序列。原文单独给出时完整保留，不裁切。若原文只给出完整 scFv 序列，按其中的柔性 linker（如 (G4S)3 / GGGGSGGGGSGGGGS）切分，把 linker 之后（VL–linker–VH 排布）或之前（VH–linker–VL 排布）的一段填入本字段，并把 linker 本身填入 linker、完整序列保留在 scfv_sequence——这属于按原文结构识别，不是「自行裁切」。无法确定排布方向时留空并记异常。
       item_schema:
         sequence:
           type: string
@@ -50,7 +50,7 @@ binder:
       type: json
       shape: object
       nullable: true
-      description: 原文提供的轻链序列及其范围；完整保留，不自行裁切。
+      description: 轻链可变区（VL）序列。原文单独给出时完整保留，不裁切。若原文只给出完整 scFv 序列，按其中的柔性 linker 切分后取对应的一段填入本字段，规则与 heavy_chain 相同。
       item_schema:
         sequence:
           type: string

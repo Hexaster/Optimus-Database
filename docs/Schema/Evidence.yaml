@@ -76,7 +76,7 @@ evidence:
     applicable_scenario:
       type: string
       nullable: true
-      description: 结论成立的范围
+      description: 该条证据的结论在什么范围内成立——实验体系、受试对象来源、疾病或适应症、细胞类型、给药与分组条件中，原文明确限定的那些。写原文实际陈述的限定，不外推、不概括成一句泛泛的话；原文点名了患者来源、疾病种类或对照设置时要逐项写出。
       example: 适用 B-ALL, 儿童及青年
 
     contrary_evidence:
@@ -599,7 +599,7 @@ evidence:
     manufacturing.transduction_efficiency:
       type: measurement
       nullable: true
-      description: 来源报告的转导效率。若该指标明确以 CAR 表达阳性细胞比例定义，记录在 car_positive_ratio，不重复填此字段；其他定义保留原文检测方法和分母。
+      description: 来源报告的转导效率。**判断依据是测量口径，不是原文的叫法**——凡实际以「CAR 表达阳性细胞比例」测得的（如流式 CAR⁺ 门内百分比），一律记录在 car_positive_ratio，本字段留空，即使原文把它称作 transduction efficiency。本字段只放以其他口径定义的转导效率（如 VCN、病毒滴度推算），并保留原文检测方法和分母。例：Figure 中流式图直印的「CAR⁺ 52.1%」→ 填 car_positive_ratio，本字段留空。
       preferred_unit: '%'
       check: "对 value、lower、upper 中每个非 null 的 x，要求 0 <= x <= 100"
 
@@ -707,7 +707,7 @@ evidence:
       type: json
       shape: object
       nullable: true
-      description: 杀伤活性实验条件，仅包含靶细胞系、E:T 比、时长和方法；仅记录原文，不同实验条件分别记录证据，未报告时为空。
+      description: 杀伤活性的实验条件与结果：条件记于 target_cell_line、effector_target_ratio、duration、method，结果记于 killing_rate。原文给出杀伤率时必须填 killing_rate，不得只记条件而丢结果——含 ">70%"、"a minimum of 90%" 这类带比较符的表述，按 measurement 的 kind 如实保留边界（minimum/at least 为 greater_than_or_equal，more than 为 greater_than）。仅记录原文，不同实验条件分别记录证据，未报告时为空。
       item_schema:
         target_cell_line:
           type: string
