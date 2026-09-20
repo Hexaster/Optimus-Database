@@ -202,6 +202,7 @@ evidence:
       allowed_values:
       - SPR
       - BLI
+      - other
 
     binder.measurement_conditions:
       type: json
@@ -270,6 +271,7 @@ evidence:
             - bivalent_analyte
             - heterogeneous_ligand
             - steady_state
+            - other
 
     binder.cross_reactivity_protein:
       type: json
