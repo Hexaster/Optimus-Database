@@ -25,7 +25,7 @@ car:
           - hinge
           - transmembrane_region
           - costimulatory_domain
-          - activation_domain
+          - signaling_domain
           - tag
           - safety_switch
         source_molecule:

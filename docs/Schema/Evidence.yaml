@@ -1,4 +1,4 @@
-# measurement：保留定量结果的原始表达形式，Python 类型为 Measurement。
+# measurement：保留原文明示定量结果或可追溯的图像像素估算范围，Python 类型为 Measurement。
 # 仅用于可能报告单值、范围、界限或 ± 的结果及工艺参数。
 # 序列长度、残基位置、确定的序列一致性及固定评分仍用原有类型。
 #
@@ -9,20 +9,27 @@
 #   upper: 范围上限或小于比较的门槛
 #   error: ± 后的数值，不得为负
 #   unit: 这组结构化数值的实际单位；来源未注明或无量纲时填 null
-#   raw: 原文，保留来源单位及报告的统计含义
+#   raw: 明示值保留原文、单位和统计含义；图像估算写明“图像像素估算”、图号/面板/组别/时点、读数对象及范围，不伪装成原文引文
 #
 # kind → 使用字段（其他数值子字段填 null）：
 #   single_value → value
-#   range → lower, upper（lower <= upper）
+#   range → lower, upper（原文明示范围，lower <= upper）
+#   image_estimated_range → lower, upper（图像像素估算范围，lower < upper）
 #   mean_with_standard_deviation → value, error（平均值 ± 标准差）
 #   mean_with_standard_error → value, error（平均值 ± 标准误）
 #   plus_minus_unspecified → value, error（原文未说明 ± 的含义）
 #   greater_than / greater_than_or_equal → lower（> / >=）
 #   less_than / less_than_or_equal → upper（< / <=）
 #
-# 未报告的可空 measurement 整项填 null；不以空对象代替。
+# 原文明示值优先；图像中无数值标签但能可靠校准坐标和定位读数时，允许 image_estimated_range。
+# 估算时 value/error 均为 null；上下界表示像素定位与读图精度，不是样本范围、SD、SEM或置信区间。
+# 不从估算范围取中点充当精确值；不估造误差项。无法识别组别、坐标尺度或读数对象时保留 null。
+# citation 定位图/面板；reasoning.md 记录图像尺寸、坐标类型、刻度值及像素位置、读数像素区间、映射和取整依据。
+# 估算保持原图指标和单位；剩余细胞数、存活率等不能因需要 killing_rate 而直接改写成杀伤率。
+# 下游比较/训练须区分 image_estimated_range 与原文明示值，估算区间不是独立样本。
+# 未报告且无法从图中可靠估算的可空 measurement 整项填 null；不以空对象代替。
 # 即使只报告一个数值，也使用 kind: single_value，不直接填数字。
-# 抽取时数值与 unit 按来源填写，不自行换算；未知单位不从 preferred_unit 补全。
+# 明示数值与 unit 按来源填写；图像估算按校准坐标映射，保持来源单位。除此以外不自行换算；未知单位不从 preferred_unit 补全。
 # preferred_unit 仅为归一化偏好，不限制可保存的来源单位。
 # 程序仅做已列明的固定倍率或偏移换算；不能换算时保留数值与实际单位，不置空或报 schema_mismatch。
 # 换算时同步处理 value、lower、upper、error；error 仅按尺度换算，不加偏移；raw 不变。
@@ -90,6 +97,14 @@ evidence:
     time_of_download:
       type: date
       description: 數據下載時間
+
+    combination_id:
+      type: uuid
+      key: foreign
+      references: abc_combination_db1.combination_id
+      description: 该证据对应的 ABC 组合 ID。
+      nullable: true
+      index: true
 
     binder.binder_id:
       type: uuid
@@ -272,6 +287,34 @@ evidence:
             - heterogeneous_ligand
             - steady_state
             - other
+
+    binder.ec50:
+      type: measurement
+      nullable: true
+      description: >-
+        半数最大效应浓度 EC50，即剂量-反应滴定曲线拟合所得的中点浓度。
+        这是表观结合强度，不是平衡解离常数：其数值同时取决于结合价、抗原密度、
+        检测体系与孵育条件，不可与 binder.kd 互相换算，也不可跨实验体系比较。
+        必须与 binder.ec50_conditions 成对记录，缺条件的 EC50 视为不可用。
+        原文若以 ng/mL 等质量浓度报告，折算为 nM 后填入，并在 raw 保留原始表述；
+        未给分子量而无法换算时，value 留空、raw 记原值与单位。
+      preferred_unit: nM
+      check: "对 value、lower、upper 中每个非 null 的 x，要求 x >= 0"
+
+    binder.ec50_conditions:
+      type: json
+      shape: object
+      nullable: true
+      description: >-
+        EC50 对应的实验体系。同一 binder 在不同体系下的 EC50 可相差数个数量级，
+        故本字段与 binder.ec50 必须成对出现。仅记录原文报告的信息，未报告的子项为空。
+      item_schema:
+        assay_method:    { allowed_values: [ELISA, FACS, MSD, SPR_steady_state, other] }
+        antigen_format:  { allowed_values: [recombinant_protein, cell_surface, other] }
+        antigen_source:  { type: string }
+        binder_format:   { allowed_values: [monovalent_scFv, bivalent_IgG, cell_surface_CAR, phage, other] }
+        detection:       { type: string }
+        incubation:      { type: string }
 
     binder.cross_reactivity_protein:
       type: json
@@ -507,38 +550,38 @@ evidence:
     car.tscm_ratio:
       type: measurement
       nullable: true
-      description: 干细胞样记忆 T 细胞（Tscm）的比例。raw 保留原文分母及门控定义，测量时间和方法记录在 experimental_conditions；合并亚型比例不拆分。
+      description: 干细胞样记忆 T 细胞（Tscm）的比例。
       preferred_unit: '%'
 
     car.tcm_ratio:
       type: measurement
       nullable: true
-      description: 中央记忆 T 细胞（Tcm）的比例。raw 保留原文分母及门控定义，测量时间和方法记录在 experimental_conditions；合并亚型比例不拆分。
+      description: 中央记忆 T 细胞（Tcm）的比例。
       preferred_unit: '%'
 
     car.tem_ratio:
       type: measurement
       nullable: true
-      description: 效应记忆 T 细胞（Tem）的比例。raw 保留原文分母及门控定义，测量时间和方法记录在 experimental_conditions；合并亚型比例不拆分。
+      description: 效应记忆 T 细胞（Tem）的比例。
       preferred_unit: '%'
 
     car.teff_ratio:
       type: measurement
       nullable: true
-      description: 效应 T 细胞（Teff）的比例。raw 保留原文分母及门控定义，测量时间和方法记录在 experimental_conditions；合并亚型比例不拆分。
+      description: 效应 T 细胞（Teff）的比例。
       preferred_unit: '%'
 
     car.exhaustion_phenotype:
       type: string
       nullable: true
       default: null
-      description: 细胞的耗竭表型，保留原文标志物组合、比例及门控细胞群；测量时间和方法记录在 experimental_conditions，不根据单个标志物推断功能状态。
+      description: 细胞的耗竭表型，保留原文标志物组合、比例及门控细胞群；不根据单个标志物推断功能状态。
 
     car.treg_phenotype:
       type: string
       nullable: true
       default: null
-      description: 细胞的Treg 相关表型，保留原文标志物组合、比例及门控细胞群；测量时间和方法记录在 experimental_conditions，不根据单个标志物推断功能状态。
+      description: 细胞的Treg 相关表型，保留原文标志物组合、比例及门控细胞群；不根据单个标志物推断功能状态。
 
     car.persistence:
       type: measurement
@@ -625,7 +668,7 @@ evidence:
     manufacturing.car_positive_ratio:
       type: measurement
       nullable: true
-      description: 表达 CAR 的阳性细胞比例。raw 保留分母或门控细胞群；测量阶段、检测方法及直接检测或替代标志物记录在 experimental_conditions。不以 CD3+ 比例、VCN 或未说明检测定义的转导效率推算。仅存实测结果，不把放行门槛当作结果。
+      description: 表达 CAR 的阳性细胞比例。raw 保留分母或门控细胞群。不以 CD3+ 比例、VCN 或未说明检测定义的转导效率推算。仅存实测结果，不把放行门槛当作结果。
       preferred_unit: '%'
       check: "对 value、lower、upper 中每个非 null 的 x，要求 0 <= x <= 100"
 
@@ -653,7 +696,7 @@ evidence:
     manufacturing.ifn_gamma_release:
       type: measurement
       nullable: true
-      description: 体外细胞功能试验的 IFN-γ（干扰素 γ）分泌或释放结果，保留实际指标和单位。experimental_conditions 记录刺激物或靶细胞及抗原状态、对照、E:T 比（适用时）、时长、方法及归一化基准。不得混入患者血清水平或将细胞内 IFN-γ 阳性比例当作释放量；不同刺激条件分别记录证据。仅存实测结果，不把放行门槛当作结果。
+      description: 体外细胞功能试验的 IFN-γ（干扰素 γ）分泌或释放结果，保留实际指标和单位。不得混入患者血清水平或将细胞内 IFN-γ 阳性比例当作释放量；不同刺激条件分别记录证据。仅存实测结果，不把放行门槛当作结果。
       preferred_unit: pg/mL
 
     manufacturing.vcn:
@@ -673,38 +716,38 @@ evidence:
     manufacturing.tscm_ratio:
       type: measurement
       nullable: true
-      description: 干细胞样记忆 T 细胞（Tscm）的比例。raw 保留原文分母及门控定义，测量时间和方法记录在 experimental_conditions；合并亚型比例不拆分。
+      description: 干细胞样记忆 T 细胞（Tscm）的比例。raw 保留原文分母及门控定义；合并亚型比例不拆分。
       preferred_unit: '%'
 
     manufacturing.tcm_ratio:
       type: measurement
       nullable: true
-      description: 中央记忆 T 细胞（Tcm）的比例。raw 保留原文分母及门控定义，测量时间和方法记录在 experimental_conditions；合并亚型比例不拆分。
+      description: 中央记忆 T 细胞（Tcm）的比例。raw 保留原文分母及门控定义；合并亚型比例不拆分。
       preferred_unit: '%'
 
     manufacturing.tem_ratio:
       type: measurement
       nullable: true
-      description: 效应记忆 T 细胞（Tem）的比例。raw 保留原文分母及门控定义，测量时间和方法记录在 experimental_conditions；合并亚型比例不拆分。
+      description: 效应记忆 T 细胞（Tem）的比例。raw 保留原文分母及门控定义；合并亚型比例不拆分。
       preferred_unit: '%'
 
     manufacturing.teff_ratio:
       type: measurement
       nullable: true
-      description: 效应 T 细胞（Teff）的比例。raw 保留原文分母及门控定义，测量时间和方法记录在 experimental_conditions；合并亚型比例不拆分。
+      description: 效应 T 细胞（Teff）的比例。raw 保留原文分母及门控定义；合并亚型比例不拆分。
       preferred_unit: '%'
 
     manufacturing.exhaustion_phenotype:
       type: string
       nullable: true
       default: null
-      description: 细胞的耗竭表型，保留原文标志物组合、比例及门控细胞群；测量时间和方法记录在 experimental_conditions，不根据单个标志物推断功能状态。
+      description: 细胞的耗竭表型，保留原文标志物组合、比例及门控细胞群，不根据单个标志物推断功能状态。
 
     manufacturing.treg_phenotype:
       type: string
       nullable: true
       default: null
-      description: 细胞的Treg 相关表型，保留原文标志物组合、比例及门控细胞群；测量时间和方法记录在 experimental_conditions，不根据单个标志物推断功能状态。
+      description: 细胞的Treg 相关表型，保留原文标志物组合、比例及门控细胞群；不根据单个标志物推断功能状态。
 
     manufacturing.sterility:
       type: boolean
