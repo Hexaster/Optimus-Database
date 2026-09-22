@@ -1,6 +1,11 @@
 binder:
   table: binder
-  description: Binder 核心实体表。一个经实体归一化后的 Binder 对应一条记录。
+  description: >-
+    Binder 核心实体表，ID 标识结合域；一个经实体归一化后的 Binder 对应一条记录。
+    原文明确为同一结合域时，不因实验用 Fc 融合、纯化标签、表达载体或 CAR 展示方式不同而新建 Binder；
+    测量分子格式及适用范围保存在 evidence.applicable_scenario，测量条件保存在相应证据字段。
+    结合域自身序列或结构变化时，依据来源判断实体身份，不能仅凭相同克隆名合并。
+    共享 Binder ID 不代表不同分子格式的测量结果可以互换。
   fields:
     binder_id:
       type: uuid

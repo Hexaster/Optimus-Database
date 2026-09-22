@@ -2,7 +2,12 @@
 
 manufacturing:
   table: manufacturing
-  description: 制造工艺核心实体表。每个产品/工艺版本对应一条记录。
+  description: >-
+    制造工艺核心实体表。每个来源明确、操作步骤和关键条件一致的可复用制造方案对应一条记录，
+    可由多个 ABC 组合共享。仅产品名称、Binder/CAR 身份或同一递送体系中编码对应 CAR 的序列不同，
+    不自动新建工艺实体；依据来源比较分选、递送体系及用量、激活时序、培养和后处理等实际步骤及条件。
+    实际步骤或关键条件不同的方案应区分，不能仅因名称相似或字段均为空而合并。
+    不因供者、批次或实验结果不同而自动拆分工艺；产品相关结果保留在对应组合的 evidence 中。
   fields:
     manufacturing_id:
       type: uuid
@@ -208,7 +213,7 @@ manufacturing:
       type: json
       shape: array
       nullable: true
-      description: 制备过程中**外加到培养体系**的细胞因子及其浓度。不含 CAR 构建体自身携带的细胞因子模块——装甲 CAR 上转基因表达的 IL-15、IL-15Rα、IL-7 等属于 CAR 结构，记于 car.modules，不是培养时添加的试剂。例：填「IL-2 100 IU/mL」「IL-7 10 ng/mL + IL-15 5 ng/mL（培养基中）」；不填装甲 CAR 转基因表达的 IL-15/IL-15Rα。
+      description: 制备过程中**外加到培养体系**的细胞因子及其浓度。不含转基因表达的细胞因子——与 CAR 额外共表达的 IL-15、IL-15Rα、IL-7 等记录在 evidence 的 car.coexpressed_proteins；仅实际融合于 CAR 受体自身的结构域按 car.modules 定义记录。它们不是培养时添加的试剂。例：填「IL-2 100 IU/mL」「IL-7 10 ng/mL + IL-15 5 ng/mL（培养基中）」；不填装甲 CAR 转基因表达的 IL-15/IL-15Rα。
       item_schema:
         cytokine_name:
           type: string
@@ -280,7 +285,9 @@ manufacturing:
           nullable: true
           description: 来源报告的总细胞剂量；若仅报告按体重计的剂量，保留 cells/kg 等原单位，不换算为绝对总量；raw 区分目标与实际剂量。
 
-    corresponding_car_product:
-      type: string
-      nullable: true
-      description: 对应 CAR 构型/产品
+    #corresponding_car_product:
+    #  type: string
+    #  nullable: true
+    #  description: >-
+    #    来源明确使用该工艺的 CAR 构型/产品名称，可在同一字符串中列出多个名称。
+    #    仅作来源描述，不作为工艺身份或拆分依据；结构化关联由 ABC 组合及证据外键表达。

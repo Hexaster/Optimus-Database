@@ -444,6 +444,23 @@ evidence:
       nullable: true
       index: true
 
+    car.coexpressed_proteins:
+      type: json
+      shape: array
+      item_type: string
+      nullable: true
+      default: null
+      description: >-
+        与 CAR 受体额外共表达的工程化蛋白，按来源名称记录，
+        保留 mbIL-15 等分子形式；不含细胞内源性蛋白、培养体系外加因子、CAR 受体自身结构域，
+        也不将 T2A/P2A 等共表达连接元件作为蛋白列入。
+        来源明确该实验组无额外共表达蛋白时用 []；未报告或无法确定时用 null，不能以未提及推断为 []。
+        属于实验构型条件，同组的杀伤、增殖、表型等每条 evidence 均应携带该信息；
+        不能只在一条证据中记录并假设其他记录自动继承。同一 CAR 骨架可共用 car_id，
+        但汇总、去重和比较结果时须区分共表达组合，不能仅按 car_id 合并。
+        表达方式若有额外限定，保留在 applicable_scenario 中；本字段不表示表达量或阳性率。
+      example: ["mbIL-15", "CXCR5"]
+
     #car.activation_speed:
     #  type: string
     #  nullable: true

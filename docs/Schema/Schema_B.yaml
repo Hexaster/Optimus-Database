@@ -1,6 +1,6 @@
 car:
   table: car
-  description: CAR 骨架核心实体表。一个经归一化后的 CAR backbone 对应一条记录；Binder 作为 A 实体独立管理，后续通过 ABC 组合关联。
+  description: CAR 骨架核心实体表。一个经归一化后的 CAR backbone 对应一条记录；Binder 作为 A 实体独立管理，后续通过 ABC 组合关联。来源明确受体骨架相同时，不因额外共表达蛋白不同而新建 car_id；共表达蛋白记录在 evidence 的 car.coexpressed_proteins 中，不作为独立共表达蛋白加入 modules。
   fields:
     car_id:
       type: uuid
@@ -25,7 +25,7 @@ car:
           - hinge
           - transmembrane_region
           - costimulatory_domain
-          - CD3zeta
+          - activation_domain
           - tag
           - safety_switch
         source_molecule:

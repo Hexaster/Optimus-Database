@@ -30,6 +30,7 @@ Table evidence {
   "binder.immunogenicity_ada_risk" varchar [note: '免疫原性或抗药抗体（ADA）风险信息。']
 
   "car.car_id" uuid [not null, ref: > car.car_id, note: '该证据对应的 CAR backbone ID。']
+  "car.coexpressed_proteins" json [note: '可选字符串数组：该实验组额外共表达的工程化蛋白，如 mbIL-15、CXCR5；不含内源蛋白、外加因子、CAR自身结构域或T2A/P2A。明确无共表达用[]，未知用null；每条相关证据均记录，汇总和去重须区分共表达组合。表达方式限定见applicable_scenario。']
   "car.activation_speed" varchar [note: 'CAR 激活速度。']
   "car.metabolic_state" varchar [note: 'CAR-T 细胞的代谢状态，例如糖酵解或氧化代谢。可选值：glycolytic、oxidative']
   "car.expansion_capacity" varchar [note: 'CAR-T 细胞的扩增能力。']

@@ -3,5 +3,5 @@ Table car {
   name varchar [note: 'CAR backbone 的名称或代号。']
   modules json [not null, note: '按 CAR 中实际顺序保存的模块列表；每个模块记录模块类型、来源分子、序列与长度。Binder 识别域作为 A 实体独立管理，不参与 B 实体的 backbone 去重。模块类型可选值：linker、hinge、transmembrane_region、costimulatory_domain、CD3zeta、tag、safety_switch；length 单位：aa，检查：length >= 0。']
 
-  Note: 'CAR 骨架核心实体表。一个经归一化后的 CAR backbone 对应一条记录；Binder 作为 A 实体独立管理，后续通过 ABC 组合关联。'
+  Note: 'CAR 骨架核心实体表。一个经归一化后的 CAR backbone 对应一条记录；Binder 作为 A 实体独立管理，后续通过 ABC 组合关联。来源明确受体骨架相同时，不因额外共表达蛋白不同而新建 car_id；共表达蛋白记录在 evidence 的 car.coexpressed_proteins 中，不作为独立共表达蛋白加入 modules。'
 }
