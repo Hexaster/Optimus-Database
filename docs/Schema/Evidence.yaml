@@ -309,13 +309,46 @@ evidence:
         EC50 对应的实验体系。同一 binder 在不同体系下的 EC50 可相差数个数量级，
         故本字段与 binder.ec50 必须成对出现。仅记录原文报告的信息，未报告的子项为空。
       item_schema:
-        assay_method:    { allowed_values: [ELISA, FACS, MSD, SPR_steady_state, other] }
-        antigen_format:  { allowed_values: [recombinant_protein, cell_surface, other] }
-        antigen_source:  { type: string }
-        binder_format:   { allowed_values: [monovalent_scFv, bivalent_IgG, cell_surface_CAR, phage, other] }
-        detection:       { type: string }
-        incubation:      { type: string }
-
+        assay_method:
+          type: string
+          nullable: true
+          description: 测定方法。得到该 EC50 所用的实验方法。
+          allowed_values:
+            - ELISA
+            - FACS
+            - MSD
+            - SPR_steady_state
+            - other
+        antigen_format:
+          type: string
+          nullable: true
+          description: 抗原呈现形式。抗原以重组蛋白形式还是以细胞表面天然形式呈现。
+          allowed_values:
+            - recombinant_protein
+            - cell_surface
+            - other
+        antigen_source:
+          type: string
+          nullable: true
+          description: 抗原来源。重组蛋白名称或抗原阳性细胞系名称。
+        binder_format:
+          type: string
+          nullable: true
+          description: 结合分子的呈现形式，决定所测为单价亲和力还是多价亲合力。
+          allowed_values:
+            - monovalent_scFv
+            - bivalent_IgG
+            - cell_surface_CAR
+            - phage
+            - other
+        detection:
+          type: string
+          nullable: true
+          description: 检测体系。检测试剂与标记方式。
+        incubation:
+          type: string
+          nullable: true
+          description: 孵育条件。孵育温度与时长。
     binder.cross_reactivity_protein:
       type: json
       shape: array
