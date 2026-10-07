@@ -223,7 +223,7 @@ evidence:
       type: json
       shape: object
       nullable: true
-      description: Kd、Kon、Koff 等测量值对应的具体测量条件
+      description: "**Kd、Kon、Koff 这类结合亲和力或动力学测量**对应的具体测量条件（含流式滴定、酵母展示滴定等测 Kd 的方法）。Tm 等热稳定性实验、表达量或聚集检测的条件不写在这里，写在该条证据的 applicable_scenario。"
       item_schema:
         temperature_c:
           type: number

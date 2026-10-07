@@ -77,7 +77,7 @@ binder:
       type: json
       shape: array
       nullable: true
-      description: FR/CDR 区域及其位置或序列信息
+      description: FR/CDR 区域及其位置或序列信息。**每项是一个区域**（链 + 区域名 + 序列或起止位置），不是一段叙述。原文没有给出任何区域的序列或位置时，本字段为 null。「CDR 移植到某框架」「保留了哪几个 CDR」这类人源化方法的描述不写在这里；移植所用的人源框架记在 germline_origin。
       item_schema:
         numbering_scheme:
           type: string
@@ -218,7 +218,7 @@ binder:
       type: json
       shape: array
       nullable: true
-      description: Binder 结构建模时使用的已知结构模板。
+      description: Binder 结构建模时用作模板的**已解析实验结构**，每项必须有 PDB ID。原文只说「做了同源建模 / 用某服务器建模」却没给出模板的 PDB ID 时，本字段为 null。建模过程、建模软件、CDR 移植所用的抗体框架（如 4D5）都不是结构模板，不写在这里。
       item_schema:
         pdb_id:
           type: string

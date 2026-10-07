@@ -27,7 +27,16 @@ db1:
       nullable: true
     completed_experiment_phase:
       type: string
-      description: 已完成的實驗階段
+      description: >-
+        已完成的实验阶段中**走得最远的那一档**（单值）。取值是一条有序阶梯：
+        design_only < in_vitro < in_vivo < preclinical < clinical_unspecified
+        ≤ clinical_phase_1 < 2 < 3。
+        做过动物实验就至少填 in_vivo；**preclinical 不是「所有临床前工作」的统称**，
+        它专指为 IND 申报做的临床前安全性研究（GLP 毒理、IND-enabling），
+        纯研究级的动物实验填 in_vivo。
+        确证做到人体临床但原文不交代期别的，填 clinical_unspecified——
+        不要填 in_vivo（会把人体数据降格成动物实验），也不要猜某一期。
+        unspecified 保留给「原文提到该组合但读不出任何实验阶段」，与上述不同。
       nullable: true
       allowed_values:
         # GPT provided
@@ -35,7 +44,13 @@ db1:
         - in_vitro # 體外實驗
         - in_vivo # 動物實驗
         - preclinical # 臨床前安全性/IND 支持
+        # 2026-09-23 补档。组6 patent-C（US12297288B2）：4SCAR19 四年 110 例人体数据
+        # （缓解率、RFS/OS、CRS 分级、体内 CAR 拷贝数），但专利自始至终不写期别。
+        # 原枚举只有 phase_1/2/3，填任一期都是猜、填 in_vivo 会把人体数据降格，
+        # 当时只能落成 unspecified，与「完全没做实验」不可区分。
+        # 留档见 组6 的 _m9装不下.jsonl 的 __clinical_stage__。
+        - clinical_unspecified # 確證進入人體臨床，但原文未標期別
         - clinical_phase_1
         - clinical_phase_2
         - clinical_phase_3
-        - unspecified # 未指定
+        - unspecified # 原文提到該組合，但讀不出任何實驗階段

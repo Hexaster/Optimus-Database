@@ -98,7 +98,7 @@ manufacturing:
     activation_method:
       type: string
       nullable: true
-      description: T 细胞激活方式
+      description: T 细胞激活用的具体方法或试剂，如「CD3/CD28 Dynabeads，珠:细胞 1:1」「TransAct」「K562 饲养细胞」。原文只说细胞「被激活」却没说用什么激活时，本字段为 null，不要写「已激活，方法未报告」之类的说明。
 
     reagents:
       shape: array
@@ -152,7 +152,7 @@ manufacturing:
       type: json
       shape: object
       nullable: true
-      description: 转导或转染条件，仅记录原文报告的信息；未报告的子项为空，不将未知视为否。
+      description: 转导或转染条件，**只填下列 4 个子字段**，仅记录原文报告的信息；未报告的子项为空，不将未知视为否。4 个子字段都报告不出时，整个字段为 null，不要写成一段描述。载体类型记在 vector_type，病毒或载体试剂记在 reagents，细胞来源与分选记在 t_cell_source / selection_steps。
       item_schema:
         time_after_activation:
           type: measurement
