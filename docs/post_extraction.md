@@ -1,0 +1,65 @@
+# 抽取后归一化与去重（v11）
+
+适用于每篇文献/每件专利已经抽取好的五表 JSONL（每行 `{ "table": ..., "data": ... }`）。
+v11 原有 `measurements.py` 与抽取输出校验已经支持部分单位转换；新批处理增加序列排版归一化、显式字段/值映射、跨文件候选发现及可追溯输出。
+
+## 运行
+
+在 `Fosun-db-master 11` 目录、已安装项目依赖的 Python 环境中：
+
+```bash
+PYTHONPATH=src python -m cart_db.postprocess \
+  /path/to/paper-A/data.jsonl /path/to/patent-B/data.jsonl \
+  --output-dir data/postprocessed/batch-001
+```
+
+每个文件代表一份完整文档抽取，必须包含主键和被引用的实体；不能把同一文档的各表拆成不同输入文件。输入顺序不影响结果。IDs 按输入绝对路径、表和原 ID 确定性生成，外键同步改写。同文件相同主键且归一化内容完全一致的重复行只输出一次；冲突主键、未知字段、无效结构、悬空外键使整个批次失败。每个输入行仍有 provenance，删除的序列化重复行仍留痕。未报告的可空字段补 null，保持与既有 agent_output 校验口径一致。
+
+如确有经过确认的历史字段或枚举别名，可追加：
+
+```bash
+--rules prompts/post_extraction/rules.example.json
+```
+
+示例仅展示语法，使用前核对自己的抽取格式。field_aliases 的键是对象路径，value_aliases 的键是完整字段路径；数组路径不带下标，例如 `car.modules.module_type`。两种字段同时出现且值不一致时失败，不覆盖。原文名称/基因/抗原不自动映射。将旧版平铺 VH 字符串映射到新版 heavy_chain 对象仍会类型校验失败，需要显式转换并注明 scope；重命名不改变结构。
+
+## 输出
+
+| 文件 | 内容 |
+|---|---|
+| normalized.jsonl | 五表格式归一化记录，保留不同 ID 的实体和证据 |
+| provenance.jsonl | 每个输入行的原始完整记录、文件、行号、原 ID、新 ID |
+| audit.jsonl | 字段路径、变更前后值、原因，以及无法换算/不确定残基的复核事件 |
+| dedup_candidates.jsonl | 候选组及匹配依据；全部 review_required |
+| summary.json | 输入/输出数量、序列化重复删除数、复核事件数、候选组数 |
+
+不覆盖输入；输出目录已存在时拒绝运行。相同路径、内容和规则重复运行得到相同记录 ID；移动文件会改变命名空间，因此增量跑批应固定来源路径。当前输出是交接文件，不执行 SQL 入库或科学实体归并；已有数据库 ID 也会被当作文档局部标签重映射，所以不要用于重写已入库记录。
+
+序列只去 ASCII 空白并转大写；数字、标题、缺口等保留并提示复核，不猜 OCR。X/B/Z/J/U/O 保留并标记，不用于确定性序列候选。linker 名称保留。模块顺序不排序，scope 不推断，缺序列不补齐。
+
+测量按 YAML preferred_unit 转换，仅支持明确同量纲单位。单位别名采用明确列表，大小写不折叠；不推算分子量、比例/百分数语义或未知单位。raw 不改写。支持既有浓度、时间、结合速率和温度，以及新增体积、细胞密度、EU 密度和 °C 冷却速率。无法转换的单位保留并列入 audit。
+
+候选索引包含完整非主键 payload、确定的 scFv、scope 为 variable_region 的完整 VH/VL 配对、全模块有确定序列的有序 CAR 模块列表、名称/别名。同一候选特征不等于生物学同一性。工艺目前使用完整 payload 与名称/别名候选；不进行模糊工艺、序列相似度或专利族推断。未出现在候选组中不证明两实体不同。大批量时按候选组送审，避免全量两两比较。
+
+## 复核流程
+
+1. 对 audit 中 review 事件使用 `prompts/post_extraction/01_normalization.md`；提供对应原文和 Schema。
+2. 对候选组使用 `prompts/post_extraction/02_deduplication.md`；提供记录、其证据/组合及来源定位。
+3. 人工确认实体身份、冲突保留策略、survivor 与外键映射后，再实施归并。实体归并与实验去重分别决定。已有 SQL `core.merge_log` 是留痕基础，但当前五表 YAML 与 SQL 历史结构有差异，本模块不假定二者可直接导入。
+4. 归并后检查所有引用、来源、个体/聚合观测及相反证据均被保留；归并失败需能用 provenance 回滚。
+
+测试：`PYTHONPATH=src python -m pytest tests/test_postprocess.py -q`。
+
+## 可运行示例与验证结果
+
+`examples/post_extraction/paper.jsonl` 与 `patent.jsonl` 是明确标记的合成数据，不代表真实科学结果。两文件都使用 b1/e1，包含同序列的不同名称、独立测量以及一条重复序列化行：
+
+```bash
+PYTHONPATH=src python -m cart_db.postprocess \
+  examples/post_extraction/paper.jsonl examples/post_extraction/patent.jsonl \
+  --output-dir data/postprocessed/demo-001
+```
+
+预期：5 条输入 → 4 条输出；删除 1 条序列化重复；两实体保留为不同 ID，并产生序列候选；两来源 evidence 都保留；0.002 ± 0.0003 µM → 2 ± 0.3 nM，raw 不变。
+
+2026-10-09 验证：新增 9 项测试全部通过；命令行合成示例与拒绝覆盖检查通过。既有 44 项测试中 20 项失败、24 项通过；在去除本次修改的临时副本中重现相同 20 项失败，包括旧测量标量/字段/枚举与当前 Schema 不一致、缺失旧接口/脚本。这些既有问题未纳入本次改动。
