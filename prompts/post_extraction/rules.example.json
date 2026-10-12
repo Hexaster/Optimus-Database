@@ -1,0 +1,10 @@
+{
+  "field_aliases": {
+    "binder": {"VH": "heavy_chain", "VL": "light_chain"}
+  },
+  "value_aliases": {
+    "binder.heavy_chain.scope": {"VH variable region": "variable_region"},
+    "binder.light_chain.scope": {"VL variable region": "variable_region"},
+    "evidence.source_type": {"paper": "literature"}
+  }
+}
