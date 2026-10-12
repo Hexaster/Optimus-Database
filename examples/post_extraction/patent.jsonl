@@ -1,0 +1,2 @@
+{"table":"binder","data":{"binder_id":"b1","name":"DEMO-clone-alias","scfv_sequence":"EVQLVESGGG","linker":"GS linker"}}
+{"table":"evidence","data":{"record_id":"e1","source_type":"patent","source_id":"DEMO-PATENT","binder.binder_id":"b1","applicable_scenario":"Synthetic example, different assay; not scientific data","binder.kd":{"kind":"less_than","upper":5,"unit":"nM","raw":"<5 nM"}}}
