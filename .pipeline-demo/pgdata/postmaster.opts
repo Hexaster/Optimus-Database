@@ -1,0 +1,1 @@
+/usr/lib/postgresql/16/bin/postgres "-D" "/home/zzz010122/Fosun-db-post-/.pipeline-demo/pgdata" "-k" "/home/zzz010122/Fosun-db-post-/.pipeline-demo/socket" "-p" "55440" "-h" ""

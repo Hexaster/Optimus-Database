@@ -1,0 +1,918 @@
+{
+  "batch_id": "dd177b70-42b2-5d2f-a761-3d9da4c7632b",
+  "counts": {
+    "published": 42,
+    "pending": 0,
+    "invalid": 0
+  },
+  "identity_counts": {
+    "resolved": 4,
+    "unresolved": 2,
+    "similar": 0,
+    "conflict": 0
+  },
+  "records": [
+    {
+      "stage_id": "bdacccd4-6236-56bc-85c1-f1816880948b",
+      "line_number": 1,
+      "table_name": "binder",
+      "local_id": "872f59be-8bca-4f39-8f67-6a7e82c71d35",
+      "status": "published",
+      "target_id": "b5a3716d-a36e-482b-9a92-939e2d52287b",
+      "errors": [],
+      "audit": [],
+      "identity_status": "resolved",
+      "identity_details": {
+        "basis": "exact_name_or_alias",
+        "reason": "名称或来源确认的 alias 精确匹配，已知序列无冲突。",
+        "verdict": "same",
+        "comparison_policy": "source-admission-v3"
+      }
+    },
+    {
+      "stage_id": "98ea7a54-fd37-5385-95e5-1eec45b508fb",
+      "line_number": 2,
+      "table_name": "binder",
+      "local_id": "860f4616-3efc-48f4-86de-006bd797bcdb",
+      "status": "published",
+      "target_id": "d2556baf-f4e0-4df7-8552-67cd7c6fa2be",
+      "errors": [],
+      "audit": [],
+      "identity_status": "resolved",
+      "identity_details": {
+        "reason": "保存来源实体；身份是否重复与数据入库分别处理。",
+        "candidates": [],
+        "identity_status": "resolved",
+        "comparison_policy": "source-admission-v3",
+        "normalization_flags": []
+      }
+    },
+    {
+      "stage_id": "f3b7d0f3-f717-5840-8d3c-e43b7a53b253",
+      "line_number": 3,
+      "table_name": "binder",
+      "local_id": "b3b4106f-b514-46c1-98e2-83b12e9ec904",
+      "status": "published",
+      "target_id": "8bb409e4-c84e-42cf-a6d3-e3221447d930",
+      "errors": [],
+      "audit": [],
+      "identity_status": "resolved",
+      "identity_details": {
+        "reason": "保存来源实体；身份是否重复与数据入库分别处理。",
+        "candidates": [],
+        "identity_status": "resolved",
+        "comparison_policy": "source-admission-v3",
+        "normalization_flags": []
+      }
+    },
+    {
+      "stage_id": "33053c8e-7743-5df5-8a7b-c9b1189be753",
+      "line_number": 4,
+      "table_name": "car",
+      "local_id": "eee13fc0-cb48-4863-adb8-01fc90c730c5",
+      "status": "published",
+      "target_id": "43e926ee-ebae-4c86-900b-56ea0ef30f43",
+      "errors": [],
+      "audit": [],
+      "identity_status": "resolved",
+      "identity_details": {
+        "reason": "保存来源实体；身份是否重复与数据入库分别处理。",
+        "candidates": [],
+        "identity_status": "resolved",
+        "comparison_policy": "source-admission-v3",
+        "normalization_flags": []
+      }
+    },
+    {
+      "stage_id": "540c2e25-9be7-51f1-b3e9-7889901e2826",
+      "line_number": 5,
+      "table_name": "manufacturing",
+      "local_id": "932e2a3e-4434-42c5-833f-36047c94a8a4",
+      "status": "published",
+      "target_id": "e5a9bd03-0ec1-4480-bf02-6599e87b72c3",
+      "errors": [],
+      "audit": [
+        {
+          "path": "manufacturing.culture_duration",
+          "after": {
+            "raw": "expanded for 14 days",
+            "kind": "single_value",
+            "unit": "day",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 14
+          },
+          "before": {
+            "raw": "expanded for 14 days",
+            "kind": "single_value",
+            "unit": "days",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 14
+          },
+          "reason": "measurement_unit"
+        }
+      ],
+      "identity_status": "unresolved",
+      "identity_details": {
+        "reason": "保存来源实体；身份是否重复与数据入库分别处理。",
+        "candidates": [
+          {
+            "id": "10b41019-3933-4a59-81a8-7b0f8c0baf74",
+            "location": "accepted",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "activation_method",
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "vector_type"
+              ],
+              "differences": [
+                "selection_steps"
+              ]
+            },
+            "supporting_stage_ids": [
+              "de6c74b8-3b51-58b9-8627-99dfcaf819f8"
+            ]
+          },
+          {
+            "id": "2eed091c-689a-4d8d-9611-81656212dd7a",
+            "location": "accepted",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "activation_method",
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "vector_type"
+              ],
+              "differences": [
+                "selection_steps"
+              ]
+            },
+            "supporting_stage_ids": [
+              "ea80f1e4-3e55-56ea-aada-d4e6a6145356"
+            ]
+          },
+          {
+            "id": "35d1d3a2-3bd7-4e76-a1e0-2d4e18831fec",
+            "location": "accepted",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "activation_method",
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "vector_type"
+              ],
+              "differences": [
+                "selection_steps"
+              ]
+            },
+            "supporting_stage_ids": [
+              "74a3c0a3-fd95-5083-b259-009c8a60ca65"
+            ]
+          },
+          {
+            "id": "716f5b15-2f01-4511-a377-905f5c8d4475",
+            "location": "accepted",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "activation_method",
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "vector_type"
+              ],
+              "differences": [
+                "selection_steps"
+              ]
+            },
+            "supporting_stage_ids": [
+              "7c36549e-4066-5068-a8f3-daf00a1940f1"
+            ]
+          },
+          {
+            "id": "f49e6197-1f9c-4586-a030-9311a8aeb16f",
+            "location": "accepted",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "activation_method",
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "vector_type"
+              ],
+              "differences": [
+                "selection_steps"
+              ]
+            },
+            "supporting_stage_ids": [
+              "420d5639-bd8d-53ec-a960-1341142ed4ab"
+            ]
+          },
+          {
+            "id": "4ee119f9-26e5-5def-92ca-b6f2b0e757a3",
+            "location": "staging",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "activation_method",
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "selection_steps",
+                "vector_type"
+              ],
+              "differences": []
+            },
+            "supporting_stage_ids": [
+              "4ee119f9-26e5-5def-92ca-b6f2b0e757a3"
+            ]
+          }
+        ],
+        "identity_status": "unresolved",
+        "comparison_policy": "source-admission-v3",
+        "normalization_flags": []
+      }
+    },
+    {
+      "stage_id": "4ee119f9-26e5-5def-92ca-b6f2b0e757a3",
+      "line_number": 6,
+      "table_name": "manufacturing",
+      "local_id": "76f7aee8-21a6-4dd5-b210-ffac6171083e",
+      "status": "published",
+      "target_id": "e6635b47-b80e-458a-90df-18a980a5490c",
+      "errors": [],
+      "audit": [],
+      "identity_status": "unresolved",
+      "identity_details": {
+        "reason": "保存来源实体；身份是否重复与数据入库分别处理。",
+        "candidates": [
+          {
+            "id": "10b41019-3933-4a59-81a8-7b0f8c0baf74",
+            "location": "accepted",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "activation_method",
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "vector_type"
+              ],
+              "differences": [
+                "selection_steps"
+              ]
+            },
+            "supporting_stage_ids": [
+              "de6c74b8-3b51-58b9-8627-99dfcaf819f8"
+            ]
+          },
+          {
+            "id": "2eed091c-689a-4d8d-9611-81656212dd7a",
+            "location": "accepted",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "activation_method",
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "vector_type"
+              ],
+              "differences": [
+                "selection_steps"
+              ]
+            },
+            "supporting_stage_ids": [
+              "ea80f1e4-3e55-56ea-aada-d4e6a6145356"
+            ]
+          },
+          {
+            "id": "35d1d3a2-3bd7-4e76-a1e0-2d4e18831fec",
+            "location": "accepted",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "activation_method",
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "vector_type"
+              ],
+              "differences": [
+                "selection_steps"
+              ]
+            },
+            "supporting_stage_ids": [
+              "74a3c0a3-fd95-5083-b259-009c8a60ca65"
+            ]
+          },
+          {
+            "id": "716f5b15-2f01-4511-a377-905f5c8d4475",
+            "location": "accepted",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "activation_method",
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "vector_type"
+              ],
+              "differences": [
+                "selection_steps"
+              ]
+            },
+            "supporting_stage_ids": [
+              "7c36549e-4066-5068-a8f3-daf00a1940f1"
+            ]
+          },
+          {
+            "id": "e5a9bd03-0ec1-4480-bf02-6599e87b72c3",
+            "location": "accepted",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "activation_method",
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "selection_steps",
+                "vector_type"
+              ],
+              "differences": []
+            },
+            "supporting_stage_ids": [
+              "540c2e25-9be7-51f1-b3e9-7889901e2826"
+            ]
+          },
+          {
+            "id": "f49e6197-1f9c-4586-a030-9311a8aeb16f",
+            "location": "accepted",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "activation_method",
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "vector_type"
+              ],
+              "differences": [
+                "selection_steps"
+              ]
+            },
+            "supporting_stage_ids": [
+              "420d5639-bd8d-53ec-a960-1341142ed4ab"
+            ]
+          }
+        ],
+        "identity_status": "unresolved",
+        "comparison_policy": "source-admission-v3",
+        "normalization_flags": []
+      }
+    },
+    {
+      "stage_id": "0c7eb0a0-bf54-5e5d-9152-85ac019449bb",
+      "line_number": 7,
+      "table_name": "abc_combination_db1",
+      "local_id": "9724c67d-fb5f-4472-8844-d16091ee1015",
+      "status": "published",
+      "target_id": "b74eaf03-b719-45e2-9cc8-e034c3c10fbd",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "4f9e6341-10d4-58f2-9813-454b430e3397",
+      "line_number": 8,
+      "table_name": "abc_combination_db1",
+      "local_id": "f3c1d6ec-26b0-4f80-89ed-d0fb1ca8e2ec",
+      "status": "published",
+      "target_id": "05e1be95-75ab-4946-b04c-f39e7de0c3b3",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "815cd416-3e98-5687-8244-e2d77c05d8a2",
+      "line_number": 9,
+      "table_name": "abc_combination_db1",
+      "local_id": "18aa5acf-7e26-4233-b302-3087538f73ab",
+      "status": "published",
+      "target_id": "433915a9-dda2-4546-82ff-b37cd99c3761",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "d6ace400-6b2e-5d1a-bd5b-bcf958835eb7",
+      "line_number": 10,
+      "table_name": "abc_combination_db1",
+      "local_id": "0f05503e-d737-4955-8a69-18794201cff8",
+      "status": "published",
+      "target_id": "8e48a7f8-b381-475e-870e-35bb75eee5cf",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "38f6eae2-6243-569e-8104-a6c5dd11b37d",
+      "line_number": 11,
+      "table_name": "evidence",
+      "local_id": "f40e855f-8efb-42a1-bf96-6ce9a19c05ff",
+      "status": "published",
+      "target_id": "3fb39364-0e58-4912-ba33-33a00febde18",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "0ecb84fa-98ab-5de8-bfdf-33f5d109979d",
+      "line_number": 12,
+      "table_name": "evidence",
+      "local_id": "36f8cf2a-3b26-4f58-924f-89d7b68814f8",
+      "status": "published",
+      "target_id": "a039f476-87e8-45f5-b391-8f9933395db6",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "4773f1a0-fe59-5889-a43a-0b040d32ddf8",
+      "line_number": 13,
+      "table_name": "evidence",
+      "local_id": "35d0aabb-ece0-4560-9877-d7920f37c6a7",
+      "status": "published",
+      "target_id": "6f032dbb-8983-4605-9d13-6c48e1058524",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "0c49e5a2-65ea-54b5-a1d3-b3d0a059dc25",
+      "line_number": 14,
+      "table_name": "evidence",
+      "local_id": "de84d37e-5fc9-403d-a4dd-697f0ec49b13",
+      "status": "published",
+      "target_id": "ca5560e4-40ed-4a6b-8c1b-b62bbbf1fafb",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "4b0ccb86-27e5-51b0-b8ed-463a10d4ff05",
+      "line_number": 15,
+      "table_name": "evidence",
+      "local_id": "a033fa1e-f33e-417e-9440-ab0e46bf6eb2",
+      "status": "published",
+      "target_id": "cf9feeb6-2980-4654-93d2-c63634e8faa6",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "d4a0474e-48bd-5a64-89d9-1011b74a72a9",
+      "line_number": 16,
+      "table_name": "evidence",
+      "local_id": "4cab893d-917b-4214-b18a-e9373f02fef5",
+      "status": "published",
+      "target_id": "e25f9fec-35db-49ba-b2a2-9bd513d28389",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "69974732-8673-5548-b237-807d1ff7e13b",
+      "line_number": 17,
+      "table_name": "evidence",
+      "local_id": "a34e8a2d-9ecc-4689-957a-ed8f21ed37f7",
+      "status": "published",
+      "target_id": "38082e3f-1d8b-4177-a956-bd9725845903",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "ffc7ed99-a5c1-5e06-83e1-32af0a9e3212",
+      "line_number": 18,
+      "table_name": "evidence",
+      "local_id": "ad89c2b1-ff21-42b7-907d-f0bcf12bdfd6",
+      "status": "published",
+      "target_id": "b70bbd77-f5aa-4a5f-969f-5e40958931b1",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "23afb0e8-63b2-5404-9d48-079548617189",
+      "line_number": 19,
+      "table_name": "evidence",
+      "local_id": "ed3085aa-bf0a-430a-8d25-969b979d35ca",
+      "status": "published",
+      "target_id": "335c5842-8e96-4e68-99ae-1675df0a7917",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "5466de92-c7a5-56d6-9ebe-35fc9bf95ec0",
+      "line_number": 20,
+      "table_name": "evidence",
+      "local_id": "63e69255-54cb-439f-97f6-384408c8b833",
+      "status": "published",
+      "target_id": "2d5612bd-64a7-4e4e-8861-472ef88b104e",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "bc0611e8-08ce-509c-a4c9-7ee1c3186082",
+      "line_number": 21,
+      "table_name": "evidence",
+      "local_id": "a3274b5b-cac6-4df2-bb29-b9d903d0503f",
+      "status": "published",
+      "target_id": "fe041709-5728-49d0-bfe4-f6c14995fa5f",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "044470be-191b-5dfa-a493-a4ceeacf7cb4",
+      "line_number": 22,
+      "table_name": "evidence",
+      "local_id": "24d9a1f0-986f-46c4-9909-7ba03ad2ffb4",
+      "status": "published",
+      "target_id": "15c4249c-e365-4ad9-b0c8-4f3d2ae9c5f2",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "8644b8ed-cbe2-531d-b85b-88477b6c50ff",
+      "line_number": 23,
+      "table_name": "evidence",
+      "local_id": "5070f0af-b55f-4cad-8fa0-c8a89c5b0ba8",
+      "status": "published",
+      "target_id": "a0b0eddb-cc4b-43cb-9263-c225c387cbe7",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "8457fa5a-0ee6-51e9-b3fe-e1abea3432a1",
+      "line_number": 24,
+      "table_name": "evidence",
+      "local_id": "7bdc23be-783f-4951-a7f7-142dbbbe1f7a",
+      "status": "published",
+      "target_id": "f208d01d-ac87-497a-ac2f-c19218762f6a",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "709b97d2-9349-52e1-ba1f-04cec26e2706",
+      "line_number": 25,
+      "table_name": "evidence",
+      "local_id": "d04b5dbb-360e-41e9-9d44-9d7e808038b3",
+      "status": "published",
+      "target_id": "c8feb902-03e0-4947-a7fa-49cae947aa72",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "69016aee-f0d6-58cf-944a-b1704be80078",
+      "line_number": 26,
+      "table_name": "evidence",
+      "local_id": "f2c0229f-a87e-4521-9703-5354c1157674",
+      "status": "published",
+      "target_id": "fd363024-0dc4-4775-bfa9-e21095589e50",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "85bf042e-0cb3-5b54-9276-ac3cfdb6e95c",
+      "line_number": 27,
+      "table_name": "evidence",
+      "local_id": "ad1a55fc-5ead-48e1-9f90-19692161b862",
+      "status": "published",
+      "target_id": "26a4230d-6cbb-4307-9178-821fd23ddaf6",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "6261230f-cb10-53d2-9b14-bc04cc7ad967",
+      "line_number": 28,
+      "table_name": "evidence",
+      "local_id": "fceb7ce6-f6e8-4a50-8cd2-8ed21a1abb5a",
+      "status": "published",
+      "target_id": "a73eb13f-85fe-4874-9d6c-a2e560a4a896",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "a6c90d84-456e-5c21-b01f-e2d4d0de81cb",
+      "line_number": 29,
+      "table_name": "evidence",
+      "local_id": "9d1cbe2f-2ab8-4013-ae93-7e7c83b0ec81",
+      "status": "published",
+      "target_id": "be17a918-3897-4cff-8e63-996461df5ab6",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "7b5a34dd-5716-5597-aa09-4f9fc9bcdb2b",
+      "line_number": 30,
+      "table_name": "evidence",
+      "local_id": "8984990a-9cbe-4b34-a212-da3fb09da21d",
+      "status": "published",
+      "target_id": "ae77652d-b1de-4b5a-90ff-12c2a9c12423",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "620aa748-5839-58c0-8f7c-56e2c10d866c",
+      "line_number": 31,
+      "table_name": "evidence",
+      "local_id": "383f3208-9334-4003-a6b3-bfa1c41d2285",
+      "status": "published",
+      "target_id": "e8379899-74e3-4977-b07a-57bae501a741",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "41f6bdc9-1adf-5185-90c9-6c30acdd2143",
+      "line_number": 32,
+      "table_name": "evidence",
+      "local_id": "6178adff-80bf-4b53-b934-381f7493747a",
+      "status": "published",
+      "target_id": "15b55e61-15bf-4af0-bd70-9698c8da9bd0",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "59004189-7d42-5cea-bbff-5ac713c3d6e7",
+      "line_number": 33,
+      "table_name": "evidence",
+      "local_id": "66f02ec3-620d-4541-8723-f34e01f1024e",
+      "status": "published",
+      "target_id": "3830218b-0401-4a17-ac09-bf29ad867a73",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "c83bac3b-50ec-5dae-be82-502c6ad46a8c",
+      "line_number": 34,
+      "table_name": "evidence",
+      "local_id": "532aa851-e6d3-45c9-ac09-4662131de8ba",
+      "status": "published",
+      "target_id": "d700877c-a0be-4597-856c-0938f07e066a",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "08ac0c34-887d-5d7a-b1f5-dc6af8136000",
+      "line_number": 35,
+      "table_name": "evidence",
+      "local_id": "3eb84d20-7632-48af-a96e-b45309388fe2",
+      "status": "published",
+      "target_id": "3310d4a1-01d7-4add-bbab-dc6308c14a04",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "2e56b1f1-dc02-54cb-8ad4-fc754033f653",
+      "line_number": 36,
+      "table_name": "evidence",
+      "local_id": "6ae59da3-2966-4dc1-94c8-1464771b7fcf",
+      "status": "published",
+      "target_id": "37983a4d-b906-44ab-bbbd-35d6fe91f987",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "06469080-ea1c-5a2c-8b10-0bca59f0319a",
+      "line_number": 37,
+      "table_name": "evidence",
+      "local_id": "501b9cc9-7c15-444e-992d-5c722571313a",
+      "status": "published",
+      "target_id": "fa3d3b82-b45e-4eb4-bf4a-a04965a7a3da",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "d041ff2b-6a66-5635-942c-c4ebb3c6e0e5",
+      "line_number": 38,
+      "table_name": "evidence",
+      "local_id": "3f37bce6-0853-4f92-bcc6-037b53a88428",
+      "status": "published",
+      "target_id": "ec66bd91-4875-4996-b2a0-e32963062e77",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "e834ed1f-0420-5821-b3ae-45aff4211dc2",
+      "line_number": 39,
+      "table_name": "evidence",
+      "local_id": "a58745be-5526-414f-a8f8-1387490469e1",
+      "status": "published",
+      "target_id": "6e43490c-f9d9-4c3a-80d5-611815711d83",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "7d5c3afd-5d61-5419-a285-57706f125a62",
+      "line_number": 40,
+      "table_name": "evidence",
+      "local_id": "1cef4d9f-58ad-4953-a2fe-7536a8e4ef0b",
+      "status": "published",
+      "target_id": "8deb5feb-7c6a-4cc2-b13c-a361fe83c6e2",
+      "errors": [],
+      "audit": [
+        {
+          "path": "evidence.manufacturing.vcn",
+          "after": {
+            "raw": "WPRE Analysis: Avg. WPRE Copy # 2.4; HD1/HD440; criterion ≤5.0 copies / CAR T cell",
+            "kind": "single_value",
+            "unit": "copies / CAR T cell",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 2.4
+          },
+          "before": {
+            "raw": "WPRE Analysis: Avg. WPRE Copy # 2.4; HD1/HD440; criterion ≤5.0 copies / CAR T cell",
+            "kind": "single_value",
+            "unit": "copies / CAR T cell",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 2.4
+          },
+          "reason": "review_missing_or_unconvertible_unit"
+        }
+      ],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "a3690633-66eb-5e0b-8998-d04b5000bf3b",
+      "line_number": 41,
+      "table_name": "evidence",
+      "local_id": "9265d692-f50f-427e-8061-373c39d26404",
+      "status": "published",
+      "target_id": "69bf1493-bd07-4595-b5bd-365a273b0553",
+      "errors": [],
+      "audit": [
+        {
+          "path": "evidence.manufacturing.vcn",
+          "after": {
+            "raw": "WPRE Analysis: Avg. WPRE Copy # 2.2; HD2/HD536; criterion ≤5.0 copies / CAR T cell",
+            "kind": "single_value",
+            "unit": "copies / CAR T cell",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 2.2
+          },
+          "before": {
+            "raw": "WPRE Analysis: Avg. WPRE Copy # 2.2; HD2/HD536; criterion ≤5.0 copies / CAR T cell",
+            "kind": "single_value",
+            "unit": "copies / CAR T cell",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 2.2
+          },
+          "reason": "review_missing_or_unconvertible_unit"
+        }
+      ],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "01d0d247-ef3f-5856-b140-789c5537ff5b",
+      "line_number": 42,
+      "table_name": "evidence",
+      "local_id": "393e24f6-1a7e-4b24-ab77-7bc7390a29a7",
+      "status": "published",
+      "target_id": "606aba09-bd77-4380-967e-52ac1fba17db",
+      "errors": [],
+      "audit": [
+        {
+          "path": "evidence.manufacturing.vcn",
+          "after": {
+            "raw": "WPRE Analysis: Avg. WPRE Copy # 2.5; HD3/HD396; criterion ≤5.0 copies / CAR T cell",
+            "kind": "single_value",
+            "unit": "copies / CAR T cell",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 2.5
+          },
+          "before": {
+            "raw": "WPRE Analysis: Avg. WPRE Copy # 2.5; HD3/HD396; criterion ≤5.0 copies / CAR T cell",
+            "kind": "single_value",
+            "unit": "copies / CAR T cell",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 2.5
+          },
+          "reason": "review_missing_or_unconvertible_unit"
+        }
+      ],
+      "identity_status": null,
+      "identity_details": null
+    }
+  ],
+  "pending_reasons": {},
+  "actions": {
+    "new_entities": 5,
+    "linked_entities": 1,
+    "new_records": 36,
+    "linked_records": 0
+  }
+}

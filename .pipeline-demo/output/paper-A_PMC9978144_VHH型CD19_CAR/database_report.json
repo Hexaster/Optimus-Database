@@ -1,0 +1,2212 @@
+{
+  "batch_id": "9f6f7307-aef8-538d-9bf6-a57147d3007b",
+  "counts": {
+    "published": 78,
+    "pending": 0,
+    "invalid": 0
+  },
+  "identity_counts": {
+    "resolved": 3,
+    "unresolved": 5,
+    "similar": 0,
+    "conflict": 0
+  },
+  "records": [
+    {
+      "stage_id": "0957ff5b-d799-56ed-8122-f08825525e03",
+      "line_number": 1,
+      "table_name": "binder",
+      "local_id": "d98c9ad7-6a4a-4fe1-9f78-7d59c1955baf",
+      "status": "published",
+      "target_id": "b922590a-fbb4-42bd-8310-ea681b24a509",
+      "errors": [],
+      "audit": [],
+      "identity_status": "resolved",
+      "identity_details": {
+        "reason": "保存来源实体；身份是否重复与数据入库分别处理。",
+        "candidates": [],
+        "identity_status": "resolved",
+        "comparison_policy": "source-admission-v3",
+        "normalization_flags": []
+      }
+    },
+    {
+      "stage_id": "8db4dff4-9a31-5913-b15f-e3dd714de6a8",
+      "line_number": 2,
+      "table_name": "binder",
+      "local_id": "278592c0-c6cb-490f-b5b7-7c73010a4338",
+      "status": "published",
+      "target_id": "b5a3716d-a36e-482b-9a92-939e2d52287b",
+      "errors": [],
+      "audit": [],
+      "identity_status": "resolved",
+      "identity_details": {
+        "reason": "保存来源实体；身份是否重复与数据入库分别处理。",
+        "candidates": [],
+        "identity_status": "resolved",
+        "comparison_policy": "source-admission-v3",
+        "normalization_flags": []
+      }
+    },
+    {
+      "stage_id": "6a240d87-cf5c-59bd-9a1b-e4e7357300e6",
+      "line_number": 3,
+      "table_name": "car",
+      "local_id": "d211b39f-40e2-43bd-9d8a-bf2ca637ad98",
+      "status": "published",
+      "target_id": "f206d157-e364-4b4e-b6f1-23dbeb6394bb",
+      "errors": [],
+      "audit": [],
+      "identity_status": "resolved",
+      "identity_details": {
+        "reason": "保存来源实体；身份是否重复与数据入库分别处理。",
+        "candidates": [],
+        "identity_status": "resolved",
+        "comparison_policy": "source-admission-v3",
+        "normalization_flags": []
+      }
+    },
+    {
+      "stage_id": "7c36549e-4066-5068-a8f3-daf00a1940f1",
+      "line_number": 4,
+      "table_name": "manufacturing",
+      "local_id": "690e61a9-55c7-4e80-9785-1e9c0fa62ace",
+      "status": "published",
+      "target_id": "716f5b15-2f01-4511-a377-905f5c8d4475",
+      "errors": [],
+      "audit": [
+        {
+          "path": "manufacturing.reagents[4].amount",
+          "after": {
+            "raw": "concentrated lentiviral supernatant supplemented with polybrene at a concentration of 6 µg/mL of culture media (§2.6; PDF page 4)",
+            "kind": "single_value",
+            "unit": "ug/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 6
+          },
+          "before": {
+            "raw": "concentrated lentiviral supernatant supplemented with polybrene at a concentration of 6 µg/mL of culture media (§2.6; PDF page 4)",
+            "kind": "single_value",
+            "unit": "µg/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 6
+          },
+          "reason": "measurement_unit"
+        },
+        {
+          "path": "manufacturing.cytokine_combination[0].concentration",
+          "after": {
+            "raw": "50 IU/mL interleukin (IL)-2 in initial primary T-cell culture (§2.1)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 50
+          },
+          "before": {
+            "raw": "50 IU/mL interleukin (IL)-2 in initial primary T-cell culture (§2.1)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 50
+          },
+          "reason": "review_missing_or_unconvertible_unit"
+        },
+        {
+          "path": "manufacturing.cytokine_combination[1].concentration",
+          "after": {
+            "raw": "100 IU/mL IL-2 during the 3-day activation prior to lentiviral transduction (§2.6)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 100
+          },
+          "before": {
+            "raw": "100 IU/mL IL-2 during the 3-day activation prior to lentiviral transduction (§2.6)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 100
+          },
+          "reason": "review_missing_or_unconvertible_unit"
+        },
+        {
+          "path": "manufacturing.cytokine_combination[2].concentration",
+          "after": {
+            "raw": "50 IU/mL IL-2 three times per week in T-cell culture media (§2.6)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 50
+          },
+          "before": {
+            "raw": "50 IU/mL IL-2 three times per week in T-cell culture media (§2.6)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 50
+          },
+          "reason": "review_missing_or_unconvertible_unit"
+        }
+      ],
+      "identity_status": "unresolved",
+      "identity_details": {
+        "reason": "保存来源实体；身份是否重复与数据入库分别处理。",
+        "candidates": [
+          {
+            "id": "420d5639-bd8d-53ec-a960-1341142ed4ab",
+            "location": "staging",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "selection_steps",
+                "activation_method",
+                "vector_type"
+              ],
+              "differences": []
+            },
+            "supporting_stage_ids": [
+              "420d5639-bd8d-53ec-a960-1341142ed4ab"
+            ]
+          },
+          {
+            "id": "74a3c0a3-fd95-5083-b259-009c8a60ca65",
+            "location": "staging",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "selection_steps",
+                "activation_method",
+                "vector_type"
+              ],
+              "differences": []
+            },
+            "supporting_stage_ids": [
+              "74a3c0a3-fd95-5083-b259-009c8a60ca65"
+            ]
+          },
+          {
+            "id": "de6c74b8-3b51-58b9-8627-99dfcaf819f8",
+            "location": "staging",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "selection_steps",
+                "activation_method",
+                "vector_type"
+              ],
+              "differences": []
+            },
+            "supporting_stage_ids": [
+              "de6c74b8-3b51-58b9-8627-99dfcaf819f8"
+            ]
+          },
+          {
+            "id": "ea80f1e4-3e55-56ea-aada-d4e6a6145356",
+            "location": "staging",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "selection_steps",
+                "activation_method",
+                "vector_type"
+              ],
+              "differences": []
+            },
+            "supporting_stage_ids": [
+              "ea80f1e4-3e55-56ea-aada-d4e6a6145356"
+            ]
+          }
+        ],
+        "identity_status": "unresolved",
+        "comparison_policy": "source-admission-v3",
+        "normalization_flags": [
+          {
+            "path": "manufacturing.cytokine_combination[0].concentration",
+            "after": {
+              "raw": "50 IU/mL interleukin (IL)-2 in initial primary T-cell culture (§2.1)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 50
+            },
+            "before": {
+              "raw": "50 IU/mL interleukin (IL)-2 in initial primary T-cell culture (§2.1)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 50
+            },
+            "reason": "review_missing_or_unconvertible_unit"
+          },
+          {
+            "path": "manufacturing.cytokine_combination[1].concentration",
+            "after": {
+              "raw": "100 IU/mL IL-2 during the 3-day activation prior to lentiviral transduction (§2.6)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 100
+            },
+            "before": {
+              "raw": "100 IU/mL IL-2 during the 3-day activation prior to lentiviral transduction (§2.6)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 100
+            },
+            "reason": "review_missing_or_unconvertible_unit"
+          },
+          {
+            "path": "manufacturing.cytokine_combination[2].concentration",
+            "after": {
+              "raw": "50 IU/mL IL-2 three times per week in T-cell culture media (§2.6)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 50
+            },
+            "before": {
+              "raw": "50 IU/mL IL-2 three times per week in T-cell culture media (§2.6)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 50
+            },
+            "reason": "review_missing_or_unconvertible_unit"
+          }
+        ]
+      }
+    },
+    {
+      "stage_id": "420d5639-bd8d-53ec-a960-1341142ed4ab",
+      "line_number": 5,
+      "table_name": "manufacturing",
+      "local_id": "26a51551-440d-4d4b-891e-31302f7806f8",
+      "status": "published",
+      "target_id": "f49e6197-1f9c-4586-a030-9311a8aeb16f",
+      "errors": [],
+      "audit": [
+        {
+          "path": "manufacturing.reagents[4].amount",
+          "after": {
+            "raw": "concentrated lentiviral supernatant supplemented with polybrene at a concentration of 6 µg/mL of culture media (§2.6; PDF page 4)",
+            "kind": "single_value",
+            "unit": "ug/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 6
+          },
+          "before": {
+            "raw": "concentrated lentiviral supernatant supplemented with polybrene at a concentration of 6 µg/mL of culture media (§2.6; PDF page 4)",
+            "kind": "single_value",
+            "unit": "µg/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 6
+          },
+          "reason": "measurement_unit"
+        },
+        {
+          "path": "manufacturing.cytokine_combination[0].concentration",
+          "after": {
+            "raw": "50 IU/mL interleukin (IL)-2 in initial primary T-cell culture (§2.1)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 50
+          },
+          "before": {
+            "raw": "50 IU/mL interleukin (IL)-2 in initial primary T-cell culture (§2.1)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 50
+          },
+          "reason": "review_missing_or_unconvertible_unit"
+        },
+        {
+          "path": "manufacturing.cytokine_combination[1].concentration",
+          "after": {
+            "raw": "100 IU/mL IL-2 during the 3-day activation prior to lentiviral transduction (§2.6)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 100
+          },
+          "before": {
+            "raw": "100 IU/mL IL-2 during the 3-day activation prior to lentiviral transduction (§2.6)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 100
+          },
+          "reason": "review_missing_or_unconvertible_unit"
+        },
+        {
+          "path": "manufacturing.cytokine_combination[2].concentration",
+          "after": {
+            "raw": "50 IU/mL IL-2 three times per week in T-cell culture media (§2.6)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 50
+          },
+          "before": {
+            "raw": "50 IU/mL IL-2 three times per week in T-cell culture media (§2.6)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 50
+          },
+          "reason": "review_missing_or_unconvertible_unit"
+        }
+      ],
+      "identity_status": "unresolved",
+      "identity_details": {
+        "reason": "保存来源实体；身份是否重复与数据入库分别处理。",
+        "candidates": [
+          {
+            "id": "716f5b15-2f01-4511-a377-905f5c8d4475",
+            "location": "accepted",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "selection_steps",
+                "activation_method",
+                "vector_type"
+              ],
+              "differences": []
+            },
+            "supporting_stage_ids": [
+              "7c36549e-4066-5068-a8f3-daf00a1940f1"
+            ]
+          },
+          {
+            "id": "74a3c0a3-fd95-5083-b259-009c8a60ca65",
+            "location": "staging",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "selection_steps",
+                "activation_method",
+                "vector_type"
+              ],
+              "differences": []
+            },
+            "supporting_stage_ids": [
+              "74a3c0a3-fd95-5083-b259-009c8a60ca65"
+            ]
+          },
+          {
+            "id": "de6c74b8-3b51-58b9-8627-99dfcaf819f8",
+            "location": "staging",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "selection_steps",
+                "activation_method",
+                "vector_type"
+              ],
+              "differences": []
+            },
+            "supporting_stage_ids": [
+              "de6c74b8-3b51-58b9-8627-99dfcaf819f8"
+            ]
+          },
+          {
+            "id": "ea80f1e4-3e55-56ea-aada-d4e6a6145356",
+            "location": "staging",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "selection_steps",
+                "activation_method",
+                "vector_type"
+              ],
+              "differences": []
+            },
+            "supporting_stage_ids": [
+              "ea80f1e4-3e55-56ea-aada-d4e6a6145356"
+            ]
+          }
+        ],
+        "identity_status": "unresolved",
+        "comparison_policy": "source-admission-v3",
+        "normalization_flags": [
+          {
+            "path": "manufacturing.cytokine_combination[0].concentration",
+            "after": {
+              "raw": "50 IU/mL interleukin (IL)-2 in initial primary T-cell culture (§2.1)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 50
+            },
+            "before": {
+              "raw": "50 IU/mL interleukin (IL)-2 in initial primary T-cell culture (§2.1)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 50
+            },
+            "reason": "review_missing_or_unconvertible_unit"
+          },
+          {
+            "path": "manufacturing.cytokine_combination[1].concentration",
+            "after": {
+              "raw": "100 IU/mL IL-2 during the 3-day activation prior to lentiviral transduction (§2.6)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 100
+            },
+            "before": {
+              "raw": "100 IU/mL IL-2 during the 3-day activation prior to lentiviral transduction (§2.6)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 100
+            },
+            "reason": "review_missing_or_unconvertible_unit"
+          },
+          {
+            "path": "manufacturing.cytokine_combination[2].concentration",
+            "after": {
+              "raw": "50 IU/mL IL-2 three times per week in T-cell culture media (§2.6)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 50
+            },
+            "before": {
+              "raw": "50 IU/mL IL-2 three times per week in T-cell culture media (§2.6)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 50
+            },
+            "reason": "review_missing_or_unconvertible_unit"
+          }
+        ]
+      }
+    },
+    {
+      "stage_id": "74a3c0a3-fd95-5083-b259-009c8a60ca65",
+      "line_number": 6,
+      "table_name": "manufacturing",
+      "local_id": "7d3e55fc-989a-4461-86b1-b15e5ede4940",
+      "status": "published",
+      "target_id": "35d1d3a2-3bd7-4e76-a1e0-2d4e18831fec",
+      "errors": [],
+      "audit": [
+        {
+          "path": "manufacturing.reagents[4].amount",
+          "after": {
+            "raw": "concentrated lentiviral supernatant supplemented with polybrene at a concentration of 6 µg/mL of culture media (§2.6; PDF page 4)",
+            "kind": "single_value",
+            "unit": "ug/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 6
+          },
+          "before": {
+            "raw": "concentrated lentiviral supernatant supplemented with polybrene at a concentration of 6 µg/mL of culture media (§2.6; PDF page 4)",
+            "kind": "single_value",
+            "unit": "µg/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 6
+          },
+          "reason": "measurement_unit"
+        },
+        {
+          "path": "manufacturing.cytokine_combination[0].concentration",
+          "after": {
+            "raw": "50 IU/mL interleukin (IL)-2 in initial primary T-cell culture (§2.1)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 50
+          },
+          "before": {
+            "raw": "50 IU/mL interleukin (IL)-2 in initial primary T-cell culture (§2.1)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 50
+          },
+          "reason": "review_missing_or_unconvertible_unit"
+        },
+        {
+          "path": "manufacturing.cytokine_combination[1].concentration",
+          "after": {
+            "raw": "100 IU/mL IL-2 during the 3-day activation prior to lentiviral transduction (§2.6)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 100
+          },
+          "before": {
+            "raw": "100 IU/mL IL-2 during the 3-day activation prior to lentiviral transduction (§2.6)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 100
+          },
+          "reason": "review_missing_or_unconvertible_unit"
+        },
+        {
+          "path": "manufacturing.cytokine_combination[2].concentration",
+          "after": {
+            "raw": "50 IU/mL IL-2 three times per week in T-cell culture media (§2.6)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 50
+          },
+          "before": {
+            "raw": "50 IU/mL IL-2 three times per week in T-cell culture media (§2.6)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 50
+          },
+          "reason": "review_missing_or_unconvertible_unit"
+        }
+      ],
+      "identity_status": "unresolved",
+      "identity_details": {
+        "reason": "保存来源实体；身份是否重复与数据入库分别处理。",
+        "candidates": [
+          {
+            "id": "716f5b15-2f01-4511-a377-905f5c8d4475",
+            "location": "accepted",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "selection_steps",
+                "activation_method",
+                "vector_type"
+              ],
+              "differences": []
+            },
+            "supporting_stage_ids": [
+              "7c36549e-4066-5068-a8f3-daf00a1940f1"
+            ]
+          },
+          {
+            "id": "f49e6197-1f9c-4586-a030-9311a8aeb16f",
+            "location": "accepted",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "selection_steps",
+                "activation_method",
+                "vector_type"
+              ],
+              "differences": []
+            },
+            "supporting_stage_ids": [
+              "420d5639-bd8d-53ec-a960-1341142ed4ab"
+            ]
+          },
+          {
+            "id": "de6c74b8-3b51-58b9-8627-99dfcaf819f8",
+            "location": "staging",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "selection_steps",
+                "activation_method",
+                "vector_type"
+              ],
+              "differences": []
+            },
+            "supporting_stage_ids": [
+              "de6c74b8-3b51-58b9-8627-99dfcaf819f8"
+            ]
+          },
+          {
+            "id": "ea80f1e4-3e55-56ea-aada-d4e6a6145356",
+            "location": "staging",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "selection_steps",
+                "activation_method",
+                "vector_type"
+              ],
+              "differences": []
+            },
+            "supporting_stage_ids": [
+              "ea80f1e4-3e55-56ea-aada-d4e6a6145356"
+            ]
+          }
+        ],
+        "identity_status": "unresolved",
+        "comparison_policy": "source-admission-v3",
+        "normalization_flags": [
+          {
+            "path": "manufacturing.cytokine_combination[0].concentration",
+            "after": {
+              "raw": "50 IU/mL interleukin (IL)-2 in initial primary T-cell culture (§2.1)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 50
+            },
+            "before": {
+              "raw": "50 IU/mL interleukin (IL)-2 in initial primary T-cell culture (§2.1)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 50
+            },
+            "reason": "review_missing_or_unconvertible_unit"
+          },
+          {
+            "path": "manufacturing.cytokine_combination[1].concentration",
+            "after": {
+              "raw": "100 IU/mL IL-2 during the 3-day activation prior to lentiviral transduction (§2.6)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 100
+            },
+            "before": {
+              "raw": "100 IU/mL IL-2 during the 3-day activation prior to lentiviral transduction (§2.6)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 100
+            },
+            "reason": "review_missing_or_unconvertible_unit"
+          },
+          {
+            "path": "manufacturing.cytokine_combination[2].concentration",
+            "after": {
+              "raw": "50 IU/mL IL-2 three times per week in T-cell culture media (§2.6)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 50
+            },
+            "before": {
+              "raw": "50 IU/mL IL-2 three times per week in T-cell culture media (§2.6)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 50
+            },
+            "reason": "review_missing_or_unconvertible_unit"
+          }
+        ]
+      }
+    },
+    {
+      "stage_id": "de6c74b8-3b51-58b9-8627-99dfcaf819f8",
+      "line_number": 7,
+      "table_name": "manufacturing",
+      "local_id": "d3a1fe1a-3e4b-4525-b864-c7744f1c3d2f",
+      "status": "published",
+      "target_id": "10b41019-3933-4a59-81a8-7b0f8c0baf74",
+      "errors": [],
+      "audit": [
+        {
+          "path": "manufacturing.reagents[4].amount",
+          "after": {
+            "raw": "concentrated lentiviral supernatant supplemented with polybrene at a concentration of 6 µg/mL of culture media (§2.6; PDF page 4)",
+            "kind": "single_value",
+            "unit": "ug/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 6
+          },
+          "before": {
+            "raw": "concentrated lentiviral supernatant supplemented with polybrene at a concentration of 6 µg/mL of culture media (§2.6; PDF page 4)",
+            "kind": "single_value",
+            "unit": "µg/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 6
+          },
+          "reason": "measurement_unit"
+        },
+        {
+          "path": "manufacturing.cytokine_combination[0].concentration",
+          "after": {
+            "raw": "50 IU/mL interleukin (IL)-2 in initial primary T-cell culture (§2.1)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 50
+          },
+          "before": {
+            "raw": "50 IU/mL interleukin (IL)-2 in initial primary T-cell culture (§2.1)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 50
+          },
+          "reason": "review_missing_or_unconvertible_unit"
+        },
+        {
+          "path": "manufacturing.cytokine_combination[1].concentration",
+          "after": {
+            "raw": "100 IU/mL IL-2 during the 3-day activation prior to lentiviral transduction (§2.6)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 100
+          },
+          "before": {
+            "raw": "100 IU/mL IL-2 during the 3-day activation prior to lentiviral transduction (§2.6)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 100
+          },
+          "reason": "review_missing_or_unconvertible_unit"
+        },
+        {
+          "path": "manufacturing.cytokine_combination[2].concentration",
+          "after": {
+            "raw": "50 IU/mL IL-2 three times per week in T-cell culture media (§2.6)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 50
+          },
+          "before": {
+            "raw": "50 IU/mL IL-2 three times per week in T-cell culture media (§2.6)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 50
+          },
+          "reason": "review_missing_or_unconvertible_unit"
+        }
+      ],
+      "identity_status": "unresolved",
+      "identity_details": {
+        "reason": "保存来源实体；身份是否重复与数据入库分别处理。",
+        "candidates": [
+          {
+            "id": "35d1d3a2-3bd7-4e76-a1e0-2d4e18831fec",
+            "location": "accepted",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "selection_steps",
+                "activation_method",
+                "vector_type"
+              ],
+              "differences": []
+            },
+            "supporting_stage_ids": [
+              "74a3c0a3-fd95-5083-b259-009c8a60ca65"
+            ]
+          },
+          {
+            "id": "716f5b15-2f01-4511-a377-905f5c8d4475",
+            "location": "accepted",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "selection_steps",
+                "activation_method",
+                "vector_type"
+              ],
+              "differences": []
+            },
+            "supporting_stage_ids": [
+              "7c36549e-4066-5068-a8f3-daf00a1940f1"
+            ]
+          },
+          {
+            "id": "f49e6197-1f9c-4586-a030-9311a8aeb16f",
+            "location": "accepted",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "selection_steps",
+                "activation_method",
+                "vector_type"
+              ],
+              "differences": []
+            },
+            "supporting_stage_ids": [
+              "420d5639-bd8d-53ec-a960-1341142ed4ab"
+            ]
+          },
+          {
+            "id": "ea80f1e4-3e55-56ea-aada-d4e6a6145356",
+            "location": "staging",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "selection_steps",
+                "activation_method",
+                "vector_type"
+              ],
+              "differences": []
+            },
+            "supporting_stage_ids": [
+              "ea80f1e4-3e55-56ea-aada-d4e6a6145356"
+            ]
+          }
+        ],
+        "identity_status": "unresolved",
+        "comparison_policy": "source-admission-v3",
+        "normalization_flags": [
+          {
+            "path": "manufacturing.cytokine_combination[0].concentration",
+            "after": {
+              "raw": "50 IU/mL interleukin (IL)-2 in initial primary T-cell culture (§2.1)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 50
+            },
+            "before": {
+              "raw": "50 IU/mL interleukin (IL)-2 in initial primary T-cell culture (§2.1)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 50
+            },
+            "reason": "review_missing_or_unconvertible_unit"
+          },
+          {
+            "path": "manufacturing.cytokine_combination[1].concentration",
+            "after": {
+              "raw": "100 IU/mL IL-2 during the 3-day activation prior to lentiviral transduction (§2.6)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 100
+            },
+            "before": {
+              "raw": "100 IU/mL IL-2 during the 3-day activation prior to lentiviral transduction (§2.6)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 100
+            },
+            "reason": "review_missing_or_unconvertible_unit"
+          },
+          {
+            "path": "manufacturing.cytokine_combination[2].concentration",
+            "after": {
+              "raw": "50 IU/mL IL-2 three times per week in T-cell culture media (§2.6)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 50
+            },
+            "before": {
+              "raw": "50 IU/mL IL-2 three times per week in T-cell culture media (§2.6)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 50
+            },
+            "reason": "review_missing_or_unconvertible_unit"
+          }
+        ]
+      }
+    },
+    {
+      "stage_id": "ea80f1e4-3e55-56ea-aada-d4e6a6145356",
+      "line_number": 8,
+      "table_name": "manufacturing",
+      "local_id": "9d2d5227-ebef-4613-bd5f-072c17443fe6",
+      "status": "published",
+      "target_id": "2eed091c-689a-4d8d-9611-81656212dd7a",
+      "errors": [],
+      "audit": [
+        {
+          "path": "manufacturing.reagents[4].amount",
+          "after": {
+            "raw": "concentrated lentiviral supernatant supplemented with polybrene at a concentration of 6 µg/mL of culture media (§2.6; PDF page 4)",
+            "kind": "single_value",
+            "unit": "ug/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 6
+          },
+          "before": {
+            "raw": "concentrated lentiviral supernatant supplemented with polybrene at a concentration of 6 µg/mL of culture media (§2.6; PDF page 4)",
+            "kind": "single_value",
+            "unit": "µg/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 6
+          },
+          "reason": "measurement_unit"
+        },
+        {
+          "path": "manufacturing.cytokine_combination[0].concentration",
+          "after": {
+            "raw": "50 IU/mL interleukin (IL)-2 in initial primary T-cell culture (§2.1)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 50
+          },
+          "before": {
+            "raw": "50 IU/mL interleukin (IL)-2 in initial primary T-cell culture (§2.1)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 50
+          },
+          "reason": "review_missing_or_unconvertible_unit"
+        },
+        {
+          "path": "manufacturing.cytokine_combination[1].concentration",
+          "after": {
+            "raw": "100 IU/mL IL-2 during the 3-day activation prior to lentiviral transduction (§2.6)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 100
+          },
+          "before": {
+            "raw": "100 IU/mL IL-2 during the 3-day activation prior to lentiviral transduction (§2.6)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 100
+          },
+          "reason": "review_missing_or_unconvertible_unit"
+        },
+        {
+          "path": "manufacturing.cytokine_combination[2].concentration",
+          "after": {
+            "raw": "50 IU/mL IL-2 three times per week in T-cell culture media (§2.6)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 50
+          },
+          "before": {
+            "raw": "50 IU/mL IL-2 three times per week in T-cell culture media (§2.6)",
+            "kind": "single_value",
+            "unit": "IU/mL",
+            "error": null,
+            "lower": null,
+            "upper": null,
+            "value": 50
+          },
+          "reason": "review_missing_or_unconvertible_unit"
+        }
+      ],
+      "identity_status": "unresolved",
+      "identity_details": {
+        "reason": "保存来源实体；身份是否重复与数据入库分别处理。",
+        "candidates": [
+          {
+            "id": "10b41019-3933-4a59-81a8-7b0f8c0baf74",
+            "location": "accepted",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "selection_steps",
+                "activation_method",
+                "vector_type"
+              ],
+              "differences": []
+            },
+            "supporting_stage_ids": [
+              "de6c74b8-3b51-58b9-8627-99dfcaf819f8"
+            ]
+          },
+          {
+            "id": "35d1d3a2-3bd7-4e76-a1e0-2d4e18831fec",
+            "location": "accepted",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "selection_steps",
+                "activation_method",
+                "vector_type"
+              ],
+              "differences": []
+            },
+            "supporting_stage_ids": [
+              "74a3c0a3-fd95-5083-b259-009c8a60ca65"
+            ]
+          },
+          {
+            "id": "716f5b15-2f01-4511-a377-905f5c8d4475",
+            "location": "accepted",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "selection_steps",
+                "activation_method",
+                "vector_type"
+              ],
+              "differences": []
+            },
+            "supporting_stage_ids": [
+              "7c36549e-4066-5068-a8f3-daf00a1940f1"
+            ]
+          },
+          {
+            "id": "f49e6197-1f9c-4586-a030-9311a8aeb16f",
+            "location": "accepted",
+            "comparison": {
+              "reason": "主要方法信息不足或文字描述不同，保留独立记录供来源审核。",
+              "unknown": [
+                "culture_system",
+                "culture_duration"
+              ],
+              "verdict": "possible",
+              "agreements": [
+                "selection_steps",
+                "activation_method",
+                "vector_type"
+              ],
+              "differences": []
+            },
+            "supporting_stage_ids": [
+              "420d5639-bd8d-53ec-a960-1341142ed4ab"
+            ]
+          }
+        ],
+        "identity_status": "unresolved",
+        "comparison_policy": "source-admission-v3",
+        "normalization_flags": [
+          {
+            "path": "manufacturing.cytokine_combination[0].concentration",
+            "after": {
+              "raw": "50 IU/mL interleukin (IL)-2 in initial primary T-cell culture (§2.1)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 50
+            },
+            "before": {
+              "raw": "50 IU/mL interleukin (IL)-2 in initial primary T-cell culture (§2.1)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 50
+            },
+            "reason": "review_missing_or_unconvertible_unit"
+          },
+          {
+            "path": "manufacturing.cytokine_combination[1].concentration",
+            "after": {
+              "raw": "100 IU/mL IL-2 during the 3-day activation prior to lentiviral transduction (§2.6)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 100
+            },
+            "before": {
+              "raw": "100 IU/mL IL-2 during the 3-day activation prior to lentiviral transduction (§2.6)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 100
+            },
+            "reason": "review_missing_or_unconvertible_unit"
+          },
+          {
+            "path": "manufacturing.cytokine_combination[2].concentration",
+            "after": {
+              "raw": "50 IU/mL IL-2 three times per week in T-cell culture media (§2.6)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 50
+            },
+            "before": {
+              "raw": "50 IU/mL IL-2 three times per week in T-cell culture media (§2.6)",
+              "kind": "single_value",
+              "unit": "IU/mL",
+              "error": null,
+              "lower": null,
+              "upper": null,
+              "value": 50
+            },
+            "reason": "review_missing_or_unconvertible_unit"
+          }
+        ]
+      }
+    },
+    {
+      "stage_id": "f16b320f-0974-58fa-b6ae-dcc0d3b52f5d",
+      "line_number": 9,
+      "table_name": "abc_combination_db1",
+      "local_id": "7910b175-006f-41ae-87fc-86843505833d",
+      "status": "published",
+      "target_id": "7b20a246-27bb-48ad-b61a-d83180abbac3",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "49031f51-fe75-5695-b441-a371346f8541",
+      "line_number": 10,
+      "table_name": "abc_combination_db1",
+      "local_id": "c882b7ca-a912-46b4-b1d6-b13bb428392d",
+      "status": "published",
+      "target_id": "b467d354-0ef5-4c56-a7a2-dbf0fb1dd753",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "0283fca4-02d9-54f7-80b7-dfa1128ec642",
+      "line_number": 11,
+      "table_name": "abc_combination_db1",
+      "local_id": "a116ae33-71d2-485e-8c78-6e389d10552a",
+      "status": "published",
+      "target_id": "6531fff9-ae11-480b-982e-ccb8a864c26c",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "3d6ddf54-7875-5c37-90fa-e271bfb7be1f",
+      "line_number": 12,
+      "table_name": "abc_combination_db1",
+      "local_id": "644d0e0a-7768-4423-8ea3-0320b35b1b36",
+      "status": "published",
+      "target_id": "fad6dcb9-69bd-441d-a50e-b806453720e5",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "92a3b46e-b357-5915-9ecb-903d319d1738",
+      "line_number": 13,
+      "table_name": "abc_combination_db1",
+      "local_id": "610b73ee-e68b-4217-87ca-ff2ba6f4cf3e",
+      "status": "published",
+      "target_id": "d8b278b1-0f98-42cc-b1cd-08cf27b13d27",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "86c55146-3a8f-5108-9312-26ff3ca5a044",
+      "line_number": 14,
+      "table_name": "abc_combination_db1",
+      "local_id": "9ee98df1-39b7-4cce-8d99-9d4b402ff79b",
+      "status": "published",
+      "target_id": "df5f48ad-68bb-4b35-8cda-f1fcf78692c8",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "4aaa648f-9f4d-5aa1-8512-311b074af106",
+      "line_number": 15,
+      "table_name": "abc_combination_db1",
+      "local_id": "6f10d10b-b778-45ac-ae42-011101c53858",
+      "status": "published",
+      "target_id": "f325efb8-2878-442d-8841-ec67a358c6ab",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "81d31bf6-c434-5d09-9728-a55b2c403d72",
+      "line_number": 16,
+      "table_name": "abc_combination_db1",
+      "local_id": "50884e4d-d959-41a9-86ef-3133902645ac",
+      "status": "published",
+      "target_id": "4869c60a-a733-4ea4-99aa-3f165aa88fde",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "c5db3bdf-e9c5-5f4c-a4c7-c460d5abbc02",
+      "line_number": 17,
+      "table_name": "abc_combination_db1",
+      "local_id": "f9ffa4ad-5b63-41e6-a6a9-f52d688dc38d",
+      "status": "published",
+      "target_id": "7c3f26aa-99f3-4509-99b5-e7c6d856c84a",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "3f2743c9-5be2-543b-a382-14ddfcf594f6",
+      "line_number": 18,
+      "table_name": "abc_combination_db1",
+      "local_id": "9e40bf74-bbda-4971-944c-a22c1a1de73a",
+      "status": "published",
+      "target_id": "4e916ddc-a604-4a25-9424-88dc75ced663",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "2ae9550e-0acc-5ea8-a607-1716aa423e27",
+      "line_number": 19,
+      "table_name": "evidence",
+      "local_id": "2316825d-2547-464a-91fc-e398b2a65928",
+      "status": "published",
+      "target_id": "8993f152-16e9-4199-aa08-754643bca3b9",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "8527d369-8349-5661-b654-208c080f4b92",
+      "line_number": 20,
+      "table_name": "evidence",
+      "local_id": "2941c0de-e71f-4365-9797-0608a16c4fd2",
+      "status": "published",
+      "target_id": "abc30549-7add-4c04-9bb4-9f034e61238b",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "1a45cbf6-05cd-584c-9770-08e3a14f9d1e",
+      "line_number": 21,
+      "table_name": "evidence",
+      "local_id": "95500e6d-6b9b-4bac-ac64-4a9c66c960b9",
+      "status": "published",
+      "target_id": "36ebfd3e-d05b-4348-b073-a5b066dc95f2",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "e8ec7bc4-2f0e-5bb0-bf85-7f9b209bc2db",
+      "line_number": 22,
+      "table_name": "evidence",
+      "local_id": "d04d213a-2a54-4637-bee0-7e84a05638f7",
+      "status": "published",
+      "target_id": "820d9a11-be79-43d9-a8cb-57b65441c41c",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "8f62dc78-dc73-5238-9698-452e1f18f773",
+      "line_number": 23,
+      "table_name": "evidence",
+      "local_id": "b7114806-e462-4f36-8bb2-2d5b6c5da37d",
+      "status": "published",
+      "target_id": "51035cb5-ec2b-435d-a81e-b3be66544f5d",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "6b5d465f-9735-5431-9289-307c824763a5",
+      "line_number": 24,
+      "table_name": "evidence",
+      "local_id": "4773a360-eee3-459a-911a-87fa0d4fda76",
+      "status": "published",
+      "target_id": "674b1c52-6a03-4759-9a87-18eb53bb4e74",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "0597c801-0b40-5a59-94cd-9640ed3b0c16",
+      "line_number": 25,
+      "table_name": "evidence",
+      "local_id": "85d69d84-8806-4442-a8dc-c66b3e0450e4",
+      "status": "published",
+      "target_id": "f7d7f22c-3d85-4c0f-9eb5-ce25a2c7d419",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "6c6b319b-a127-5293-b980-83504814205d",
+      "line_number": 26,
+      "table_name": "evidence",
+      "local_id": "89230747-df7a-4b3f-9864-6822a2e80cd8",
+      "status": "published",
+      "target_id": "40812e0b-d6ff-40fe-a49b-90739c858869",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "e5be86f4-b44c-5285-bed7-016a5ba6d446",
+      "line_number": 27,
+      "table_name": "evidence",
+      "local_id": "a1b40cc5-d4a7-4fa0-b02e-50133bdc2b13",
+      "status": "published",
+      "target_id": "21b71a03-95ab-4496-88b4-594bc8c05fb0",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "836c0757-8596-55a1-bd93-11c2f69ac876",
+      "line_number": 28,
+      "table_name": "evidence",
+      "local_id": "7c9db9f4-9b4b-4b29-9242-5822042f7089",
+      "status": "published",
+      "target_id": "6d4c5505-cfef-48cc-91c4-6efe69b2ac98",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "0d5e37ed-6269-5458-8345-4fcf8d4e7f66",
+      "line_number": 29,
+      "table_name": "evidence",
+      "local_id": "11b64723-173f-40b3-8384-fd2bef6e27dc",
+      "status": "published",
+      "target_id": "fec6afcf-960f-461e-ae29-01293c12f5c0",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "ef79eb47-0fe4-5ca0-ad8c-aeda093393c4",
+      "line_number": 30,
+      "table_name": "evidence",
+      "local_id": "b41e9357-92fc-42c8-a519-059389672462",
+      "status": "published",
+      "target_id": "8f46a7c0-7709-43c2-aaed-0b137fa5743a",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "315ad9a2-b5f2-5a1b-9ec6-be3188472eae",
+      "line_number": 31,
+      "table_name": "evidence",
+      "local_id": "abc5e229-b39b-40fa-ab97-6fa7c69a2f49",
+      "status": "published",
+      "target_id": "47345d37-ae7f-40dc-87c9-d5b72d1317da",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "4c445807-0311-5cc5-b7b8-404ec39660c1",
+      "line_number": 32,
+      "table_name": "evidence",
+      "local_id": "8cb6601a-877a-4303-8bcb-3b68242b0b51",
+      "status": "published",
+      "target_id": "1c34367d-7df6-43d7-a642-d73df6172a28",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "ba61efdb-67b2-54ee-8d84-321e1a053b1b",
+      "line_number": 33,
+      "table_name": "evidence",
+      "local_id": "ec0f58e4-7b3f-4b9d-a4ef-5a3ad220538f",
+      "status": "published",
+      "target_id": "6fe2f2a5-48ed-408f-a514-0a7895e59b7c",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "59650d58-5e04-5e8e-aaec-a6be6d8a2289",
+      "line_number": 34,
+      "table_name": "evidence",
+      "local_id": "da65b3c1-4862-452e-aad5-b3c23e610db3",
+      "status": "published",
+      "target_id": "24e4966c-0a57-4ebb-91c8-1d8e088937a1",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "1dc03c45-cd15-5d87-ba92-8f382c4b858d",
+      "line_number": 35,
+      "table_name": "evidence",
+      "local_id": "66681787-278b-46db-886f-0460528dd40a",
+      "status": "published",
+      "target_id": "9a7f9ecf-71de-49a4-95bb-599e560aa643",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "d2d0d3b1-ccec-5a08-9eee-26713c48e105",
+      "line_number": 36,
+      "table_name": "evidence",
+      "local_id": "6051761d-0c53-4e3a-88fa-6840d194491c",
+      "status": "published",
+      "target_id": "7f0b5d63-5abb-4d1d-abea-7940d1112674",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "c69c1cfa-6963-5c6c-a7a8-cd199df526a4",
+      "line_number": 37,
+      "table_name": "evidence",
+      "local_id": "36d204fe-7fc6-43f4-8686-01a5c15301f7",
+      "status": "published",
+      "target_id": "2fda3d74-ae8c-4c75-ad39-42ed744664a5",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "8b61db89-609b-548b-9609-e68b6f3539cf",
+      "line_number": 38,
+      "table_name": "evidence",
+      "local_id": "2175238e-b0f4-4fd6-8b0f-7e4722eebb16",
+      "status": "published",
+      "target_id": "237c1bdd-9123-4a07-ac83-ae50bd80c527",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "a72b0b85-6f27-5296-ba39-da9e5235295b",
+      "line_number": 39,
+      "table_name": "evidence",
+      "local_id": "5ecc0f34-91f9-4b1a-98e5-3c293f5cd5bf",
+      "status": "published",
+      "target_id": "7558251b-d836-4a81-a4d1-c500e81eceb0",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "214e6aa9-4870-5d2d-bfc0-ce56a2888300",
+      "line_number": 40,
+      "table_name": "evidence",
+      "local_id": "95e2cae1-1499-4cf3-94cb-7c4dbace3fee",
+      "status": "published",
+      "target_id": "13bd0588-f62b-45d3-aab1-7f0acf86e9d5",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "bdea4757-3090-584f-8aa5-06b9f7ec762e",
+      "line_number": 41,
+      "table_name": "evidence",
+      "local_id": "d1a08b4f-a878-481d-a93c-a4ce5e91b4ef",
+      "status": "published",
+      "target_id": "88915da7-e04b-41d3-9462-f15be3fff893",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "3e4ee3ab-9dcb-5939-8b4f-d2a3dca2335e",
+      "line_number": 42,
+      "table_name": "evidence",
+      "local_id": "7ead6688-4afe-4ebe-9ac4-aab55977ccaa",
+      "status": "published",
+      "target_id": "98aa3903-101b-407f-a909-bee7813b2160",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "d1007907-5da8-597d-8c08-6ddd75431c7e",
+      "line_number": 43,
+      "table_name": "evidence",
+      "local_id": "2cc20114-04fd-443d-bd07-a2ff0483ddcc",
+      "status": "published",
+      "target_id": "ba4cc47e-762e-46dd-80ec-291756be6196",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "370c7f42-6cd7-5fcd-89a1-d1c0888d61f9",
+      "line_number": 44,
+      "table_name": "evidence",
+      "local_id": "1eeaeb49-af64-47f5-885d-62eff61280b9",
+      "status": "published",
+      "target_id": "23485cc8-02fb-46af-b19d-9d5f776db57d",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "030f47d0-80aa-5b5a-9f1b-2693879081ad",
+      "line_number": 45,
+      "table_name": "evidence",
+      "local_id": "3ccf0228-fd97-4283-be1d-77c4576debaa",
+      "status": "published",
+      "target_id": "5f455a12-9ecc-44ab-a684-20c9bd236004",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "c3b8da95-8a51-5868-b7b3-91a80915a57d",
+      "line_number": 46,
+      "table_name": "evidence",
+      "local_id": "2453d73f-39b3-4e3a-930f-95488b313ea9",
+      "status": "published",
+      "target_id": "34202203-7eef-4372-9ced-b5a11c58c511",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "82f514ee-d625-5ab4-9820-ef0cffcd35d9",
+      "line_number": 47,
+      "table_name": "evidence",
+      "local_id": "3685e5af-c945-4704-a78d-182822edb0f9",
+      "status": "published",
+      "target_id": "a94982da-dfd6-4374-b383-adc8be342c0d",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "59fdc102-1c46-5944-bfe7-1dbc162401f2",
+      "line_number": 48,
+      "table_name": "evidence",
+      "local_id": "df239f6d-9a88-4111-a585-e1597fc41cd9",
+      "status": "published",
+      "target_id": "f8c5c1fe-e479-4cb7-a848-93cb82f0b5fa",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "e82f97d8-1a70-5468-9c05-1e5f6b2398a1",
+      "line_number": 49,
+      "table_name": "evidence",
+      "local_id": "629c2257-56bf-42d1-82dd-9ee0d25cde78",
+      "status": "published",
+      "target_id": "e52e107d-9e91-4759-b014-5e9fa53843e7",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "3313ac52-6ce6-59c1-8fd7-20428e64edd0",
+      "line_number": 50,
+      "table_name": "evidence",
+      "local_id": "8a98d3c9-3bcd-4fb0-b3ec-19ff30b0549a",
+      "status": "published",
+      "target_id": "05519922-f154-4ae6-a872-ec8aa6f46c52",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "d1e129ed-e805-55d7-a567-18b24def83ce",
+      "line_number": 51,
+      "table_name": "evidence",
+      "local_id": "6dc35704-5f0b-4220-b7dd-fb170b0d1aa7",
+      "status": "published",
+      "target_id": "d6bb8afb-5f02-476e-8a6c-222013066b20",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "e03784f7-97f8-5706-bd12-a976c1fb2df8",
+      "line_number": 52,
+      "table_name": "evidence",
+      "local_id": "d5774fcd-0ab5-4f89-97b1-a247421eba2f",
+      "status": "published",
+      "target_id": "e3896e16-a1ed-42d0-a1b0-6bd79fc77d01",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "b7054a45-5808-5ba7-92a7-5f6704679327",
+      "line_number": 53,
+      "table_name": "evidence",
+      "local_id": "2a5984a0-8842-406c-8c33-d596144f1abc",
+      "status": "published",
+      "target_id": "efb99b3b-6b2a-4722-b73e-56d754e69ada",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "4c17b147-5722-5e50-9b2c-55195215edc4",
+      "line_number": 54,
+      "table_name": "evidence",
+      "local_id": "28e70c41-8753-4a05-80ae-c076c7832f91",
+      "status": "published",
+      "target_id": "21efe878-32be-4059-97fa-7f839a2a2e20",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "43cf36f3-091d-5bdb-825a-a1202b1d756d",
+      "line_number": 55,
+      "table_name": "evidence",
+      "local_id": "6038b2b1-bea3-4bf2-9719-a781b6649af5",
+      "status": "published",
+      "target_id": "d23e5496-b7bb-42b5-ac53-0c807cc87f34",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "a484a31a-2801-5641-b5a3-51a26575cdc0",
+      "line_number": 56,
+      "table_name": "evidence",
+      "local_id": "59ce0126-c218-4576-9c1b-330cd5feabb6",
+      "status": "published",
+      "target_id": "e2bdc193-3755-4e44-9b5a-8c640b0f86d6",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "a4592893-9f23-5e65-a0ca-ae8356f63ef4",
+      "line_number": 57,
+      "table_name": "evidence",
+      "local_id": "aa4b87de-5b19-4357-89e8-9a5c7b1f1516",
+      "status": "published",
+      "target_id": "eb2ad3d9-cc3d-45ab-ad79-eab4903a47ef",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "cff495c4-406a-57f1-9d97-62b544eb51f9",
+      "line_number": 58,
+      "table_name": "evidence",
+      "local_id": "c96f79a0-3b0d-4d32-8a23-92b6b1d1f3af",
+      "status": "published",
+      "target_id": "c5abf498-c3d9-4129-ba38-64920be3f0a0",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "8088a4f3-7fac-5615-b1cd-67b652efa402",
+      "line_number": 59,
+      "table_name": "evidence",
+      "local_id": "3ffe6bc0-1a85-4dce-ab99-90b502b9c00c",
+      "status": "published",
+      "target_id": "e80c4e07-98f1-44ad-8691-8f965c13585d",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "bca6e54f-efdb-5c02-8b7b-f0d54d7905b1",
+      "line_number": 60,
+      "table_name": "evidence",
+      "local_id": "e3ab5de0-41f8-42cf-901a-380b6db7f0f9",
+      "status": "published",
+      "target_id": "86484d9f-4312-4fd7-9462-fee41f21a128",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "45863969-1c1b-5928-a479-e819b3b4a59b",
+      "line_number": 61,
+      "table_name": "evidence",
+      "local_id": "d8231157-2d4a-44d2-ad6f-26451b0af7ae",
+      "status": "published",
+      "target_id": "f89000d1-4890-4114-861a-d122a199e8e4",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "f48dd472-317b-57bf-9106-9fa01edafd97",
+      "line_number": 62,
+      "table_name": "evidence",
+      "local_id": "9e9845fb-eed8-4e02-af2f-0d8a4f1c978c",
+      "status": "published",
+      "target_id": "44087614-bd44-4ffe-8915-18fae05f228d",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "d634b91d-b787-5a29-aea8-720bd976cf84",
+      "line_number": 63,
+      "table_name": "evidence",
+      "local_id": "9d7144b3-a390-4de7-820f-f021e391c9b2",
+      "status": "published",
+      "target_id": "dcd1852f-1a2a-453a-807c-0c0eaba698fa",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "eb8cc49c-63bc-5114-acb1-22fdb8f53744",
+      "line_number": 64,
+      "table_name": "evidence",
+      "local_id": "4c090dfc-7544-434b-8576-64631663b525",
+      "status": "published",
+      "target_id": "5f31703b-4872-4192-bba5-de00e7d43514",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "bccac947-4bdc-530e-a500-a230eff57918",
+      "line_number": 65,
+      "table_name": "evidence",
+      "local_id": "4af9f79b-9c08-486a-88d1-34c2ee2e55e5",
+      "status": "published",
+      "target_id": "dd111464-155a-4a78-b8df-3b733765ae13",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "81c2eab4-188b-5ded-ba09-ebf5c7bb2201",
+      "line_number": 66,
+      "table_name": "evidence",
+      "local_id": "3ca6ef57-b8f7-4503-a1e5-0980f3e7ca7d",
+      "status": "published",
+      "target_id": "276b6d46-fdd7-4f0d-b690-9b7c553b5656",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "701130e5-56ef-5879-ad97-5a977e2f1867",
+      "line_number": 67,
+      "table_name": "evidence",
+      "local_id": "4e54322e-18d9-4aa4-a002-48735b665f04",
+      "status": "published",
+      "target_id": "0df241e3-3cf8-4efa-9c87-310dc18ba238",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "5428547e-99df-5245-939f-18e9bb6bb924",
+      "line_number": 68,
+      "table_name": "evidence",
+      "local_id": "fdefe73b-6859-431d-9cd1-98f93682077d",
+      "status": "published",
+      "target_id": "9edb5880-e553-4811-a35f-df4fb0f9248e",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "f9485bb3-4f33-5815-a495-2e4f7ad38fbd",
+      "line_number": 69,
+      "table_name": "evidence",
+      "local_id": "65bc5b92-efd6-442a-bf23-a65327a56efe",
+      "status": "published",
+      "target_id": "bfd83d1c-1e18-4a87-82ef-544bd22a97f0",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "e64564d8-6d24-5e1b-ab3a-7d11b55bac16",
+      "line_number": 70,
+      "table_name": "evidence",
+      "local_id": "1f7acc98-7bcd-4963-8abe-87ce28a15240",
+      "status": "published",
+      "target_id": "079fe4d1-20b7-4d85-8400-138e49a54bd8",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "ae120db0-672a-5dab-a158-abe27cd49ca8",
+      "line_number": 71,
+      "table_name": "evidence",
+      "local_id": "fe0df946-1e20-4326-9a6d-cae679a30fd4",
+      "status": "published",
+      "target_id": "485c02f5-29ff-4e58-9289-01bc397d4fe8",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "530fb8e0-380d-5c10-ae58-aa3bc0c46565",
+      "line_number": 72,
+      "table_name": "evidence",
+      "local_id": "88e8fe70-2f89-4f4c-8bd3-fe84543a25a2",
+      "status": "published",
+      "target_id": "b3519282-4ffa-494a-8408-4c2146e617b2",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "f40a42fc-06a6-5f0c-8383-798e26efdc17",
+      "line_number": 73,
+      "table_name": "evidence",
+      "local_id": "caacb3b4-40c4-42c7-bd18-c1ce1ce58b70",
+      "status": "published",
+      "target_id": "3cff59b9-9771-44dd-bd19-abf0bed1ff6e",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "c9536b07-5145-54af-a2c2-865ba8e551d9",
+      "line_number": 74,
+      "table_name": "evidence",
+      "local_id": "e30701be-f106-4db4-b059-a52b63e33e92",
+      "status": "published",
+      "target_id": "dd1e558c-7e62-4fe7-bb3d-52dd4c02e938",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "614d5226-8c2f-5e37-a857-d51f62e60ed8",
+      "line_number": 75,
+      "table_name": "evidence",
+      "local_id": "c1f25095-d5e9-42c1-afcf-4687f1687397",
+      "status": "published",
+      "target_id": "7b120790-3a52-4b1b-b1c7-719e8d7c6181",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "8cd1f8dc-9a91-5428-9d72-2a07649744a8",
+      "line_number": 76,
+      "table_name": "evidence",
+      "local_id": "844196c9-2c48-4b80-9e25-fd8c55a3f6c1",
+      "status": "published",
+      "target_id": "04efc61c-384d-41a7-adc3-5c2d730b66b2",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "dda1e422-3cbe-5606-baff-db8f4da7e149",
+      "line_number": 77,
+      "table_name": "evidence",
+      "local_id": "8773149a-cf4f-4d79-880f-1a4c6e8edd7e",
+      "status": "published",
+      "target_id": "b4b36555-de0b-450c-8751-0d7101c00d94",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    },
+    {
+      "stage_id": "b06e8956-2eee-59dc-8ecf-88866c1a74a8",
+      "line_number": 78,
+      "table_name": "evidence",
+      "local_id": "5ba13e3c-ef32-41f7-a1f2-4f954879307f",
+      "status": "published",
+      "target_id": "0ef259b4-3ca1-4621-bca8-595849c41281",
+      "errors": [],
+      "audit": [],
+      "identity_status": null,
+      "identity_details": null
+    }
+  ],
+  "pending_reasons": {},
+  "actions": {
+    "new_entities": 8,
+    "linked_entities": 0,
+    "new_records": 70,
+    "linked_records": 0
+  }
+}

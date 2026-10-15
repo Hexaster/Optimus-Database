@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/zzz010122/Fosun-db-post-/data/CD19/paper-A_PMC12182840_低亲和力人源化CD19_CAR.pdf",
+  "source_sha256": "8276b2a8d0e6e0a48aa4e90903ec2d4d6410f1c3aac6d33be4a8d55d4d9b2ac5",
+  "schema_hash": "205f6f856cde5e6e9396843e29f3359add4fa8882fa4e96d710229ad67deb25f",
+  "agent": "codex",
+  "model": "gpt-6.1-sol",
+  "artifacts": {
+    "data.jsonl": "05247515c4f5cca01356fe5f6ad82edd30480a3ca61e64c0b3ce34aaba78296b",
+    "original.jsonl": "c71d9d0391d0bb4d647509ac399bfcb7fe4f90159a300b3f56bcd5164036abb6",
+    "reasoning.md": "3413c3ba070bb0fd3c5d0fd95ade6237864bbb972f28ea279045ea94e1d7a8c7",
+    "error_log.jsonl": "bc4a5adc5eba051e61ce1b6c56b7392beae40e8c0409b4e90e8b42b299042932"
+  }
+}

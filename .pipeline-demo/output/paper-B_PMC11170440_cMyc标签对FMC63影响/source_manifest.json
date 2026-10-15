@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/zzz010122/Fosun-db-post-/data/CD19/paper-B_PMC11170440_cMyc标签对FMC63影响.pdf",
+  "source_sha256": "6179af80acfbc5a2de9e3d7c00160334aefbc2da46b2153de1bf0826aef39c76",
+  "schema_hash": "205f6f856cde5e6e9396843e29f3359add4fa8882fa4e96d710229ad67deb25f",
+  "agent": "codex",
+  "model": "gpt-6.1-sol",
+  "artifacts": {
+    "data.jsonl": "0ce5039f1da9c19662b3acba5d1f2e199d012fa98d8bb7e6ed1a70a3f7cc8d6e",
+    "original.jsonl": "aad5722ab16bf14984dc0cd0eb7358c0b6a157985fe73b55f186071e9418e2e1",
+    "reasoning.md": "3c79451e2af591e12774ff0552ba200a2b83419c55c3a25ee17006f38c2df8d4",
+    "error_log.jsonl": "5eae4226847fd4a34e77140e061b7675348dc1e727d888a5137a7460aa8aaa5d"
+  }
+}

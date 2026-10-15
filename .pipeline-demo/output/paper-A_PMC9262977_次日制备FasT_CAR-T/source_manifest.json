@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/zzz010122/Fosun-db-post-/data/CD19/paper-A_PMC9262977_次日制备FasT_CAR-T.pdf",
+  "source_sha256": "57318c74dd5ac226084374c009fc7f640071e129650db552d662ef0b9820c3ca",
+  "schema_hash": "205f6f856cde5e6e9396843e29f3359add4fa8882fa4e96d710229ad67deb25f",
+  "agent": "codex",
+  "model": "gpt-6.1-sol",
+  "artifacts": {
+    "data.jsonl": "62a77af54035ab229cce4fa5d000a3b4ec8bab3db73749263c7c2a98ceb2d5d6",
+    "original.jsonl": "2db7f478825b00f28d4a0acd56f56548f25ca80192f86677a9c01921c9465a62",
+    "reasoning.md": "b64ca1d5782ba1ae1202ddf1a94d11c5eee4bb6e1a4e4b68d5f64ba941ae21b1",
+    "error_log.jsonl": "aabaa4b6421ac9afc0516101ab37e4630a6bd747b3f43d0e9c066704c1c330a8"
+  }
+}

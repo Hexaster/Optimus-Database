@@ -1,0 +1,22 @@
+2026-10-14 19:02:57.401 CST [668003] LOG:  starting PostgreSQL 16.14 (Ubuntu 16.14-0ubuntu0.24.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit
+2026-10-14 19:02:57.409 CST [668003] LOG:  listening on Unix socket "/home/zzz010122/Fosun-db-post-/.pipeline-demo/socket/.s.PGSQL.55440"
+2026-10-14 19:02:57.430 CST [668006] LOG:  database system was shut down at 2026-10-14 19:02:56 CST
+2026-10-14 19:02:57.445 CST [668003] LOG:  database system is ready to accept connections
+2026-10-14 19:07:57.091 CST [668004] LOG:  checkpoint starting: time
+2026-10-14 19:08:20.041 CST [668004] LOG:  checkpoint complete: wrote 229 buffers (1.4%); 0 WAL file(s) added, 0 removed, 0 recycled; write=22.718 s, sync=0.192 s, total=22.950 s; sync files=164, longest=0.008 s, average=0.002 s; distance=1325 kB, estimate=1325 kB; lsn=0/163B148, redo lsn=0/163B110
+2026-10-14 19:22:57.111 CST [668004] LOG:  checkpoint starting: time
+2026-10-14 19:23:43.826 CST [668004] LOG:  checkpoint complete: wrote 465 buffers (2.8%); 0 WAL file(s) added, 0 removed, 0 recycled; write=46.579 s, sync=0.104 s, total=46.715 s; sync files=86, longest=0.011 s, average=0.002 s; distance=3377 kB, estimate=3377 kB; lsn=0/19D56E8, redo lsn=0/1987860
+2026-10-14 19:27:57.117 CST [668004] LOG:  checkpoint starting: time
+2026-10-14 19:28:21.150 CST [668004] LOG:  checkpoint complete: wrote 243 buffers (1.5%); 0 WAL file(s) added, 0 removed, 0 recycled; write=23.925 s, sync=0.072 s, total=24.033 s; sync files=67, longest=0.007 s, average=0.002 s; distance=1746 kB, estimate=3214 kB; lsn=0/1B842C8, redo lsn=0/1B3C280
+2026-10-14 19:32:57.817 CST [668004] LOG:  checkpoint starting: time
+2026-10-14 19:33:02.928 CST [668004] LOG:  checkpoint complete: wrote 51 buffers (0.3%); 0 WAL file(s) added, 0 removed, 0 recycled; write=5.037 s, sync=0.029 s, total=5.112 s; sync files=16, longest=0.005 s, average=0.002 s; distance=301 kB, estimate=2923 kB; lsn=0/1B87798, redo lsn=0/1B87760
+2026-10-15 14:37:10.317 CST [399676] LOG:  starting PostgreSQL 16.14 (Ubuntu 16.14-0ubuntu0.24.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit
+2026-10-15 14:37:10.324 CST [399676] LOG:  listening on Unix socket "/home/zzz010122/Fosun-db-post-/.pipeline-demo/socket/.s.PGSQL.55440"
+2026-10-15 14:37:10.346 CST [399682] LOG:  database system was interrupted; last known up at 2026-10-14 19:33:02 CST
+2026-10-15 14:37:11.441 CST [399682] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-10-15 14:37:11.451 CST [399682] LOG:  redo starts at 0/1B87760
+2026-10-15 14:37:11.451 CST [399682] LOG:  invalid record length at 0/1B87848: expected at least 24, got 0
+2026-10-15 14:37:11.451 CST [399682] LOG:  redo done at 0/1B87810 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-10-15 14:37:11.466 CST [399680] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-10-15 14:37:11.523 CST [399680] LOG:  checkpoint complete: wrote 3 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.021 s, sync=0.007 s, total=0.063 s; sync files=2, longest=0.004 s, average=0.004 s; distance=0 kB, estimate=0 kB; lsn=0/1B87848, redo lsn=0/1B87848
+2026-10-15 14:37:11.533 CST [399676] LOG:  database system is ready to accept connections

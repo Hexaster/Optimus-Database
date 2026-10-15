@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/zzz010122/Fosun-db-post-/data/CD19/paper-A_PMC9978144_VHH型CD19_CAR.pdf",
+  "source_sha256": "d9599472fb02cb142dcf856b8dd6f435827d215e8dc9bee8241bf1fb1acb8706",
+  "schema_hash": "205f6f856cde5e6e9396843e29f3359add4fa8882fa4e96d710229ad67deb25f",
+  "agent": "codex",
+  "model": "gpt-6.1-sol",
+  "artifacts": {
+    "data.jsonl": "2e4610e1f6a0165d02db9a245a3de99a34012d3977fcad13a8c9afdb96ceffd0",
+    "original.jsonl": "a4865a1862f777622bfadaf017ecfa1fedb1b16feaf05511588be5ff5670c65f",
+    "reasoning.md": "7e2082b641157b70f878058a35a4e01d8dce2db814ca6b7e0f20bf0d33ea36d4",
+    "error_log.jsonl": "69fb5abc8dbc69c4756d373fa9283690238eb949b9a97bd29ad96b0a39fb6c49"
+  }
+}

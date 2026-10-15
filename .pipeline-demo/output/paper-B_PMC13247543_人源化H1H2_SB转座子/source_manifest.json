@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/zzz010122/Fosun-db-post-/data/CD19/paper-B_PMC13247543_人源化H1H2_SB转座子.pdf",
+  "source_sha256": "cec199d1f3158d4980d3e34eb4d8c0833699196b905b34e1c9652056214929af",
+  "schema_hash": "205f6f856cde5e6e9396843e29f3359add4fa8882fa4e96d710229ad67deb25f",
+  "agent": "codex",
+  "model": "gpt-6.1-sol",
+  "artifacts": {
+    "data.jsonl": "f2f19ea5266a3192f282afb9c82e15438325be945ed285c4986f291907930828",
+    "original.jsonl": "3bc98660e1cd90770bdded68fa83857b692ef66f7ce6f7a8c5b6339b08eca1fc",
+    "reasoning.md": "26b8c2c7224662c963766bc49dc983c6af36b42407e406363e9cb03a5960e47a",
+    "error_log.jsonl": "178d9d8651185617fd844bab7d6724b64fa13db3c618ec1d74975856cecbba18"
+  }
+}
