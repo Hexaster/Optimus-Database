@@ -20,7 +20,7 @@ PYTHONPATH=src python -m cart_db.postprocess \
 如确有经过确认的历史字段或枚举别名，可追加：
 
 ```bash
---rules prompts/post_extraction/rules.example.json
+--rules examples/post_extraction/rules.example.json
 ```
 
 示例仅展示语法，使用前核对自己的抽取格式。field_aliases 的键是对象路径，value_aliases 的键是完整字段路径；数组路径不带下标，例如 `car.modules.module_type`。两种字段同时出现且值不一致时失败，不覆盖。原文名称/基因/抗原不自动映射。将旧版平铺 VH 字符串映射到新版 heavy_chain 对象仍会类型校验失败，需要显式转换并注明 scope；重命名不改变结构。
@@ -49,8 +49,10 @@ CAR 的 exact_ordered_backbone_modules 指纹只使用按原顺序排列的 [{mo
 
 ## 复核流程
 
-1. 对 audit 中 review 事件使用 `prompts/post_extraction/01_normalization.md`；提供对应原文和 Schema。
-2. 对候选组使用 `prompts/post_extraction/02_deduplication.md`；提供记录、其证据/组合及来源定位。
+本流程的人工复核提示词保存在 `docs/post_extraction/prompts/`，由复核者按需使用，不由程序自动加载。可执行的别名规则示例保存在 `examples/post_extraction/rules.example.json`，通过 `--rules` 显式传入。
+
+1. 对 audit 中 review 事件使用 `docs/post_extraction/prompts/01_normalization.md`；提供对应原文和 Schema。
+2. 对候选组使用 `docs/post_extraction/prompts/02_deduplication.md`；提供记录、其证据/组合及来源定位。
 3. 人工确认实体身份、冲突保留策略、survivor 与外键映射后，再实施归并。实体归并与实验去重分别决定。已有 SQL `core.merge_log` 是留痕基础，但当前五表 YAML 与 SQL 历史结构有差异，本模块不假定二者可直接导入。
 4. 归并后检查所有引用、来源、个体/聚合观测及相反证据均被保留；归并失败需能用 provenance 回滚。
 

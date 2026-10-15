@@ -280,7 +280,7 @@ platform_managed:
 # Part 4 — 抽取规则标识
 # =========================================================
 # 业务侧 2026-08-20 决定：mapping 只登记规则标识与语义，
-# 完整抽取提示词另存（建议 prompts/process_extraction/*.md），保持本档可读。
+# 完整抽取提示词另存（随对应抽取流程维护），保持本档可读。
 
 rule_refs:
   extract_t_cell_source:
