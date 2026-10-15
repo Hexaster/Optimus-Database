@@ -14,7 +14,7 @@ _UNITS = {
     "mass_concentration": {
         "g/L": 1, "mg/mL": 1, "ug/mL": 1e-3, "ng/mL": 1e-6, "pg/mL": 1e-9,
     },
-    "time": {"s": 1, "min": 60, "h": 3600, "day": 86400},
+    "time": {"s": 1, "min": 60, "h": 3600, "day": 86400, "week": 604800},
     "volume": {"L": 1, "mL": 1e-3, "uL": 1e-6},
     "cell_density": {"cells/L": 1, "cells/mL": 1e3, "cells/uL": 1e6},
     "endotoxin_density": {"EU/L": 1, "EU/mL": 1e3},

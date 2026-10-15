@@ -38,7 +38,7 @@ class Measurement(BaseModel):
     """定量结果；kind 对应的字段和抽取规则见 Evidence.yaml 顶部。"""
 
     kind: Literal[
-        "single_value", "range", "mean_with_standard_deviation",
+        "single_value", "range", "image_estimated_range", "mean_with_standard_deviation",
         "mean_with_standard_error", "plus_minus_unspecified",
         "greater_than", "greater_than_or_equal",
         "less_than", "less_than_or_equal",

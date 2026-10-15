@@ -1,0 +1,2 @@
+{"table":"binder","data":{"binder_id":"b1","name":"Clone-A scFv","scfv_sequence":" evqlv\nGGGGSAVLTQ "}}
+{"table":"evidence","data":{"record_id":"e1","source_type":"literature","source_id":"SYNTHETIC-PAPER-2","binder.binder_id":"b1","binder.kd":{"kind":"single_value","value":0.003,"unit":"uM","raw":"Synthetic: KD = 0.003 uM"}}}

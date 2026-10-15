@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CAR-T 数据工作台</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body>
+<aside><a class="brand" href="#overview"><span class="logo">C</span><span>CAR-T<span class="brand-sub">科研数据工作台</span></span></a><div class="nav-label">数据空间</div><nav><button data-tab="overview" class="active">◫　数据总览</button><button data-tab="browse">▤　实体与证据</button><button data-tab="reviews">⇄　匹配检查</button></nav><div class="aside-bottom"><span class="dot"></span> 只读浏览<br><small id="mode">正在连接数据库</small></div></aside>
+<main><header><div><div class="eyebrow">CAR-T RESEARCH / DATA EXPLORER</div><h1 id="title">数据总览</h1></div><div class="refresh"><span id="updated">尚未加载</span><button id="refresh">↻ 刷新数据</button></div></header><div id="error" role="alert" hidden></div><div id="content" aria-live="polite"></div><footer>来源可追溯 · 保留独立观测 · 匹配结果可核查</footer></main>
+<dialog id="detail"><div class="dialog-head"><div><div class="eyebrow">RECORD DETAIL</div><h2 id="detail-title">记录详情</h2></div><button id="close" aria-label="关闭详情">✕</button></div><div id="detail-body"></div></dialog>
+</body></html>

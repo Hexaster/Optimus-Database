@@ -89,7 +89,7 @@ def claude_status(event):
                 "WebFetch": "正在读取在线来源材料",
             }.get(block.get("name"), "正在调用资料工具")
         elif kind == "user" and block.get("type") == "tool_result":
-            status = ("工具返回错误，等待 agent 处理" if block.get("is_error")
+            status = ("工具返回错误，等待提取程序处理" if block.get("is_error")
                       else "工具执行结束，正在处理返回结果")
     return status
 
@@ -154,7 +154,8 @@ def stream_agent(command, *, cwd, env, timeout, on_status, cancel_event=None,
 
 
 class ExtractionProgress:
-    def __init__(self, paths, *, enabled=True, console=None):
+    def __init__(self, paths, *, enabled=True, console=None, title="文档提取"):
+        self.title = title
         self.console = console or Console()
         self.enabled = enabled and self.console.is_terminal and not self.console.is_dumb_terminal
         self.lock = Lock()
@@ -178,7 +179,11 @@ class ExtractionProgress:
             row = self.rows[path]
             if row["started"] is None:
                 row["started"] = time.monotonic()
+            changed = row["status"] != clean(status)
             row.update(state="running", status=clean(status))
+            if not self.enabled and changed:
+                elapsed = time.monotonic() - row["started"]
+                self.console.print(Text(f"[{row['name']} · {elapsed:.0f} 秒] {row['status']}"))
 
     def finish(self, path, ok, status, seconds):
         with self.lock:
@@ -191,7 +196,7 @@ class ExtractionProgress:
         running = sum(r["state"] == "running" for r in rows)
         done = sum(r["state"] == "done" for r in rows)
         failed = sum(r["state"] == "failed" for r in rows)
-        lines = [Text(f"文档抽取 · 共 {len(rows)} 篇 · 运行 {running} · 完成 {done} · 失败 {failed}", style="bold cyan")]
+        lines = [Text(f"{self.title} · 共 {len(rows)} 篇 · 运行 {running} · 完成 {done} · 失败 {failed}", style="bold cyan")]
         height = max(3, console.size.height - 2)
         # Keep document order stable; compact inactive rows before paging active work.
         compact = 1 + 2 * len(rows) > height

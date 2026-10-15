@@ -7,7 +7,7 @@ Table manufacturing {
   starting_cell_quality json [note: '激活或基因导入前的投料细胞质量：cell_viability（measurement，%）、memory_phenotype（原文亚型、比例及分母）、measurement_stage（原文测量阶段）；CD4:CD8 比例另存 cd4_cd8_ratio']
   activation_method varchar [note: 'T 细胞激活方式']
   reagents json [note: '制造过程中使用的关键试剂，amount 以 measurement 记录用量、浓度或使用比例及原文单位；不重复记录 selection_steps 中的试剂，无法对应具体步骤的分选试剂仍在此记录；培养基记录在 culture_system.culture_medium']
-  vector_type varchar [note: '用于基因导入的载体类型。可选值：慢病毒、逆转录病毒、转座子、电转']
+  vector_type varchar [note: '用于基因导入的载体类型。可选值：慢病毒、逆转录病毒、转座子、电转、CRISPR/Cas9+AAV定点插入']
   moi decimal [note: '感染复数（MOI）。检查：moi >= 0']
   transduction_transfection_conditions json [note: '转导或转染条件：time_after_activation、enhancer_used、spinoculation、contact_duration']
   culture_system json [note: '培养体系：container、culture_mode、openness、automation、culture_medium']

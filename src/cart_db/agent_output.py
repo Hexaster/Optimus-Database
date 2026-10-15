@@ -51,6 +51,7 @@ def _value(value, spec, path):
             _fail(path, str(exc))
         used = {
             "single_value": {"value"}, "range": {"lower", "upper"},
+            "image_estimated_range": {"lower", "upper"},
             "mean_with_standard_deviation": {"value", "error"},
             "mean_with_standard_error": {"value", "error"},
             "plus_minus_unspecified": {"value", "error"},
@@ -64,6 +65,8 @@ def _value(value, spec, path):
             _fail(path, "error must be non-negative")
         if result["kind"] == "range" and result["lower"] > result["upper"]:
             _fail(path, "lower must be <= upper")
+        if result["kind"] == "image_estimated_range" and result["lower"] >= result["upper"]:
+            _fail(path, "image-estimated lower must be < upper")
         return result
     if kind == "json":
         if spec.get("shape") == "object":

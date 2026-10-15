@@ -130,3 +130,114 @@ def test_missing_and_incompatible_units_flagged_not_inferred():
         assert data['binder.kd']['unit'] == unit
         assert data['binder.kd']['value'] == 2
         assert any(e['reason'] == 'review_missing_or_unconvertible_unit' for e in events)
+
+
+@pytest.mark.parametrize('unit', ['nM', 'uM'])
+@pytest.mark.parametrize('invalid', [True, False, '2'])
+@pytest.mark.parametrize('kind,field', [
+    ('single_value', 'value'), ('greater_than', 'lower'),
+    ('less_than', 'upper'), ('mean_with_standard_deviation', 'error'),
+])
+def test_measurement_types_validated_before_conversion(unit, invalid, kind, field):
+    measurement = {'kind': kind, field: invalid, 'unit': unit, 'raw': 'invalid input'}
+    if field == 'error':
+        measurement['value'] = 2
+    with pytest.raises(OutputError, match=rf'binder.kd.{field}: expected number'):
+        normalize_record('evidence', {'record_id': 'e', 'source_type': 'literature',
+                                     'source_id': 'PMC1', 'binder.kd': measurement})
+
+
+def test_measurement_validation_does_not_create_spurious_conversion_events():
+    measurement = {'kind': 'single_value', 'value': 2, 'unit': 'nM', 'raw': '2 nM'}
+    data, events = normalize_record('evidence', {'record_id': 'e', 'source_type': 'literature',
+                                               'source_id': 'PMC1', 'binder.kd': measurement})
+    assert data['binder.kd']['value'] == 2
+    assert not events
+
+
+def test_converted_measurement_is_also_validated():
+    measurement = {'kind': 'single_value', 'value': 1e308, 'unit': 'uM', 'raw': '1e308 uM'}
+    with pytest.raises(OutputError, match='number must be finite'):
+        normalize_record('evidence', {'record_id': 'e', 'source_type': 'literature',
+                                     'source_id': 'PMC1', 'binder.kd': measurement})
+
+
+@pytest.mark.parametrize('metadata', [
+    {'source_molecule': 'CD8 alpha'}, {'length': 4},
+    {'source_molecule': 'conflicting annotation', 'length': 5},
+])
+def test_backbone_candidates_ignore_optional_metadata_but_preserve_it(tmp_path, metadata):
+    module = {'module_type': 'hinge', 'sequence': 'ACDE'}
+    path = write_rows(tmp_path / 'cars.jsonl', [
+        dict(table='car', data={'car_id': 'c1', 'modules': [module]}),
+        dict(table='car', data={'car_id': 'c2', 'modules': [{**module, **metadata}]}),
+    ])
+    rows, _, provenance, groups = process_batch([path])
+    matches = [g for g in groups if g['basis'] == 'exact_ordered_backbone_modules']
+    assert len(matches) == 1
+    assert matches[0]['record_ids'] == [r.data['car_id'] for r in rows]
+    assert matches[0]['decision'] == 'review_required'
+    assert len(rows) == len(provenance) == 2
+    for key, value in metadata.items():
+        assert rows[1].data['modules'][0][key] == value
+        assert provenance[1]['original_row']['data']['modules'][0][key] == value
+
+
+@pytest.mark.parametrize('other', [
+    {'module_type': 'hinge', 'sequence': 'ACDF'},
+    {'module_type': 'tag', 'sequence': 'ACDE'},
+    {'module_type': 'hinge', 'sequence': 'ACDX'},
+    {'module_type': 'hinge', 'sequence': None},
+])
+def test_backbone_candidates_require_matching_types_and_certain_sequences(tmp_path, other):
+    path = write_rows(tmp_path / 'cars.jsonl', [
+        dict(table='car', data={'car_id': 'c1', 'modules': [
+            {'module_type': 'hinge', 'sequence': 'ACDE'}]}),
+        dict(table='car', data={'car_id': 'c2', 'modules': [other]}),
+    ])
+    assert not any(g['basis'] == 'exact_ordered_backbone_modules'
+                   for g in process_batch([path])[3])
+
+
+def combination_rows():
+    return [binder(), binder('b2'),
+            dict(table='car', data={'car_id': 'c1', 'modules': []}),
+            dict(table='car', data={'car_id': 'c2', 'modules': []}),
+            dict(table='manufacturing', data={'manufacturing_id': 'm1'}),
+            dict(table='manufacturing', data={'manufacturing_id': 'm2'}),
+            dict(table='abc_combination_db1', data={'combination_id': 'abc',
+                 'binder_id': 'b1', 'car_id': 'c1', 'manufacturing_id': 'm1'}),
+            dict(table='evidence', data={'record_id': 'e', 'source_type': 'literature',
+                 'source_id': 'PMC1', 'combination_id': 'abc', 'binder.binder_id': 'b1',
+                 'car.car_id': 'c1', 'manufacturing.manufacturing_id': 'm1'})]
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('field,conflicting_id', [
+    ('binder.binder_id', 'b2'), ('car.car_id', 'c2'),
+    ('manufacturing.manufacturing_id', 'm2'),
+])
+def test_evidence_must_agree_with_combination(tmp_path, reverse, field, conflicting_id):
+    records = combination_rows()
+    records[-1]['data'][field] = conflicting_id
+    path = write_rows(tmp_path / 'combination.jsonl', records[::-1] if reverse else records)
+    with pytest.raises(OutputError, match=rf'{field} conflicts with combination'):
+        process_batch([path])
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('partial', [False, True])
+def test_consistent_combination_references_allow_missing_direct_links(tmp_path, reverse, partial):
+    records = combination_rows()
+    if partial:
+        records[-1]['data']['car.car_id'] = None
+        records[-1]['data']['manufacturing.manufacturing_id'] = None
+    path = write_rows(tmp_path / 'combination.jsonl', records[::-1] if reverse else records)
+    rows, _, _, _ = process_batch([path])
+    evidence = next(r.data for r in rows if r.table == 'evidence')
+    combination = next(r.data for r in rows if r.table == 'abc_combination_db1')
+    assert evidence['combination_id'] == combination['combination_id']
+    assert evidence['binder.binder_id'] == combination['binder_id']
+    for entity in ('car', 'manufacturing'):
+        key = f'{entity}_id'
+        assert evidence[f'{entity}.{key}'] == (None if partial else combination[key])
