@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """把一个或一批文档逐份喂给 extract-cart-data 技能。
 
-每份文档单独起一次 coding agent：上下文互不污染，一份跑飞不影响后面几份。
-结果由技能自己写进 data/normalised/，runner 校验、规范化后才发布正式结果。
+每份文档单独启动一次提取程序：上下文互不污染，一份跑飞不影响后面几份。
+结果由技能自己写进 data/normalised/，运行程序校验、规范化后才发布正式结果。
 
     python scripts/run_extraction_agent.py --agent claude      # Claude Code
     python scripts/run_extraction_agent.py --agent codex --model gpt-5.2-codex
@@ -14,6 +14,7 @@
     python scripts/run_extraction_agent.py --subagent true     # 启用两个子代理独立抽取
     python scripts/run_extraction_agent.py --workers 3          # 同时处理三份文档
     python scripts/run_extraction_agent.py --validation-retries 0 # 校验失败不自动修正
+    python scripts/run_extraction_agent.py --import-db --file data/raw/a.pdf # 提取并入库
     python scripts/run_extraction_agent.py --dry-run            # 只列出要跑什么
 """
 from __future__ import annotations
@@ -34,6 +35,7 @@ sys.path.insert(0, str(REPO / "src"))
 
 from cart_db.agent_output import OutputError, prepare_output
 from cart_db.extraction_progress import ExtractionProgress, stream_agent, codex_status, claude_status
+from cart_db.console import ChineseArgumentParser, TABLE_NAMES, report_text
 from cart_db.config import settings      # noqa: E402  —— 唯一一份 .env 解析
 SKILL = "extract-cart-data"
 
@@ -394,7 +396,7 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
     on validation failure; successful empty output means no extracted records.
     """
     notify = on_status or (lambda message: None)
-    notify("正在启动抽取 agent")
+    notify("正在启动提取程序")
     out_dir.mkdir(parents=True, exist_ok=True)
     draft_dir = Path(tempfile.mkdtemp(prefix=f".{path.stem}-", dir=out_dir))
     candidate = draft_dir / "data.jsonl"
@@ -453,7 +455,8 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
             final_dir.mkdir(parents=True, exist_ok=True)
             staged = draft_dir / "normalized.jsonl"
             staged.write_text(output, encoding="utf-8")
-            for name, source in (("error_log.jsonl", draft_dir / "error_log.jsonl"),
+            for name, source in (("original.jsonl", candidate),
+                                 ("error_log.jsonl", draft_dir / "error_log.jsonl"),
                                  ("reasoning.md", reasoning), ("data.jsonl", staged)):
                 target = final_dir / name
                 if target.exists():
@@ -484,6 +487,8 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
         result["reason"] = "输出已校验并规范化"
         break
     if not result["ok"]:
+        save_diagnostics(draft_dir, kwargs.get("env", {}), result["reason"], "", None)
+        result["user_reason"] = f"提取或校验未通过；草稿和诊断记录保留于 {draft_dir}"
         result["reason"] += f"；草稿保留于 {draft_dir}"
         result["draft_dir"] = str(draft_dir)
     result.update(seconds=time.monotonic() - started, usage=usage,
@@ -493,13 +498,13 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
 
 def usage_text(usage: dict[str, int], known: bool = True) -> str:
     if not known:
-        return "tokens N/A"
+        return "词元用量未提供"
     input_tokens = usage["input"] + usage["cached_input"] + usage["cache_write"]
     total = input_tokens + usage["output"]
-    return (f"tokens：input {input_tokens:,}（uncached {usage['input']:,}，"
-            f"cached {usage['cached_input']:,}，cache-write "
-            f"{usage['cache_write']:,}），output {usage['output']:,}，"
-            f"total {total:,}")
+    return (f"词元：输入 {input_tokens:,}（未缓存 {usage['input']:,}，"
+            f"缓存读取 {usage['cached_input']:,}，缓存写入 "
+            f"{usage['cache_write']:,}），输出 {usage['output']:,}，"
+            f"合计 {total:,}")
 
 
 def tally(out_dir: Path, stem: str) -> str:
@@ -521,7 +526,7 @@ def tally(out_dir: Path, stem: str) -> str:
             continue
         tables[table] = tables.get(table, 0) + 1
 
-    parts = [f"{table} {count}" for table, count in sorted(tables.items())]
+    parts = [f"{TABLE_NAMES.get(table, table)} {count}" for table, count in sorted(tables.items())]
     if bad:
         parts.append(f"坏行 {bad}")
     if errors.exists():
@@ -530,16 +535,17 @@ def tally(out_dir: Path, stem: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
+    parser = ChineseArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--dir", help="文档目录，默认 data/sample")
     source.add_argument("--file", help="单个文档")
     parser.add_argument("--agent", choices=("claude", "codex", "kimi", "zcode"),
                         default="claude")
-    parser.add_argument("--model", help="模型名；不传则使用对应 harness 的默认配置")
+    parser.add_argument("--model", help="模型名；不传则使用对应提取后端的默认配置")
     parser.add_argument("--effort", default="high", help="Claude/Codex 推理强度，默认 high")
     parser.add_argument("--out-dir", help="结果目录；默认按 agent/model 隔离")
+    parser.add_argument("--import-db", action="store_true", help="连接 PostgreSQL，提取后自动暂存、比对并入库；重复运行可续跑")
     parser.add_argument("--force", action="store_true", help="已有结果的文档也重跑")
     parser.add_argument("--dry-run", action="store_true", help="只列出要跑什么")
     parser.add_argument("--no-progress", action="store_true", help="关闭终端动态状态面板")
@@ -549,11 +555,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--budget", type=float, default=5.0,
                         help="Claude 单份费用上限（美元），0 表示不限")
     parser.add_argument("--input-price", type=float,
-                        help="后端不返回费用时，每百万 uncached input tokens 美元价")
+                        help="后端不返回费用时，每百万未缓存输入词元的美元价")
     parser.add_argument("--cached-input-price", type=float,
-                        help="每百万 cached input tokens 美元价")
+                        help="每百万缓存输入词元的美元价")
     parser.add_argument("--output-price", type=float,
-                        help="每百万 output tokens 美元价")
+                        help="每百万输出词元的美元价")
     parser.add_argument("--workers", type=int, default=1,
                         help="同时处理的文档数，默认 1")
     parser.add_argument("--validation-retries", type=int, default=1,
@@ -582,7 +588,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     pending = [input_path] if args.file else documents(input_path)
-    if not args.force:
+    if not args.force and not args.import_db:
         pending = [p for p in pending if not (out_dir / p.stem / "data.jsonl").exists()]
 
     if not pending:
@@ -602,46 +608,64 @@ def main(argv: list[str] | None = None) -> int:
     elif args.agent == "codex":
         print(f"后端：Codex，模型 {model or '本机默认'}，API "
               f"{settings.openai_base_url or 'OpenAI 默认端点'}")
-        if budget is not None:
-            print("预算：Codex 单次调用不受 --budget 硬限额控制；该值仅限制自动校验修正")
-        if args.input_price is None or args.output_price is None:
-            print("费用：后端未返回 cost 时为 N/A；可传 --input-price、"
-                  "--cached-input-price、--output-price 计算")
     elif args.agent == "kimi":
-        print(f"后端：Kimi Code，模型 {model or 'harness 默认'}")
-        print("用量：新版 Kimi Code 不在 stdout 返回 token usage，将显示 N/A")
+        print(f"后端：Kimi Code，模型 {model or '本机默认'}")
+        print("用量：Kimi Code 未返回词元统计时显示未知")
     else:
-        print(f"后端：ZCode，模型 {model or 'harness 默认'}")
+        print(f"后端：ZCode，模型 {model or '本机默认'}")
         if args.input_price is None or args.output_price is None:
             print("费用：可传 --input-price、--cached-input-price、"
                   "--output-price 计算")
 
     print(f"输出：{out_dir.relative_to(REPO)}")
-    print(f"Subagents: {args.subagent}")
-    print(f"Workers: {args.workers}")
+    print(f"子代理：{'启用' if args.subagent == 'true' else '关闭'}")
+    print(f"并发文档数：{args.workers}")
     print(f"待处理 {len(pending)} 份：")
     for path in pending:
         print(f"  {path.name} → {out_dir.relative_to(REPO) / path.stem}")
+    if args.import_db:
+        print(f"目标数据库：{settings.pg_database}；流程：提取 → 规范化与质检 → 暂存 → 实体比对 → 入库")
     if args.dry_run:
+        print("预览结束：未调用模型，未连接或修改数据库")
         return 0
+
+    runner = run_one
+    runner_options = {}
+    if args.import_db:
+        from cart_db import ingest
+        from cart_db.pipeline import run_document, save_error
+        print("正在检查数据库连接和字段版本……", flush=True)
+        try:
+            with ingest.connect() as conn:
+                ingest.migrate(conn)
+        except Exception as exc:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            log = out_dir / "database_preflight_error.json"
+            save_error(log, exc, env)
+            print(f"数据库准备失败，尚未调用模型；请检查数据库配置、权限及迁移。诊断记录：{log}", file=sys.stderr)
+            return 1
+        runner = run_document
+        runner_options = dict(extract=run_one, force=args.force)
+        print("数据库准备完成", flush=True)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     failures, total_cost, unknown_cost, unknown_usage = 0, 0.0, False, False
     total_usage = empty_usage()
 
     reports = []
-    with ExtractionProgress(pending, enabled=args.agent in {"codex", "claude"} and not args.no_progress) as progress, \
+    with ExtractionProgress(pending, enabled=not args.no_progress,
+                            title="提取与入库" if args.import_db else "文档提取") as progress, \
             progress.workers(args.workers) as pool:
         futures = {
             pool.submit(
-                run_one, path, agent=args.agent, out_dir=out_dir, timeout=args.timeout,
+                runner, path, **runner_options, agent=args.agent, out_dir=out_dir, timeout=args.timeout,
                 budget=budget, env=env, model=model, effort=args.effort,
                 input_price=args.input_price,
                 cached_input_price=args.cached_input_price,
                 output_price=args.output_price,
                 subagent=args.subagent == "true",
                 validation_retries=args.validation_retries,
-                on_status=(lambda message, p=path: progress.update(p, message)) if progress.enabled else None,
+                on_status=(lambda message, p=path: progress.update(p, message)),
                 cancel_event=progress.cancel_event,
             ): path for path in pending
         }
@@ -650,7 +674,14 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 result = future.result()
             except Exception as exc:
-                result = dict(ok=False, reason=f"任务异常：{type(exc).__name__}: {exc}",
+                from cart_db.pipeline import save_error
+                log = out_dir / (path.stem + ".runner_error.json")
+                try:
+                    save_error(log, exc, env)
+                    reason = f"任务异常，未完成处理；诊断记录：{log}"
+                except OSError:
+                    reason = "任务异常且无法保存诊断记录；请检查输出目录权限与剩余空间"
+                result = dict(ok=False, reason=reason,
                               cost=None, usage=empty_usage(), usage_known=False, seconds=0)
             report = [f"\n[{index}/{len(pending)}] {path.name}"]
             if result["cost"] is None:
@@ -661,20 +692,24 @@ def main(argv: list[str] | None = None) -> int:
                 total_usage[key] += value
             unknown_usage = unknown_usage or not result["usage_known"]
 
-            status = "OK " if result["ok"] else "失败"
-            cost_text = f"${result['cost']:.4f}" if result["cost"] is not None else "费用 N/A"
+            status = "成功" if result["ok"] else "失败"
+            cost_text = f"${result['cost']:.4f}" if result["cost"] is not None else "费用未知"
             output_text = (
                 "草稿（未发布）：" + tally(Path(result['draft_dir']), path.stem)
                 if result.get('draft_dir') else tally(out_dir / path.stem, path.stem)
             )
-            report.append(f"  {status} {result['seconds']:.0f}s  {cost_text}  "
+            report.append(f"  {status} {result['seconds']:.0f} 秒  {cost_text}  "
                   f"{usage_text(result['usage'], result['usage_known'])}  "
                   f"{output_text}")
+            if result.get("database"):
+                report.append(report_text(result["database"]))
+                report.append(f"  入库报告：{result['report_path']}")
             if not result["ok"]:
                 failures += 1
-                report.append(f"  ↳ {result['reason']}")
+                report.append(f"  ↳ {result.get('user_reason', result['reason'])}")
             progress.finish(path, result["ok"],
-                            f"已完成 · {output_text} · 校验通过" if result["ok"] else result["reason"],
+                            (result["reason"] if args.import_db else f"已完成 · {output_text} · 校验通过")
+                            if result["ok"] else result.get("user_reason", result["reason"]),
                             result["seconds"])
             if progress.enabled:
                 reports.extend(report)

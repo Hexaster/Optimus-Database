@@ -1,5 +1,15 @@
 # CAR-T 数据库环境（阶段1.1 · Day3 环境搭建产出）
 
+完整 PDF/XML → JSONL → PostgreSQL 流程：参见 [提取与入库操作说明](docs/extraction_pipeline.md)。
+在现有提取命令后增加 `--import-db`，保留原后端与模型，中文显示进度，支持校验后的续跑。
+
+中文只读数据浏览：运行 `python scripts/browse_database.py --demo`，打开 http://127.0.0.1:8765 。参见 [浏览页面说明](docs/database_browser.md)。
+
+当前 JSONL 入库入口：参见 [数据库入库流程与演示](docs/database_import.md)。
+`python -m cart_db.ingest` 支持归一化、QC、暂存、实体比对、人工决策和事务发布；
+版本化迁移在独立 `cart` schema 中创建与当前 YAML 对齐的表，不覆盖旧库。
+下面的 Day3 SQL/setup 说明保留为旧版环境文档，不作为当前科学数据的入库接口。
+
 七个数据库的统一开发环境：代码仓库骨架、Python 环境、PostgreSQL 建表脚本、
 Raw Data 存储规范、LLM 用量计费打点。对应 18 天计划里 Day3「环境搭建」的六项任务。
 

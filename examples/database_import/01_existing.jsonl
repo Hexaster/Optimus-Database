@@ -1,0 +1,3 @@
+{"table":"binder","data":{"binder_id":"b1","name":"Clone A","scfv_sequence":"EVQLVGGGGSAVLTQ","heavy_chain":{"sequence":"EVQLV","scope":"variable_region"},"light_chain":{"sequence":"AVLTQ","scope":"variable_region"}}}
+{"table":"binder","data":{"binder_id":"b2","name":"Clone B","scfv_sequence":"EVQLVGGGGSDIVMT","heavy_chain":{"sequence":"EVQLV","scope":"variable_region"},"light_chain":{"sequence":"DIVMT","scope":"variable_region"}}}
+{"table":"evidence","data":{"record_id":"e1","source_type":"literature","source_id":"SYNTHETIC-PAPER-1","binder.binder_id":"b1","binder.kd":{"kind":"single_value","value":2,"unit":"nM","raw":"Synthetic: KD = 2 nM"}}}
