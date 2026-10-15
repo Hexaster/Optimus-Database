@@ -37,7 +37,7 @@ manufacturing:
       type: json
       shape: array
       nullable: true
-      description: 起始细胞的分离或分选步骤，按原文报告的顺序记录；允许直接分选或分支，不补推未报告的中间步骤。未报告时为 null。
+      description: 起始细胞的分离或分选步骤，按原文报告的顺序记录；允许直接分选或分支，不补推未报告的中间步骤。未报告时为 null。明确直接使用 PBMC 且不分选时，在原文支持下记录 input/output 为 PBMC、method 为不进行T细胞分选；不能从未提及推断。
       item_schema:
         input:
           type: string
@@ -135,12 +135,13 @@ manufacturing:
     vector_type:
       type: string
       nullable: true
-      description: 用于基因导入的载体类型
+      description: 用于基因导入的方式；来源明确为 CRISPR/Cas9 配合 AAV 定点插入时，使用对应值，不简化为电转或病毒感染
       allowed_values:
         - 慢病毒
         - 逆转录病毒
         - 转座子
         - 电转
+        - CRISPR/Cas9+AAV定点插入
 
     moi:
       type: measurement

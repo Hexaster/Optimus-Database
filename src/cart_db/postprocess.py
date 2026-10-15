@@ -9,7 +9,7 @@ from pathlib import Path
 import re
 from uuid import NAMESPACE_URL, uuid5
 
-from .agent_output import OutputError, _object, _unique_object
+from .agent_output import OutputError, _object, _unique_object, _value
 from .basemodel import NormalizedData
 from .measurements import convert
 from .schema_models import load_schema
@@ -25,7 +25,7 @@ AA_EXTENDED = AA | frozenset("BXZJUO")
 UNIT_ALIASES = {
     "μM": "uM", "µM": "uM", "μg/mL": "ug/mL", "µg/mL": "ug/mL",
     "sec": "s", "seconds": "s", "minute": "min", "minutes": "min",
-    "hr": "h", "hrs": "h", "hours": "h", "days": "day",
+    "hr": "h", "hrs": "h", "hours": "h", "days": "day", "weeks": "week",
     "℃": "°C", "degC": "°C", "s^-1": "1/s", "s−1": "1/s",
     "M^-1 s^-1": "1/(M*s)",
 }
@@ -96,6 +96,9 @@ def normalize_record(table, data, rules=None):
             elif spec.get("type") == "measurement":
                 if not isinstance(value, dict):
                     raise OutputError(f"{loc}: expected measurement object")
+                # Reject malformed inputs before arithmetic can coerce their types.
+                # Keep the original shape for accurate before/after audit events.
+                _value(value, spec, loc)
                 measurement = deepcopy(value)
                 unit = measurement.get("unit")
                 if isinstance(unit, str):
@@ -120,6 +123,11 @@ def normalize_record(table, data, rules=None):
 
     if table not in schema.tables:
         raise OutputError(f"unknown table: {table}")
+    if table == "manufacturing" and isinstance(data, dict):
+        data = deepcopy(data)
+        for field in ("process_step_status", "harvest_steps"):
+            if field in data:
+                event(f"manufacturing.{field}", "retired_field_preserved_in_source", data.pop(field), None)
     result = walk(data, schema.tables[table], table, table)
     return result, events
 
@@ -153,7 +161,9 @@ def candidate_groups(rows):
         if table == "car":
             modules = data.get("modules") or []
             if modules and all(certain(m.get("sequence")) for m in modules):
-                add(table, "exact_ordered_backbone_modules", modules, row_id)
+                signature = [{"module_type": m["module_type"], "sequence": m["sequence"]}
+                             for m in modules]
+                add(table, "exact_ordered_backbone_modules", signature, row_id)
         if table in ("binder", "car", "manufacturing"):
             for name in [data.get("name"), *(data.get("aliases") or [])]:
                 if isinstance(name, str) and name.strip():
@@ -215,6 +225,22 @@ def process_batch(paths, rules=None):
                     if entity not in owners and any(v is not None for k, v in row.data.items()
                                                    if k.startswith(entity.kind + ".")):
                         raise OutputError(f"{path}: {entity.kind} fields without owner")
+        # All foreign keys must be rewritten before comparing linked records,
+        # including when evidence precedes its combination in the input file.
+        combinations = {row.data["combination_id"]: row.data for row in document_rows
+                        if row.table == schema.combination_table}
+        for row in document_rows:
+            if row.table != schema.evidence_table or row.data["combination_id"] is None:
+                continue
+            combination = combinations[row.data["combination_id"]]
+            for entity in schema.entities:
+                value = row.data[entity.fk_column]
+                if value is not None and value != combination[entity.id_column]:
+                    raise OutputError(
+                        f"{path}: evidence {row.data['record_id']}: {entity.fk_column} "
+                        f"conflicts with combination {row.data['combination_id']}: "
+                        f"{value} != {combination[entity.id_column]}"
+                    )
         rows.extend(document_rows)
     return rows, audit, provenance, candidate_groups(rows)
 

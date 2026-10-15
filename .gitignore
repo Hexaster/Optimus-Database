@@ -23,3 +23,6 @@ data/processed/*
 
 .claude/
 CLAUDE.md
+# 独立演示数据库和提取产物
+.pipeline-demo/
+.pipeline-demo.lock

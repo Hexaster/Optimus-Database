@@ -1,0 +1,2 @@
+{"table":"binder","data":{"binder_id":"b1","name":"Unknown clone","heavy_chain":{"sequence":"EVQLV","scope":"variable_region"}}}
+{"table":"evidence","data":{"record_id":"e1","source_type":"patent","source_id":"SYNTHETIC-PATENT-3","binder.binder_id":"b1","citation":"Synthetic example; VL unavailable"}}
