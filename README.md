@@ -41,6 +41,7 @@ Measurements from different sources remain separate observations.
 | `src/cart_db/measurements.py`, `postprocess.py` | Unit/sequence normalization, audit output, duplicate candidates |
 | `src/cart_db/identity.py`, `manufacturing.py` | Entity identity and manufacturing similarity rules |
 | `src/cart_db/ingest.py`, `ingest_schema.py` | Staging, reference mapping, publication, export, migrations |
+| `src/cart_db/figures.py`, `artifacts.py`, `scripts/extract_figures.py` | Figure rendering, inventory validation, and artifact checksums |
 | `src/cart_db/pipeline.py`, `extraction_progress.py` | Resume checks, extraction/import coordination, progress reporting |
 | `src/cart_db/browser.py`, `web/` | Local read-only HTTP API and browser interface |
 | `scripts/` | Command-line entry points and demonstrations |
@@ -154,16 +155,17 @@ python scripts/run_extraction_agent.py \
 ```
 
 Remove `--dry-run` to invoke the agent and import results. Omit `--import-db` to
-produce JSONL only. Use `--model` for an explicit model, `--dir` for a folder, and
+produce extraction artifacts without database import. Use `--model` for an explicit model, `--dir` for a folder, and
 `--workers` for concurrent documents. See `--help` for timeout, validation-repair,
 and budget options. Budget enforcement depends on the selected backend.
 
 Results default to `data/normalised/<agent>/<model-or-default>/<document-stem>/`:
-`original.jsonl`, validated `data.jsonl`, and `reasoning.md`, plus optional error
-logs. Database runs add a source manifest and import report. With `--import-db`,
-matching source/schema/artifact checksums allow extraction reuse; failed drafts
-remain available for diagnosis. Extraction-only runs skip existing `data.jsonl`
-files unless `--force` is supplied. Keep the source documents for verification.
+`original.jsonl`, validated `data.jsonl`, `reasoning.md`, `figures.jsonl`, `img/`,
+and `source_manifest.json`, plus optional error logs. Database runs add an import
+report. Matching source/schema/artifact checksums allow extraction reuse; failed
+drafts remain available for diagnosis. Existing outputs without the figure contract
+need `--figures-only` to add images or `--force` for a full rerun. Keep source
+documents and referenced local image assets for verification.
 
 ## Other tools and limitations
 
@@ -206,6 +208,26 @@ Without `CART_TEST_DSN`, database integration tests are skipped. Some existing
 tests still expect removed extraction APIs and older schema fields, so the full
 suite is not currently green. Use `docs/Schema/` and the current importer as the
 active contract.
+
+Each extraction also delegates figure capture to one dedicated image subagent.
+This is independent of `--subagent true`, which enables two structured-data
+extraction drafts. Result figures are saved under `<document>/img/`, with captions,
+page/crop provenance and missing-asset explanations in `figures.jsonl`. The source
+manifest hashes every published image. Image bytes stay on disk; database context
+stores the inventory and manifest.
+
+To add images to an existing checksummed extraction without changing its data:
+
+```bash
+python scripts/run_extraction_agent.py --file data/sample/record-0001_PMC5087292_Oncoimmunology2016.pdf \
+  --out-dir YOUR_EXISTING_OUTPUT_ROOT --figures-only
+```
+
+Use the same output root that contains the existing document folder. Backfills
+require a valid `source_manifest.json`; an unmanifested extraction needs a full
+`--force` rerun. See the [image extraction workflow](docs/figure_extraction.md)
+for helper commands, artifact format, and subagent instructions. The sample pilot
+is documented in [data/figure_sample_test/review.md](data/figure_sample_test/review.md).
 
 More detail: [extraction](docs/extraction_pipeline.md),
 [database import](docs/database_import.md),

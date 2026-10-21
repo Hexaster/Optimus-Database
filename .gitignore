@@ -13,9 +13,7 @@ __pycache__/
 .ipynb_checkpoints/
 
 # 数据：原始数据与中间产物不入库，靠 core.source_registry 追溯
-data/raw/*
-data/interim/*
-data/processed/*
+data/
 !data/**/.gitkeep
 
 # 系统

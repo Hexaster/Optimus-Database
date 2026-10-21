@@ -5,6 +5,20 @@ description: Extract source-supported CAR-T entities and experimental evidence f
 
 # CAR-T Document Extraction
 
+## Figure artifact extension
+
+When invoked by the current runner, its explicit overrides enable one additional image subagent independently of the structured-data cross-check setting. Follow `docs/figure_extraction.md`; retain `figures.jsonl` and `img/` alongside the data outputs. The older three-file-only wording below applies only when no runner figure override is supplied. The image subagent writes only figure artifacts, must not delegate further, and must finish before the coordinator reports completion.
+
+## Image acquisition priority: API first, PDF fallback
+
+For every relevant figure, first attempt to obtain the original or highest-quality image through an official source API or an asset URL returned by verified source metadata. Apply this order even when a local PDF is already available, and to text/Markdown inputs whose drawings are omitted. Reuse an already retrieved, verified API asset rather than downloading it again. Follow documented API routes and returned links; do not guess image URLs.
+
+Verify the source identity (DOI, PMCID, patent publication/version, or equivalent), figure label, caption, panels, and readability. Prefer a complete original-resolution or vector asset over a thumbnail; API delivery alone does not establish higher quality. Preserve native resolution and avoid unnecessary resampling. If the API image is incomplete or less readable than the PDF, use the better complete source and explain the choice.
+
+If an applicable API is unavailable, inaccessible, lacks the figure, or returns an unusable asset, retrieve or open the matching PDF and render the complete figure region, including axes, legends, and panel labels. Do not declare a figure unavailable merely because it is absent from the supplied Markdown/XML or local files. Mark it unavailable only after the applicable API and PDF routes have been attempted, or record the specific access/tool limitation that prevented an attempt. A main-text PDF cannot replace a missing supplementary figure.
+
+Record the API/metadata route, original asset URL, retrieval date, source identifier, chosen asset and quality assessment, and any PDF fallback reason in the figure metadata or evidence summary. Retain source hashes and PDF page/crop coordinates where applicable. Do not invent provenance or mislabel an API image as a PDF crop. These acquisition rules also apply to the dedicated image subagent; local-only export helpers do not replace source retrieval.
+
 ## Workflow and execution scope
 
 1. Read all current `docs/Schema/*.yaml` files. Active YAML fields, types, descriptions, and enums are authoritative; commented-out definitions are not fields.

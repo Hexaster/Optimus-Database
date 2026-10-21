@@ -107,6 +107,9 @@ def agent(monkeypatch):
         assert "合成" in load_document(path)
         write(out_dir, [binder(name="合成结合域"), evidence()])
         (out_dir / "reasoning.md").write_text("合成流程测试，不调用模型。", encoding="utf-8")
+        # Synthetic source has no figures; record an explicit completed empty inventory.
+        (out_dir / "figures.jsonl").write_text("")
+        (out_dir / "img").mkdir(exist_ok=True)
         return dict(ok=True, reason="", cost=0.0, usage=runner.empty_usage(), usage_known=True, seconds=0)
 
     monkeypatch.setattr(runner, "_run_agent", fake)
@@ -149,7 +152,7 @@ def test_pipeline_real_qc_database_and_resume(connection, tmp_path, agent):
     assert final["data"]["binder_id"] != "b"
     manifest = json.loads((out / "paper/source_manifest.json").read_text())
     assert manifest["source_sha256"] == pipeline.checksum(path)
-    assert connection.execute("SELECT count(*) FROM cart.import_context").fetchone()[0] == 3
+    assert connection.execute("SELECT count(*) FROM cart.import_context").fetchone()[0] == 4
     repeated = run(path, out)
     # Require all linked outcomes in this assertion; a partial success must still fail the test.
     assert repeated["extraction_reused"] and len(agent) == 1
@@ -300,6 +303,9 @@ def test_validation_failure_preserves_draft_and_never_imports(connection, tmp_pa
     def invalid(path, *, out_dir, **kwargs):
         write(out_dir, [binder(), evidence(**{"binder.kd": dict(kind="single_value", value=True, unit="nM", raw="bad")})])
         (out_dir / "reasoning.md").write_text("合成无效数据")
+        # Keep image artifacts valid so this test isolates scientific-value validation.
+        (out_dir / "figures.jsonl").write_text("")
+        (out_dir / "img").mkdir(exist_ok=True)
         return dict(ok=True, reason="", cost=0.0, usage=runner.empty_usage(), usage_known=True)
     monkeypatch.setattr(runner, "_run_agent", invalid)
     result = run(source(tmp_path), tmp_path / "output", validation_retries=0)

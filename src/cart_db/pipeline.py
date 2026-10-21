@@ -1,8 +1,6 @@
 """Resume the existing extractor, then stage/resolve/publish its validated JSONL."""
 from __future__ import annotations
 
-import hashlib
-import json
 from pathlib import Path
 import tempfile
 import time
@@ -10,18 +8,7 @@ import time
 from . import ingest
 from .console import count_text, json_text
 from .identity import ENTITIES
-from .ingest_schema import contract_hash
-
-
-# Hash a source or artifact in bounded chunks for safe extraction-resume checks.
-def checksum(path):
-    result = hashlib.sha256()
-    # Close the file reliably, including when reading or writing raises an error.
-    with Path(path).open("rb") as source:
-        # Hash chunks until EOF so large source files do not need to fit in memory.
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            result.update(chunk)
-    return result.hexdigest()
+from .artifacts import checksum, verify_artifacts
 
 
 # Write a complete JSON file beside its destination, then replace the destination atomically.
@@ -74,7 +61,6 @@ def run_document(path, *, extract, out_dir, force=False, on_status=None, **kwarg
             on_status(message)
     started = time.monotonic()
     final_dir = out_dir / path.stem
-    manifest_path = final_dir / "source_manifest.json"
     report_path = final_dir / "database_report.json"
     final_dir.mkdir(parents=True, exist_ok=True)
     result = dict(ok=False, cost=0.0, usage=dict(input=0, cached_input=0, cache_write=0, output=0),
@@ -88,23 +74,7 @@ def run_document(path, *, extract, out_dir, force=False, on_status=None, **kwarg
         output = final_dir / "data.jsonl"
         # Reuse extraction only when the source, schema, and all required artifacts can be verified.
         if output.exists() and not force:
-            # An output without a manifest does not prove its source or schema.
-            if not manifest_path.exists():
-                raise ValueError("已有 JSONL 缺少原文校验记录，不能自动认定来源；请用 --force 重新提取")
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            # Reject changed sources/contracts, allowing only the explicitly recognized earlier
-            # contract.
-            if manifest.get("source_sha256") != source_hash or manifest.get("schema_hash") not in (contract_hash(),
-                    "fb64398a5ef997932fcf2a6b795040a050054f717bc0479de176cdc799656d9a"):
-                raise ValueError("原文或字段定义已经变化；请用 --force 重新提取")
-            artifacts = manifest.get("artifacts", {})
-            # Require the exact allowed artifact set and matching file checksums before reusing
-            # output.
-            if (not {"data.jsonl", "original.jsonl", "reasoning.md"} <= artifacts.keys()
-                    or not artifacts.keys() <= {"data.jsonl", "original.jsonl", "reasoning.md", "error_log.jsonl"}
-                    or any(not (final_dir / name).is_file() or checksum(final_dir / name) != expected
-                           for name, expected in artifacts.items())):
-                raise ValueError("提取产物不完整或被修改；请恢复原文件，或用 --force 重新提取")
+            verify_artifacts(final_dir, path)
             result["extraction_reused"] = True
             notify("原文和提取结果一致，复用已有 JSONL，继续数据库处理")
         # A missing or changed extraction artifact requires a fresh extraction before import.
@@ -123,19 +93,13 @@ def run_document(path, *, extract, out_dir, force=False, on_status=None, **kwarg
             # Source changes during extraction invalidate this run's provenance.
             if checksum(path) != source_hash:
                 raise ValueError("提取期间原始文档发生变化，本次结果不入库；请核对后重新提取")
-            # Collect items from ('data.jsonl', 'original.jsonl', 'reasoning.md', 'error_log.jsonl')
-            # only where (final_dir / name).is_file().
-            manifest = dict(source_path=str(path.resolve()), source_sha256=source_hash,
-                            schema_hash=contract_hash(),
-                            agent=kwargs.get("agent"), model=kwargs.get("model"),
-                            artifacts={name: checksum(final_dir / name)
-                                       for name in ("data.jsonl", "original.jsonl", "reasoning.md", "error_log.jsonl")
-                                       if (final_dir / name).is_file()})
-            write_json(manifest_path, manifest)
+            # The runner already wrote the source manifest; verify it without replacing its
+            # provenance fields (including an explicitly supported historical schema hash).
+            verify_artifacts(final_dir, path)
         phase = "database"
         # Collect items from ('source_manifest.json', 'original.jsonl', 'reasoning.md',
-        # 'error_log.jsonl') only where (final_dir / name).is_file().
-        contexts = [final_dir / name for name in ("source_manifest.json", "original.jsonl", "reasoning.md", "error_log.jsonl")
+        # 'error_log.jsonl', 'figures.jsonl') only where (final_dir / name).is_file().
+        contexts = [final_dir / name for name in ("source_manifest.json", "original.jsonl", "reasoning.md", "error_log.jsonl", "figures.jsonl")
                     if (final_dir / name).is_file()]
         # Stage and publish using the configured database; disk reports are not proof of a commit.
         with ingest.connect() as conn:

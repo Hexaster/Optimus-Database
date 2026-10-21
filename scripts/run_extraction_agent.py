@@ -34,6 +34,9 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
 from cart_db.agent_output import OutputError, prepare_output
+from cart_db.figures import validate_figures
+from cart_db.artifacts import artifact_manifest, verify_artifacts
+from cart_db.pipeline import checksum, write_json
 from cart_db.extraction_progress import ExtractionProgress, stream_agent, codex_status, claude_status
 from cart_db.console import ChineseArgumentParser, TABLE_NAMES, report_text
 from cart_db.config import settings      # noqa: E402  —— 唯一一份 .env 解析
@@ -50,7 +53,15 @@ Follow the skill with this run's overrides:
   Write final artifacts directly here; the runner publishes them in the document folder.
 - Other documents may be processed concurrently. Keep all scratch files and writes
   inside this output directory; do not modify shared code, schemas, or other outputs.
-- Subagent mode: {subagent_mode}
+- Data cross-check subagent mode: {subagent_mode}
+- Independently of that setting, delegate figure extraction to exactly one additional
+  image subagent. Give it the source path, this output directory, and
+  docs/figure_extraction.md. It owns only figures.jsonl and img/. Wait for it,
+  inspect its outputs, and resolve omissions from the source before finishing.
+  It must not delegate further. If delegation is unavailable, report failure;
+  do not silently omit images or claim a subagent ran.
+- Follow docs/figure_extraction.md for the figure artifact contract. These
+  instructions override the older skill restrictions on subagents/final files.
 - Active YAML fields are the output contract; commented fields must not be emitted.
 - IDs are document-local non-empty string labels (existing UUID labels are also accepted).
   Keep references consistent; the runner generates final UUIDs and rewrites references.
@@ -66,7 +77,9 @@ Read docs/Schema/*.yaml first, then the document, then write
 and, if there are exceptions, {out_dir}/error_log.jsonl.
 In reasoning.md, reference records by table, row number, and field name rather than
 local IDs, because the runner replaces IDs during publication. Keep scratch material
-separate from these three files; only these final artifacts will be published.
+separate from final artifacts. figures.jsonl and img/ are also published.
+In reasoning.md link relevant evidence to img/ paths and figure/panel labels;
+use table, one-based JSONL line, and field rather than temporary record IDs.
 
 Report at the end how many rows you wrote, broken down by table."""
 
@@ -308,6 +321,7 @@ def _run_agent(path: Path, *, agent: str, out_dir: Path, timeout: int,
     effort: str, input_price: float | None, cached_input_price: float | None,
     output_price: float | None, subagent: bool = False,
     correction: str = "",
+    figures_only: bool = False,
     diagnostics_dir: Path | None = None,
     on_status=None,
     cancel_event=None,
@@ -322,10 +336,20 @@ def _run_agent(path: Path, *, agent: str, out_dir: Path, timeout: int,
         subagent_mode=(
             "enabled. Use the skill's two-subagent independent extraction and cross-check workflow."
             if subagent else
-            "disabled. Do not spawn subagents or launch additional agent processes. "
+            "disabled for structured data. Only the dedicated image subagent is authorized. "
             "Extract the full document and cross-check against the source yourself."
         ),
     )
+    # A backfill delegates only image work, preserving previously validated structured data.
+    if figures_only:
+        prompt = (
+            f"Delegate image extraction from {path.as_posix()} to exactly one image subagent. "
+            f"Output workspace: {out_dir.as_posix()}. Read docs/figure_extraction.md and give "
+            "the subagent those instructions. It owns only figures.jsonl and img/ and must "
+            "not delegate further. Wait for completion and inspect the crops and inventory. "
+            "Do not edit data.jsonl, original.jsonl, reasoning.md, error_log.jsonl, or schemas. "
+            "If delegation is unavailable, report failure. Do not claim an unperformed review."
+        )
     prompt += correction
     # Request public progress lines only for backends with supported event parsers.
     if agent in {"codex", "claude"}:
@@ -342,7 +366,7 @@ def _run_agent(path: Path, *, agent: str, out_dir: Path, timeout: int,
         # Use 'stream-json' when on status is supplied; otherwise use 'json'.
         command = [
             "claude", "-p", prompt, "--output-format", "stream-json" if on_status is not None else "json",
-            "--allowedTools", "Read", "Write", "Edit", "Bash", "Glob", "Grep",
+            "--allowedTools", "Read", "Write", "Edit", "Bash", "Glob", "Grep", "Agent", "Task",
             "--permission-mode", "acceptEdits", "--effort", effort,
         ]
         # Claude streaming output requires verbose event reporting.
@@ -492,8 +516,35 @@ def save_diagnostics(directory, env, stdout, stderr, returncode):
                   log, ensure_ascii=False)
 
 
+def publish_artifacts(draft, destination, names):
+    """Replace files and the complete image directory; roll back on publication errors."""
+    destination.mkdir(parents=True, exist_ok=True)
+    backup = draft / ".publication-backup"
+    backup.mkdir()
+    changed = []
+    try:
+        for name in names:
+            target, source = destination / name, draft / name
+            # Move old files/directories aside on the same filesystem for reversible replacement.
+            if target.exists():
+                target.replace(backup / name)
+            changed.append(name)
+            # Missing optional artifacts intentionally remove the previous run's artifact.
+            if source.exists():
+                source.replace(target)
+    except OSError:
+        for name in reversed(changed):
+            target = destination / name
+            # Return new artifacts to the retained draft before restoring the previous output.
+            if target.exists():
+                target.replace(draft / name)
+            if (backup / name).exists():
+                (backup / name).replace(target)
+        raise
+
+
 def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
-            validation_retries: int = 1, on_status=None, **kwargs) -> dict:
+            validation_retries: int = 1, on_status=None, figures_only: bool = False, **kwargs) -> dict:
     """Publish only validated output; retain failed drafts for inspection.
 
     Repairs share the document timeout and remaining known budget. Unknown
@@ -507,6 +558,16 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
     draft_dir = Path(tempfile.mkdtemp(prefix=f".{path.stem}-", dir=out_dir))
     candidate = draft_dir / "data.jsonl"
     final_dir = out_dir / path.stem
+    source_hash = checksum(path)
+    preserved = {}
+    # Backfills require verified provenance before any model work and keep scientific rows intact.
+    if figures_only:
+        previous = verify_artifacts(final_dir, path, require_figures=False)
+        for name in ("data.jsonl", "original.jsonl", "reasoning.md", "error_log.jsonl"):
+            # Optional exception logs are copied only when present in the existing result.
+            if (final_dir / name).is_file():
+                shutil.copyfile(final_dir / name, draft_dir / name)
+                preserved[name] = checksum(draft_dir / name)
     started = time.monotonic()
     usage = empty_usage()
     cost = 0.0
@@ -523,7 +584,7 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
         # Use budget - cost when budget is supplied; otherwise use None.
         attempt_budget = budget - cost if budget is not None else None
         result = _run_agent(path, out_dir=draft_dir, timeout=remaining,
-                            budget=attempt_budget, correction=correction,
+                            budget=attempt_budget, correction=correction, figures_only=figures_only,
                             diagnostics_dir=draft_dir, on_status=on_status, **kwargs)
         # Accumulate token counters across the initial call and validation repairs.
         for key in usage:
@@ -542,13 +603,30 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
         # Validate the draft and its evidence summary before publishing any output files.
         try:
             notify("正在校验字段、记录引用和计量单位")
-            output = prepare_output(candidate)
+            # Images must be complete and source-bounded before any artifacts become public.
+            validate_figures(draft_dir, source=path)
+            if checksum(path) != source_hash:
+                raise OutputError("Source changed during extraction")
+            # Backfills must not regenerate UUIDs or change any scientific extraction artifact.
+            if figures_only:
+                for name in ("data.jsonl", "original.jsonl", "reasoning.md", "error_log.jsonl"):
+                    # Adding an exception log is also an unauthorized structured-output change.
+                    if name not in preserved:
+                        if (draft_dir / name).exists():
+                            raise OutputError(f"Figure backfill added {name}")
+                        continue
+                    expected = preserved[name]
+                    if checksum(draft_dir / name) != expected:
+                        raise OutputError(f"Figure backfill modified {name}")
+                output = candidate.read_text(encoding="utf-8")
+            else:
+                output = prepare_output(candidate)
             reasoning = draft_dir / "reasoning.md"
             # A valid JSONL without a nonempty evidence summary is incomplete extraction output.
             if not reasoning.is_file() or not reasoning.read_text(encoding="utf-8").strip():
                 raise OutputError("reasoning.md: missing or empty evidence and decision summary")
         # Keep the invalid draft and prepare a bounded repair only when retries and budget allow it.
-        except (OutputError, ValueError) as exc:
+        except (OutputError, ValueError, OSError) as exc:
             result.update(ok=False, reason=f"输出校验失败：{exc}")
             # Stop once the configured number of repair attempts has been exhausted.
             if attempt == validation_retries:
@@ -564,59 +642,48 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
                 "deduplicate, or remove valid records to pass validation.\n"
                 + str(exc)
             )
+            # Figure-only repairs cannot use the normal instruction to edit scientific JSONL.
+            if figures_only:
+                correction = (
+                    "\nRepair only figures.jsonl and img/ in this existing workspace. "
+                    "Recheck against the source and docs/figure_extraction.md. "
+                    "Do not edit scientific artifacts. Validation error: " + str(exc)
+                )
             notify(f"输出校验未通过，正在启动第 {attempt + 1} 次修正")
             continue
-        changed = []
-        backups = {}
-        # Keep backups while replacing final artifacts so partial file failures can be rolled back.
+        # Prepare the entire artifact set and checksummed manifest before replacing public files.
         try:
             notify("校验通过，正在保存正式结果")
-            final_dir.mkdir(parents=True, exist_ok=True)
-            staged = draft_dir / "normalized.jsonl"
-            staged.write_text(output, encoding="utf-8")
-            # Publish only the approved artifact set, with normalized data last.
-            for name, source in (("original.jsonl", candidate),
-                                 ("error_log.jsonl", draft_dir / "error_log.jsonl"),
-                                 ("reasoning.md", reasoning), ("data.jsonl", staged)):
-                target = final_dir / name
-                # Back up each existing artifact before replacing or removing it.
-                if target.exists():
-                    backup = draft_dir / ("previous." + name)
-                    shutil.copyfile(target, backup)
-                    backups[name] = backup
-                # Publish an artifact only when this attempt actually produced it.
-                if source.exists():
-                    publish = source
-                    # Copy original artifacts before replacement so the draft remains intact until
-                    # publication succeeds.
-                    if source != staged:
-                        publish = draft_dir / ("staged." + name)
-                        shutil.copyfile(source, publish)
-                    publish.replace(target)
-                # Otherwise, remove the obsolete or incomplete file.
-                else:
-                    target.unlink(missing_ok=True)
-                changed.append(name)
-        # A publication filesystem failure triggers rollback of changed files without another model
-        # call.
-        except OSError as exc:
-            result.update(ok=False, reason=f"输出发布失败（未自动调用模型修正）：{exc}")
-            # Undo published file replacements in reverse order after a partial filesystem failure.
-            for name in reversed(changed):
-                # Attempt every necessary rollback while preserving any rollback failure in
-                # diagnostics.
-                try:
-                    # Restore prior content when a backup exists; otherwise remove the newly created
-                    # file.
-                    if name in backups:
-                        backups[name].replace(final_dir / name)
-                    # Otherwise, remove the obsolete or incomplete file.
-                    else:
-                        (final_dir / name).unlink(missing_ok=True)
-                # Append rollback failures to the original diagnostic so incomplete recovery remains
-                # visible.
-                except OSError as rollback_error:
-                    result["reason"] += f"；{name} 恢复失败：{rollback_error}"
+            if not figures_only:
+                shutil.copyfile(candidate, draft_dir / "original.jsonl")
+                candidate.write_text(output, encoding="utf-8")
+            manifest = artifact_manifest(draft_dir, path, agent=kwargs.get("agent"),
+                                         model=kwargs.get("model"))
+            # Hash again at the publication boundary, including extraction-only runs.
+            if manifest["source_sha256"] != source_hash:
+                raise ValueError("Source changed before publication")
+            # Preserve the original data contract and producer when adding images to older output.
+            if figures_only:
+                current = verify_artifacts(final_dir, path, require_figures=False)
+                if current != previous:
+                    raise ValueError("Existing extraction changed during figure backfill")
+                for name, expected in preserved.items():
+                    # Only image artifacts will be replaced, so live scientific files must match.
+                    if checksum(final_dir / name) != expected:
+                        raise ValueError(f"Existing {name} changed during figure backfill")
+                for key in ("schema_hash", "agent", "model"):
+                    manifest[key] = previous.get(key)
+                manifest["figure_agent"] = kwargs.get("agent")
+                manifest["figure_model"] = kwargs.get("model")
+            write_json(draft_dir / "source_manifest.json", manifest)
+            names = ["figures.jsonl", "img", "source_manifest.json"]
+            # Full extraction also refreshes data and removes any obsolete exception log.
+            if not figures_only:
+                names = ["original.jsonl", "error_log.jsonl", "reasoning.md", "figures.jsonl",
+                         "img", "data.jsonl", "source_manifest.json"]
+            publish_artifacts(draft_dir, final_dir, names)
+        except (OSError, ValueError) as exc:
+            result.update(ok=False, reason=f"输出发布失败：{exc}")
             break
         shutil.rmtree(draft_dir, ignore_errors=True)
         result["reason"] = "输出已校验并规范化"
@@ -697,6 +764,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--effort", default="high", help="Claude/Codex 推理强度，默认 high")
     parser.add_argument("--out-dir", help="结果目录；默认按 agent/model 隔离")
     parser.add_argument("--import-db", action="store_true", help="连接 PostgreSQL，提取后自动暂存、比对并入库；重复运行可续跑")
+    parser.add_argument("--figures-only", action="store_true",
+                        help="仅补充图像；保留已校验的数据，需要现有 source_manifest.json")
     parser.add_argument("--force", action="store_true", help="已有结果的文档也重跑")
     parser.add_argument("--dry-run", action="store_true", help="只列出要跑什么")
     parser.add_argument("--no-progress", action="store_true", help="关闭终端动态状态面板")
@@ -755,9 +824,19 @@ def main(argv: list[str] | None = None) -> int:
     pending = [input_path] if args.file else documents(input_path)
     # Extraction-only mode skips existing outputs; database mode performs stronger manifest checks
     # later.
-    if not args.force and not args.import_db:
+    if not args.force and not args.import_db and not args.figures_only:
         # Collect items from pending only where not (out_dir / p.stem / 'data.jsonl').exists().
-        pending = [p for p in pending if not (out_dir / p.stem / "data.jsonl").exists()]
+        remaining = []
+        for path in pending:
+            # Existing outputs must pass provenance/image checks; never silently skip old results.
+            if (out_dir / path.stem / "data.jsonl").exists():
+                try:
+                    verify_artifacts(out_dir / path.stem, path)
+                except ValueError as exc:
+                    parser.error(str(exc))
+            else:
+                remaining.append(path)
+        pending = remaining
 
     # Return without calling an agent when every selected document is already handled.
     if not pending:
@@ -801,12 +880,13 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"输出：{out_dir.relative_to(REPO)}")
     # Use '启用' when args.subagent equals 'true'; otherwise use '关闭'.
-    print(f"子代理：{'启用' if args.subagent == 'true' else '关闭'}")
+    print(f"数据独立交叉核对：{'启用' if args.subagent == 'true' else '关闭'}")
     print(f"并发文档数：{args.workers}")
     print(f"待处理 {len(pending)} 份：")
     # Preview each document's destination before starting work.
     for path in pending:
         print(f"  {path.name} → {out_dir.relative_to(REPO) / path.stem}")
+    print("图像提取：独立图像子代理；" + ("仅补图" if args.figures_only else "随数据提取"))
     # Show the configured target database when import is requested.
     if args.import_db:
         print(f"目标数据库：{settings.pg_database}；流程：提取 → 规范化与质检 → 暂存 → 实体比对 → 入库")
@@ -815,6 +895,9 @@ def main(argv: list[str] | None = None) -> int:
         print("预览结束：未调用模型，未连接或修改数据库")
         return 0
 
+    # Backfill is an artifact operation; database import can be run separately after it succeeds.
+    if args.figures_only and args.import_db:
+        parser.error("--figures-only 请勿与 --import-db 同用；补图完成后单独入库")
     runner = run_one
     runner_options = {}
     # Verify connectivity and migrations before any potentially paid extraction.
@@ -856,6 +939,7 @@ def main(argv: list[str] | None = None) -> int:
                 cached_input_price=args.cached_input_price,
                 output_price=args.output_price,
                 subagent=args.subagent == "true",
+                figures_only=args.figures_only,
                 validation_retries=args.validation_retries,
                 on_status=(lambda message, p=path: progress.update(p, message)),
                 cancel_event=progress.cancel_event,

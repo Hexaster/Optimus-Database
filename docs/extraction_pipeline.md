@@ -94,6 +94,7 @@ python scripts/run_extraction_agent.py --file data/raw/example.xml --import-db -
 | `data.jsonl` | 原提取器校验、补齐字段、生成 ID 和规范化单位后的 JSONL |
 | `reasoning.md` | 来源依据及提取决策说明 |
 | `error_log.jsonl` | 提取过程报告的异常，存在时保留 |
+| `figures.jsonl` / `img/` | 图像子代理的图号、图注、来源页码/裁剪坐标、缺失说明和 PNG 图像；详见 [图像工作流](figure_extraction.md) |
 | `source_manifest.json` | 原文路径、原文校验和、schema 版本以及上述文件的校验和 |
 | `database_report.json` | 数据库批次、各行入库映射、待审核原因和本次新增/关联数量 |
 | `pipeline_error.json` | 本次流程异常的技术诊断，发生异常时写入 |
