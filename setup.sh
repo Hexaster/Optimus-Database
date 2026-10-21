@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Retained legacy bootstrap; use the README tutorial for the current cart schema.
 # 一次性环境搭建：venv + 依赖 + 数据库 + 建表 + 冒烟测试
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -10,22 +11,28 @@ python3 -m venv .venv
 echo "    依赖已锁定安装完成"
 
 echo "==> 2/5 环境变量"
+# Create a template only when .env is absent so existing credentials/configuration are preserved.
 [ -f .env ] || { cp .env.example .env; echo "    已生成 .env（API key 先留空，本地建库不需要）"; }
 
 echo "==> 3/5 PostgreSQL"
 # Homebrew 的 postgresql@17 是 keg-only，不会进 PATH，这里自动探测
 for kegs in /opt/homebrew/opt/postgresql@1[0-9]/bin /usr/local/opt/postgresql@1[0-9]/bin; do
+  # Add a Homebrew candidate only if that installation directory actually exists.
   [ -d "$kegs" ] && export PATH="$kegs:$PATH"
 done
+# Prefer a working Docker daemon; otherwise try an already-running local PostgreSQL server.
 if docker info >/dev/null 2>&1; then
   docker compose up -d
   echo -n "    等待数据库就绪"
+  # Poll until PostgreSQL accepts connections before attempting legacy table creation.
   until docker compose exec -T db pg_isready -U cart -d cart >/dev/null 2>&1; do
     echo -n "."; sleep 1
   done; echo " 就绪"
 elif command -v pg_isready >/dev/null 2>&1 && pg_isready -q; then
+  # Use the local server only when pg_isready exists and reports readiness.
   echo "    使用本机已运行的 PostgreSQL"
 else
+  # With neither server available, explain setup choices and stop before any schema operations.
   cat <<'MSG'
     未找到可用的 PostgreSQL。二选一：
       A. 装 Docker Desktop 后重跑本脚本（推荐，自带 pgvector）

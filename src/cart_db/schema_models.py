@@ -78,16 +78,23 @@ class ExtractionSchema:
     requests: tuple[tuple[str, type[BaseModel]], ...]
 
 
+# Turn schema paths into readable generated model names.
 def _camel(name: str) -> str:
+    # Build mapped values from name.replace('.', '_').split('_').
     return "".join(part.capitalize() for part in name.replace(".", "_").split("_"))
 
 
 def _load_tables(schema_dir: Path) -> dict[str, dict]:
     """读整个目录，返回 {表名: fields 定义}。"""
     tables: dict[str, dict] = {}
+    # Load schema files in stable filename order.
     for path in sorted(schema_dir.glob("*.yaml")):
+        # Use an empty mapping when yaml.safe_load(path.read_text(encoding='utf-8')) is missing or
+        # empty.
         document = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        # Read every declared table block within each YAML document.
         for key, body in document.items():
+            # Use an empty mapping when body.get('fields') is missing or empty.
             tables[body.get("table", key)] = body.get("fields") or {}
     return tables
 
@@ -96,13 +103,19 @@ def _annotation(spec: dict, *, nested_name: str) -> Any:
     """把一条 YAML 字段定义翻译成 Python 类型标注。"""
     declared = spec.get("type")
 
+    # Use the measurement model, preserving the field's nullable contract.
     if declared == "measurement":
+        # Use Measurement | None when spec.get('nullable', True); otherwise use Measurement.
         return Measurement | None if spec.get("nullable", True) else Measurement
 
+    # Translate structured JSON according to its declared shape and item schema.
     if declared == "json":
+        # Build a nested model only when nested fields are explicitly defined.
         if "item_schema" in spec:
             model = _build_model(nested_name, spec["item_schema"])
+            # Object-shaped JSON uses one model rather than a list of models.
             if spec.get("shape") == "object":
+                # Use model | None when spec.get('nullable'); otherwise use model.
                 return model | None if spec.get("nullable") else model
             return list[model]
         item_type = _SCALARS.get(spec.get("item_type"))
@@ -113,6 +126,7 @@ def _annotation(spec: dict, *, nested_name: str) -> Any:
         # 改成一段自由文本，交给模型自己组织格式。
         return str
 
+    # Turn allowed_values into a closed Literal choice.
     if spec.get("allowed_values"):
         return Literal[tuple(spec["allowed_values"])]
 
@@ -122,16 +136,22 @@ def _annotation(spec: dict, *, nested_name: str) -> Any:
 def _build_model(name: str, fields: dict, *, skip_keys: bool = False) -> type[BaseModel]:
     """按 YAML 构建模型；可空字段省略时为 None，必需列表仍允许空列表。"""
     definitions: dict[str, tuple] = {}
+    # Build one Pydantic field definition for each YAML field.
     for field_name, spec in fields.items():
+        # Ignore non-field metadata entries in schema blocks.
         if not isinstance(spec, dict):
             continue
+        # The extraction model omits database IDs, which are generated during flattening.
         if skip_keys and spec.get("key") in {"primary", "foreign"}:
             continue
         annotation = _annotation(spec, nested_name=f"{name}{_camel(field_name)}")
+        # Permit None only for nullable fields.
         if spec.get("nullable", True):
             annotation = annotation | None
+        # Required list fields default to a fresh empty list rather than sharing mutable state.
         if get_origin(annotation) is list and not spec.get("nullable", True):
             definitions[field_name] = (annotation, Field(default_factory=list))
+        # For other fields, use the YAML default; omitted defaults become None.
         else:
             definitions[field_name] = (annotation, Field(default=spec.get("default")))
     return create_model(name, **definitions)
@@ -145,10 +165,13 @@ def _split_evidence(fields: dict) -> tuple[dict, dict[str, dict]]:
     """
     shared: dict[str, dict] = {}
     grouped: dict[str, dict] = {}
+    # Split each evidence field by its entity prefix.
     for name, spec in fields.items():
+        # Prefixed measurements belong to their entity-specific evidence model.
         if "." in name:
             prefix, bare = name.split(".", 1)
             grouped.setdefault(prefix, {})[bare] = spec
+        # Unprefixed evidence fields are shared metadata rather than entity-specific measurements.
         else:
             shared[name] = spec
     return shared, grouped
@@ -163,9 +186,11 @@ def load_schema(schema_dir: Path | None = None) -> ExtractionSchema:
     否则这几种写法会各自建一套结构相同但不是同一个类的模型，
     下游用 `is`/`isinstance` 比较模型类时会静默出错。
     """
+    # Prefer schema_dir; if empty or absent, fall back to SCHEMA_DIR.
     return _load_schema_cached(schema_dir or SCHEMA_DIR)
 
 
+# Build and cache entity/evidence models and ordered extraction request models from YAML.
 @lru_cache(maxsize=4)
 def _load_schema_cached(schema_dir: Path) -> ExtractionSchema:
     tables = _load_tables(schema_dir)
@@ -174,9 +199,11 @@ def _load_schema_cached(schema_dir: Path) -> ExtractionSchema:
     entities: list[EntitySpec] = []
     root_fields: dict[str, tuple] = {}
 
+    # Build each entity and its own evidence model without merging equally named measurements.
     for kind in ENTITY_TABLES:
         prefixed = grouped[kind]
         overlap = set(prefixed) & set(shared_fields)
+        # Reject prefixed/shared name collisions before model construction can overwrite a field.
         if overlap:
             raise ValueError(
                 f"{EVIDENCE_TABLE} 表中 {kind}.* 的字段 {sorted(overlap)} 与共享字段重名，"
@@ -191,10 +218,14 @@ def _load_schema_cached(schema_dir: Path) -> ExtractionSchema:
             __base__=_build_model(_camel(kind), tables[kind], skip_keys=True),
             evidence=(list[evidence_model], Field(default_factory=list)),
         )
+        # Collect items from tables[kind].items() only where isinstance(spec, dict) and
+        # spec.get('key') == 'primary'.
         id_column = next(
             name for name, spec in tables[kind].items()
             if isinstance(spec, dict) and spec.get("key") == "primary"
         )
+        # Collect items from prefixed.items() only where isinstance(spec, dict) and spec.get('key')
+        # == 'foreign'.
         fk_name = next(
             name for name, spec in prefixed.items()
             if isinstance(spec, dict) and spec.get("key") == "foreign"
@@ -208,14 +239,19 @@ def _load_schema_cached(schema_dir: Path) -> ExtractionSchema:
 
     # 组合表：外键列换成序号，指向根模型上对应的列表。
     combination_definitions: dict[str, tuple] = {}
+    # Translate combination fields after all entity model metadata is available.
     for name, spec in tables[COMBINATION_TABLE].items():
+        # Combination primary IDs are generated later; skip metadata and primary-key definitions.
         if not isinstance(spec, dict) or spec.get("key") == "primary":
             continue
+        # Replace combination foreign keys with extraction-list indices for later resolution.
         if spec.get("key") == "foreign":
+            # Accept references or the older to key when reading foreign-key metadata.
             target = str(spec.get("references") or spec.get("to", "")).split(".")[0]
             combination_definitions[f"{target}_index"] = (int, ...)
             continue
         annotation = _annotation(spec, nested_name=f"Combination{_camel(name)}")
+        # Keep optional combination attributes nullable.
         if spec.get("nullable", True):
             annotation = annotation | None
         combination_definitions[name] = (annotation, Field(default=None))

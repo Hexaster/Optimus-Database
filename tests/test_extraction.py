@@ -13,18 +13,21 @@ JATS = """<article>
 </article>"""
 
 
+# Verify that strip removes back matter.
 def test_strip_removes_back_matter():
     out = strip_xml_boilerplate(JATS)
     assert "Smith 2020" not in out
     assert "感谢基金支持" not in out
 
 
+# Verify that strip keeps body intact.
 def test_strip_keeps_body_intact():
     out = strip_xml_boilerplate(JATS)
     assert "Kd = 2.4 nM" in out
     assert "Anti-CDH17 CAR-T" in out
 
 
+# Verify that strip removes standalone ref list.
 def test_strip_removes_standalone_ref_list():
     xml = "<article><body><p>正文</p></body><ref-list><ref>X</ref></ref-list></article>"
     out = strip_xml_boilerplate(xml)
@@ -32,6 +35,7 @@ def test_strip_removes_standalone_ref_list():
     assert "<ref>" not in out
 
 
+# Verify that load xml file.
 def test_load_xml_file(tmp_path):
     path = tmp_path / "PMC1.xml"
     path.write_text(JATS, encoding="utf-8")
@@ -40,6 +44,7 @@ def test_load_xml_file(tmp_path):
     assert "Smith 2020" not in text
 
 
+# Verify that load nxml extension.
 def test_load_nxml_extension(tmp_path):
     path = tmp_path / "PMC1.nxml"
     path.write_text(JATS, encoding="utf-8")
@@ -56,15 +61,18 @@ def test_load_markdown_verbatim(tmp_path):
     assert "<ref-list>保留</ref-list>" in text
 
 
+# Verify that load markdown alias extension.
 def test_load_markdown_alias_extension(tmp_path):
     path = tmp_path / "note.markdown"
     path.write_text("Kd = 2.4 nM\n", encoding="utf-8")
     assert "Kd = 2.4 nM" in load_document(path)
 
 
+# Verify that unknown extension raises.
 def test_unknown_extension_raises(tmp_path):
     path = tmp_path / "data.csv"
     path.write_text("a,b\n1,2\n", encoding="utf-8")
+    # Require the operation to raise the expected error instead of accepting invalid input.
     with pytest.raises(ValueError, match="不支持的文件格式"):
         load_document(path)
 
@@ -77,7 +85,9 @@ Extraction = SCHEMA.extraction
 Combination = Extraction.model_fields["combinations"].annotation.__args__[0]
 
 
+# Select the generated entity model used by this test.
 def _entity(kind):
+    # Collect items from SCHEMA.entities only where e.kind == kind.
     return next(e for e in SCHEMA.entities if e.kind == kind)
 
 
@@ -95,10 +105,13 @@ def _shared_ev(**kw):
                  evidence_level="同行評議", **kw)
 
 
+# Select flattened rows belonging to the requested table.
 def _rows_of(rows, table):
+    # Collect items from rows only where r.table == table.
     return [r for r in rows if r.table == table]
 
 
+# Verify that evidence points at its own binder.
 def test_evidence_points_at_its_own_binder():
     Binder = _entity("binder").model
     ex = Extraction(binders=[
@@ -108,6 +121,7 @@ def test_evidence_points_at_its_own_binder():
     ])
     rows = flatten(ex)
     binders = _rows_of(rows, "binder")
+    # Build mapped values from _rows_of(rows, 'evidence').
     by_kd = {e.data["binder.kd"]: e for e in _rows_of(rows, "evidence")}
 
     assert len(binders) == 2
@@ -116,6 +130,7 @@ def test_evidence_points_at_its_own_binder():
     assert binders[0].data["binder_id"] != binders[1].data["binder_id"]
 
 
+# Verify that evidence carries all three fk columns.
 def test_evidence_carries_all_three_fk_columns():
     Binder = _entity("binder").model
     ex = Extraction(binders=[Binder(name="A", evidence=[_ev("binder")])])
@@ -125,6 +140,7 @@ def test_evidence_carries_all_three_fk_columns():
     assert data["manufacturing.manufacturing_id"] is None
 
 
+# Verify that shared fields are not prefixed.
 def test_shared_fields_are_not_prefixed():
     Binder = _entity("binder").model
     ex = Extraction(binders=[Binder(name="A", evidence=[_ev("binder")])])
@@ -144,7 +160,9 @@ def test_car_and_manufacturing_memory_phenotype_stay_apart():
     )
     rows = _rows_of(flatten(ex), "evidence")
     values = {}
+    # Process each row from rows independently.
     for row in rows:
+        # Collect items from row.data.items() only where k.endswith('memory_phenotype').
         values.update({k: v for k, v in row.data.items() if k.endswith("memory_phenotype")})
     assert values["car.memory_phenotype"] == "Tcm 偏多"
     assert values["manufacturing.memory_phenotype"] == "Tscm 偏多"
@@ -164,6 +182,7 @@ def test_json_fields_without_item_schema_stay_plain_strings():
         "温度: 25°C；缓冲液: PBS")
 
 
+# Verify that modules stay a list.
 def test_modules_stay_a_list():
     Car = _entity("car").model
     ex = Extraction(cars=[Car(name="BBz", modules=[
@@ -171,17 +190,21 @@ def test_modules_stay_a_list():
         {"module_type": "CD3zeta"},
     ])])
     modules = _rows_of(flatten(ex), "car")[0].data["modules"]
+    # Require all linked outcomes in this assertion; a partial success must still fail the test.
     assert isinstance(modules, list) and len(modules) == 2
     assert modules[0]["module_type"] == "hinge"
 
 
+# Verify that entities come before evidence.
 def test_entities_come_before_evidence():
     Binder = _entity("binder").model
     ex = Extraction(binders=[Binder(name="A", evidence=[_ev("binder")])])
+    # Build mapped values from flatten(ex).
     tables = [r.table for r in flatten(ex)]
     assert tables.index("binder") < tables.index("evidence")
 
 
+# Verify that combination resolves indices and emits one evidence row.
 def test_combination_resolves_indices_and_emits_one_evidence_row():
     Binder, Car = _entity("binder").model, _entity("car").model
     Manufacturing = _entity("manufacturing").model
@@ -207,6 +230,7 @@ def test_combination_resolves_indices_and_emits_one_evidence_row():
     assert evidence.data["outcomes"] == "killing_rate: 85%"
 
 
+# Verify that out of range combination is dropped.
 def test_out_of_range_combination_is_dropped(caplog):
     Binder, Car = _entity("binder").model, _entity("car").model
     Manufacturing = _entity("manufacturing").model
@@ -215,12 +239,14 @@ def test_out_of_range_combination_is_dropped(caplog):
         manufacturings=[Manufacturing(name="LV")],
         combinations=[Combination(binder_index=7, car_index=0, manufacturing_index=0)],
     )
+    # Release this managed resource when the enclosed operation completes or fails.
     with caplog.at_level("WARNING"):
         rows = flatten(ex)
     assert _rows_of(rows, "abc_combination_db1") == []
     assert "序号越界" in caplog.text
 
 
+# Verify that negative index is dropped.
 def test_negative_index_is_dropped():
     Binder, Car = _entity("binder").model, _entity("car").model
     Manufacturing = _entity("manufacturing").model
@@ -240,6 +266,7 @@ def test_evidence_without_source_id_is_dropped(caplog):
     ex = Extraction(binders=[Binder(name="A", evidence=[
         model(source_type="literature",
               evidence_level="同行評議", kd=2.4)])])
+    # Release this managed resource when the enclosed operation completes or fails.
     with caplog.at_level("WARNING"):
         rows = flatten(ex)
     assert _rows_of(rows, "evidence") == []
@@ -247,6 +274,7 @@ def test_evidence_without_source_id_is_dropped(caplog):
     assert "出处" in caplog.text
 
 
+# Verify that evidence with blank evidence level is dropped.
 def test_evidence_with_blank_evidence_level_is_dropped():
     Binder = _entity("binder").model
     model = _entity("binder").evidence_model
@@ -260,6 +288,7 @@ import json
 from cart_db import extraction
 
 
+# Verify that system prompt contains rules schema and output guide.
 def test_system_prompt_contains_rules_schema_and_output_guide():
     prompt = extraction.build_system_prompt()
     assert "biomedical data extraction agent" in prompt      # article_extraction_prompt.txt
@@ -284,12 +313,14 @@ def _fake_request(schema, **overrides):
     return schema(**{field_name: overrides.get(field_name, [])})
 
 
+# Verify that extract document writes jsonl.
 def test_extract_document_writes_jsonl(tmp_path, monkeypatch):
     doc = tmp_path / "PMC1.xml"
     doc.write_text(JATS, encoding="utf-8")
     Binder = _entity("binder").model
     calls = []
 
+    # Return synthetic model output and capture invocation details for assertions.
     def fake_extract(*, schema, document, system_prompt, purpose, **kw):
         calls.append(dict(document=document, purpose=purpose, schema=schema))
         return _fake_request(
@@ -319,11 +350,14 @@ def test_extract_document_makes_one_call_per_request_and_hints_indices(tmp_path,
     Binder, Car = _entity("binder").model, _entity("car").model
     calls = []
 
+    # Return synthetic model output and capture invocation details for assertions.
     def fake_extract(*, schema, document, system_prompt, purpose, **kw):
         field_name = next(iter(schema.model_fields))
         calls.append((field_name, document))
+        # When field name equals 'binders', return the result for this representation.
         if field_name == "binders":
             return _fake_request(schema, binders=[Binder(name="ARB-202"), Binder(name="5F9")])
+        # When field name equals 'cars', return _fake_request(schema, cars=[Car(name='CD8a-BBz')]).
         if field_name == "cars":
             return _fake_request(schema, cars=[Car(name="CD8a-BBz")])
         return _fake_request(schema)
@@ -331,6 +365,7 @@ def test_extract_document_makes_one_call_per_request_and_hints_indices(tmp_path,
     monkeypatch.setattr(extraction.llm, "extract", fake_extract)
     extraction.extract_document(doc, out_dir=tmp_path / "out")
 
+    # Build mapped values from calls.
     assert [name for name, _ in calls] == ["binders", "cars", "manufacturings", "combinations"]
     combo_document = calls[-1][1]
     assert "binders: 0=ARB-202, 1=5F9" in combo_document
@@ -338,10 +373,12 @@ def test_extract_document_makes_one_call_per_request_and_hints_indices(tmp_path,
     assert "manufacturings: (none)" in combo_document
 
 
+# Verify that extract document writes readable utf8.
 def test_extract_document_writes_readable_utf8(tmp_path, monkeypatch):
     doc = tmp_path / "PMC1.xml"
     doc.write_text(JATS, encoding="utf-8")
     Binder = _entity("binder").model
+    # The callback returns _fake_request(schema, binders=[Binder(name='抗体')]).
     monkeypatch.setattr(
         extraction.llm, "extract",
         lambda *, schema, **kw: _fake_request(schema, binders=[Binder(name="抗体")]))
@@ -351,14 +388,17 @@ def test_extract_document_writes_readable_utf8(tmp_path, monkeypatch):
     assert "抗体" in raw
 
 
+# Verify that dry run estimates without calling extract.
 def test_dry_run_estimates_without_calling_extract(tmp_path, monkeypatch):
     doc = tmp_path / "PMC1.xml"
     doc.write_text(JATS, encoding="utf-8")
 
+    # Fail immediately if a dry-run unexpectedly reaches extraction.
     def boom(**kw):
         raise AssertionError("dry_run 不该真的调用模型")
 
     monkeypatch.setattr(extraction.llm, "extract", boom)
+    # The callback returns 42000.
     monkeypatch.setattr(extraction.llm, "count_tokens", lambda **kw: 42_000)
 
     rows = extraction.extract_document(doc, out_dir=tmp_path / "out", dry_run=True)
@@ -373,6 +413,7 @@ from pathlib import Path as _Path
 REPO = _Path(__file__).resolve().parents[1]
 
 
+# Verify that cli help runs.
 def test_cli_help_runs():
     result = subprocess.run(
         [sys.executable, str(REPO / "scripts" / "extract.py"), "--help"],
@@ -382,6 +423,7 @@ def test_cli_help_runs():
     assert "--dry-run" in result.stdout
 
 
+# Verify that cli main passes arguments.
 def test_cli_main_passes_arguments(tmp_path, monkeypatch):
     sys.path.insert(0, str(REPO / "scripts"))
     import extract as cli
@@ -390,6 +432,7 @@ def test_cli_main_passes_arguments(tmp_path, monkeypatch):
     doc.write_text(JATS, encoding="utf-8")
     seen = {}
 
+    # Replace an external dependency with a deterministic fixture implementation.
     def fake(path, *, out_dir=None, dry_run=False):
         seen.update(path=str(path), out_dir=str(out_dir), dry_run=dry_run)
         return []
@@ -400,6 +443,7 @@ def test_cli_main_passes_arguments(tmp_path, monkeypatch):
     assert seen["path"] == str(doc)
 
 
+# Verify that cli reports missing file.
 def test_cli_reports_missing_file(tmp_path, capsys):
     sys.path.insert(0, str(REPO / "scripts"))
     import extract as cli

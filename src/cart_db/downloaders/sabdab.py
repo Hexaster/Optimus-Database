@@ -36,33 +36,45 @@ NO_HITS_DETAIL = "No antibody instances matched"
 
 def _row_count(csv_bytes: bytes) -> int:
     """CSV 数据行数（扣掉表头）。空档或只有表头都算 0。"""
+    # Collect items from csv_bytes.decode('utf-8', 'replace').splitlines() only where ln.strip().
     lines = [ln for ln in csv_bytes.decode("utf-8", "replace").splitlines() if ln.strip()]
     return max(len(lines) - 1, 0)
 
 
 def _post_or_none(fetcher: Fetcher, url: str, body: dict) -> bytes | None:
     """POST 检索；零命中回 None。其余错误照常抛出，不吞。"""
+    # Attempt this operation while preserving the explicit recovery/cleanup paths below.
     try:
         return fetcher.post_bytes(url, json=body)
+    # Inspect HTTP failures to distinguish an explicit no-hits response from an actual request
+    # failure.
     except httpx.HTTPStatusError as exc:
         r = exc.response
+        # When r.status_code == 404 and NO_HITS_DETAIL in r.text, leave the result unresolved
+        # instead of inventing a value.
         if r.status_code == 404 and NO_HITS_DETAIL in r.text:
             return None
         raise
 
 
+# Download or reuse the source-wide antibody-instance summary.
 def _all_summary(reg: Registry, route: Route, snap: Snapshot, dry_run: bool) -> None:
     endpoint = route.require("endpoint")
+    # Use an empty mapping when route.get('output') is missing or empty.
     name = (route.get("output") or {}).get("summary", "all_summary.csv")
 
+    # Preview the planned operation and return before the subsequent execution stage.
     if dry_run:
         print(f"    [dry-run] GET {endpoint} → {name}")
         return
+    # Reuse a nonempty downloaded file and retain it in the new manifest instead of downloading
+    # again.
     if snap.done(name):
         snap.adopt(name, url=endpoint, note="已存在，跳过")
         print(f"    已存在，跳过  {name}")
         return
 
+    # Reuse one configured HTTP client for this route and close it even after failure.
     with Fetcher(reg.http) as fetcher:
         size = fetcher.stream_to(endpoint, snap.path(name))
     rows = _row_count(snap.path(name).read_bytes())
@@ -70,25 +82,32 @@ def _all_summary(reg: Registry, route: Route, snap: Snapshot, dry_run: bool) -> 
     print(f"    {size:>12,} bytes  {name}（{rows:,} 行）")
 
 
+# Query target-specific summaries and archives while retaining explicit zero-hit outcomes.
 def _target_structures(reg: Registry, route: Route, snap: Snapshot,
                        limit: int | None, dry_run: bool) -> None:
     summary_ep = route.require("search_summary_endpoint")
     structures_ep = route.require("search_structures_endpoint")
     queries = route.require("queries")
+    # Apply the requested item limit before processing the selected inputs.
     if limit:
         queries = queries[:limit]
 
+    # Preview the planned operation and return before the subsequent execution stage.
     if dry_run:
+        # Process each q from queries independently.
         for q in queries:
             print(f"    [dry-run] {q['label']:10s} POST {json.dumps(q['body'], ensure_ascii=False)}")
         return
 
     hit_labels = 0
+    # Reuse one configured HTTP client for this route and close it even after failure.
     with Fetcher(reg.http) as fetcher:
+        # Process each q from queries independently.
         for q in queries:
             label, body = q["label"], q["body"]
 
             csv_bytes = _post_or_none(fetcher, summary_ep, body)
+            # Use _row_count(csv_bytes) when csv bytes is truthy; otherwise use 0.
             rows = _row_count(csv_bytes) if csv_bytes else 0
 
             if rows == 0:
@@ -104,9 +123,13 @@ def _target_structures(reg: Registry, route: Route, snap: Snapshot,
             print(f"    {label:12s} summary  {rows:>4} 行")
 
             tgz_name = f"{label}_structures.tgz"
+            # Reuse a nonempty downloaded file and retain it in the new manifest instead of
+            # downloading again.
             if snap.done(tgz_name):
                 snap.adopt(tgz_name, url=structures_ep, note="已存在，跳过")
                 print(f"    {label:12s} 结构档已存在，跳过")
+            # Fetch the missing structure archive, recording an inconsistency if its summary had
+            # hits but no archive exists.
             else:
                 blob = _post_or_none(fetcher, structures_ep, body)
                 if blob is None:  # summary 有命中但结构档没有，属上游不一致，须留档
@@ -118,17 +141,23 @@ def _target_structures(reg: Registry, route: Route, snap: Snapshot,
                 print(f"    {label:12s} structures  {len(blob):,} bytes")
             hit_labels += 1
 
+    # When hit labels is empty or false, report this outcome to the command-line operator.
     if not hit_labels:
         print("  ⚠ 所有 query 均无命中 —— 若非预期，先核对 binds_to_antigen "
               "用的是抗原全名而不是基因符号")
 
 
+# Dispatch summary versus structure downloads from the route's declared configuration.
 def run(reg: Registry, route: Route, snap: Snapshot, *, limit: int | None = None,
         dry_run: bool = False) -> None:
+    # An endpoint-only route downloads the full summary.
     if route.get("endpoint"):
         _all_summary(reg, route, snap, dry_run)
+    # A query route downloads target-specific summaries and structures.
     elif route.get("queries"):
         _target_structures(reg, route, snap, limit, dry_run)
+    # Otherwise, stop with a diagnostic: route {route.route_id} 既没有 endpoint（全量 summary）也没有
+    # queries（按靶点检索），无法判断要做什么.
     else:
         raise DownloadError(
             f"route {route.route_id} 既没有 endpoint（全量 summary）"

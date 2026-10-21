@@ -19,15 +19,19 @@ from .db import connect
 
 def raw_dir(source: str, snapshot: str | None = None) -> Path:
     """返回（并创建）某数据源某快照的目录。"""
+    # Prefer snapshot; if empty or absent, fall back to date.today().strftime('%Y%m%d').
     snapshot = snapshot or date.today().strftime("%Y%m%d")
     path = settings.data_root / "raw" / source / snapshot
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
+# Hash file contents incrementally so large downloads do not need to fit in memory.
 def sha256(path: Path, chunk: int = 1 << 20) -> str:
     h = hashlib.sha256()
+    # Close the file reliably, including when reading or writing raises an error.
     with path.open("rb") as fh:
+        # Read bounded chunks until EOF to avoid loading the whole file into memory.
         while block := fh.read(chunk):
             h.update(block)
     return h.hexdigest()
@@ -47,9 +51,12 @@ def register(
 ) -> int:
     """登记一个已下载的原始文件，返回 registry_id。"""
     local_path = Path(local_path)
+    # Stop rather than continue with invalid or incomplete input.
     if not local_path.exists():
         raise FileNotFoundError(local_path)
+    # Prefer snapshot_version; if empty or absent, fall back to date.today().strftime('%Y%m%d').
     snapshot_version = snapshot_version or date.today().strftime("%Y%m%d")
+    # Close the database connection when this operation finishes or raises.
     with connect() as conn:
         cur = conn.execute(
             """

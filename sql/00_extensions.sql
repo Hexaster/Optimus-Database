@@ -2,8 +2,10 @@
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";      -- gen_random_uuid()
 CREATE EXTENSION IF NOT EXISTS "pg_trgm";       -- 名称模糊匹配，用于实体归并
 -- pgvector 为阶段1.2 的智能体检索预留；本地若未装 pgvector，跳过而不中断建库
+-- Attempt the optional vector extension without making it a prerequisite for legacy setup.
 DO $$ BEGIN
   CREATE EXTENSION IF NOT EXISTS "vector";
+-- This catches all ordinary SQL errors, including permission failures, not just a missing extension.
 EXCEPTION WHEN OTHERS THEN
   RAISE NOTICE 'pgvector 未安装，已跳过（阶段1.1 用不到，阶段1.2 前补上即可）';
 END $$;

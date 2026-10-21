@@ -18,8 +18,11 @@ from cart_db.console import count_text
 from cart_db.ingest_schema import migrate
 
 
+# Create an isolated database and demonstrate repeat imports, separate evidence, and ambiguous
+# identity.
 def main():
     name = "cart_import_demo_" + uuid4().hex[:12]
+    # Close the database connection when this operation finishes or raises.
     with ingest.connect() as admin:
         params = admin.info.get_parameters()
         admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
@@ -28,26 +31,35 @@ def main():
     params["dbname"] = name
     examples = Path(__file__).resolve().parents[1] / "examples" / "database_import"
     print(f"合成数据演示数据库： {name}")
+    # Close the database connection when this operation finishes or raises.
     with psycopg.connect(**params, autocommit=True) as conn:
         migrate(conn)
+        # Process each filename from ('01_existing.jsonl', '02_new_paper.jsonl',
+        # '03_incomplete.jsonl') independently.
         for filename in ("01_existing.jsonl", "02_new_paper.jsonl", "03_incomplete.jsonl"):
             batch = ingest.stage_file(conn, examples / filename)
             report = ingest.publish(conn, batch)
             binders = conn.execute("SELECT count(*) FROM cart.binder").fetchone()[0]
             evidence = conn.execute("SELECT count(*) FROM cart.evidence").fetchone()[0]
             print(f"{filename}: {count_text(report['counts'])}；库中结合域 {binders} 条，证据 {evidence} 条")
+            # The initial fixture must create two binders and one evidence record.
             if filename == "01_existing.jsonl":
                 assert (binders, evidence) == (2, 1)
+            # The second source should reuse an exact binder while adding evidence; replay must
+            # remain idempotent.
             elif filename == "02_new_paper.jsonl":
                 assert (binders, evidence) == (2, 2)
                 # Reimporting the identical file cannot add another observation.
                 assert ingest.stage_file(conn, examples / filename) == batch
                 ingest.publish(conn, batch)
                 assert conn.execute("SELECT count(*) FROM cart.evidence").fetchone()[0] == 2
+            # The ambiguous source should publish separately while retaining one unresolved identity
+            # review.
             else:
                 assert report["counts"]["published"] == 2
                 assert report["identity_counts"]["unresolved"] == 1
                 assert (binders, evidence) == (3, 3)
+                # Collect items from report['records'] only where r['table_name'] == 'binder'.
                 incoming = next(r for r in report["records"] if r["table_name"] == "binder")
                 matches = ingest.candidates(conn, incoming["stage_id"])
                 assert len(matches) == 2
@@ -55,6 +67,8 @@ def main():
                 print(f"  匹配结果待确认批次： {batch}")
                 print(f"  匹配结果待确认来源记录： {incoming['stage_id']}")
         print("收集到的名称：")
+        # Process each declared item independently, preserving the order established by this
+        # collection.
         for (names,) in conn.execute("SELECT array_agg(DISTINCT name ORDER BY name) FROM cart.entity_name GROUP BY entity_id ORDER BY min(name)"):
             print("  " + ", ".join(names))
         print("两篇文献的观测值分别保留：2 nM 和 3 nM。")
@@ -63,5 +77,6 @@ def main():
     return 0
 
 
+# Run the command only when invoked as a script, not when imported by tests or other modules.
 if __name__ == "__main__":
     raise SystemExit(main())

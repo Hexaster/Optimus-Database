@@ -5,6 +5,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+# Attempt this operation while preserving the explicit recovery/cleanup paths below.
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -34,7 +35,9 @@ class Settings:
 
     # LLM —— API key 现在可以留空，本地建库不需要它
     anthropic_api_key: str | None = os.getenv("ANTHROPIC_API_KEY") or None
+    # Treat a missing or empty API key as unconfigured.
     openai_api_key: str | None = os.getenv("OPENAI_API_KEY") or None
+    # Treat a missing or empty provider URL as unconfigured.
     openai_base_url: str | None = os.getenv("OPENAI_BASE_URL") or None
     llm_model: str = os.getenv("CART_LLM_MODEL", "claude-sonnet-5")
     llm_effort: str = os.getenv("CART_LLM_EFFORT", "high")
@@ -43,6 +46,7 @@ class Settings:
     # 存储
     data_root: Path = Path(os.getenv("CART_DATA_ROOT", str(ROOT / "data")))
 
+    # Build the legacy libpq connection string from local PG settings; do not log this value.
     @property
     def dsn(self) -> str:
         return (

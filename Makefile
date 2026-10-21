@@ -1,3 +1,5 @@
+# Legacy targets: current setup/import instructions are in README.md.
+# Override PY for your interpreter; the extract target references a retired script.
 .PHONY: setup db-up db-down init reset smoke kpi extract \
         download-epar download-sbra download-litc download-patents \
         download-therasabdab download-sabdab download-dotad download-binder

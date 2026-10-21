@@ -86,6 +86,7 @@ def derive_binder_format(raw_format: str | None) -> str | None:
     实测双特异那 157 行的 Format 全部不在 value_map 里（Bispecific mAb 50、
     Bispecific Mixed mAb and scFv 21 …），所以两个 arm 都会得到「其他」。
     """
+    # An absent format remains unknown, not Other.
     if raw_format is None:
         return None
     return FORMAT_VALUE_MAP.get(raw_format, FORMAT_FALLBACK)
@@ -100,8 +101,10 @@ def normalize_antigen_name(raw_target: str | None) -> list[str]:
     别名段整串保留而不挑一个规范名：mapping 没给别名优选表，
     挑哪个当规范名是未定的，硬挑一个就是编造。归一化到单一名称留给实体归并阶段。
     """
+    # An absent target yields no antigen segments.
     if raw_target is None:
         return []
+    # Collect items from raw_target.split(';') only where seg.strip().
     return [seg.strip() for seg in raw_target.split(";") if seg.strip()]
 
 
@@ -116,9 +119,13 @@ def pick_best_structure(row: dict) -> tuple[str | None, str | None, str]:
     去掉哨兵后的真实填充率是 21.7% / 8.1% / 8.4%。见 mapping R4。
     """
     saw_sentinel = False
+    # Try structure columns in descending identity tier, stopping at the first usable value.
     for col in STRUCTURE_COLUMNS:
         value, reason = _read(row, col)
+        # Track whether absence came from a sentinel before trying the next tier.
         if value is None:
+            # Remember whether any missing segment used the source sentinel so its null reason is
+            # preserved.
             saw_sentinel = saw_sentinel or reason == NullReason.SENTINEL_EMPTY
             continue
         # "None;None" 是双特异行两个 arm 都没结构；"None;6bi0:HL" 是只有第二个 arm 有。
@@ -127,6 +134,8 @@ def pick_best_structure(row: dict) -> tuple[str | None, str | None, str]:
             saw_sentinel = True
             continue
         return value, STRUCTURE_TIERS[col], ""
+    # Use NullReason.SENTINEL_EMPTY when saw sentinel is truthy; otherwise use
+    # NullReason.SOURCE_EMPTY.
     return None, None, NullReason.SENTINEL_EMPTY if saw_sentinel else NullReason.SOURCE_EMPTY
 
 
@@ -140,11 +149,14 @@ def _read(row: dict, col: str) -> tuple[str | None, str]:
     而 base 把 "na" 这类占位字串归到 SENTINEL_EMPTY。
     """
     raw = row.get(col)
+    # Stop with a diagnostic: 源档缺少栏位 `{col}` —— 档头与 mapping Part 1 的 24 栏清单不一致.
     if raw is None:
         raise ParseError(f"源档缺少栏位 `{col}` —— 档头与 mapping Part 1 的 24 栏清单不一致")
     value = raw.strip()
+    # A genuinely empty cell receives SOURCE_EMPTY.
     if not value:
         return None, NullReason.SOURCE_EMPTY
+    # The source's na marker receives SENTINEL_EMPTY.
     if value.lower() == NA_TOKEN:
         return None, NullReason.SENTINEL_EMPTY
     return value, ""
@@ -152,8 +164,10 @@ def _read(row: dict, col: str) -> tuple[str | None, str]:
 
 def _put(rec: Record, column: str, value: str | None, reason: str, **prov) -> None:
     """有值就 set，没值就 absent + 原因。两条路都带上 provenance。"""
+    # Keep a missing-value reason alongside null instead of storing an empty string.
     if value is None:
         rec.absent(column, reason, **prov)
+    # Otherwise, store the mapped value with its provenance.
     else:
         rec.set(column, value, **prov)
 
@@ -168,6 +182,7 @@ class TheraSabDabParser(SourceParser):
     source_dir = "therasabdab"
 
     # --- 读源 ---
+    # Resolve the CSV path explicitly declared by the mapping.
     @property
     def source_path(self):
         return ROOT / self.mapping.source_dataset["file"]
@@ -180,12 +195,16 @@ class TheraSabDabParser(SourceParser):
         """
         ds = self.mapping.source_dataset
         path = self.source_path
+        # Stop with a clear missing-input diagnostic before reading source data.
         if not path.is_file():
             raise ParseError(f"raw 档不存在：{path}（先跑 downloader）")
+        # Close the file reliably, including when reading or writing raises an error.
         with path.open(encoding=ds.get("encoding", "utf-8"), newline="") as fh:
             yield from csv.DictReader(fh)
 
     # --- 建记录 ---
+    # Require a therapeutic identifier and choose one or two binder arms from the second heavy
+    # chain.
     def build_records(self, row: dict, out: Interim) -> Iterator[Record]:
         name, name_reason = _read(row, COL_NAME)
         if name is None:
@@ -196,12 +215,15 @@ class TheraSabDabParser(SourceParser):
 
         # Part 3 两块的分流条件就是这一栏空不空。
         vh2, _ = _read(row, COL_VH2)
+        # Without a second heavy chain, treat the source row as a single binder arm.
         if vh2 is None:
             yield from self._build_monospecific(row, name)
+        # A reported second heavy chain selects the bispecific mapping path.
         else:
             yield from self._build_bispecific(row, name, out)
 
     # ---------- (1) 单特异：一行 = 一个 binder ----------
+    # Build one binder while refusing to guess among multiple target segments.
     def _build_monospecific(self, row: dict, name: str) -> Iterator[Record]:
         rec = Record(table="binder.binder", entity_key={COL_NAME: name})
         self._fill_shared(rec, row, name)
@@ -220,6 +242,7 @@ class TheraSabDabParser(SourceParser):
         target, target_reason = _read(row, COL_TARGET)
         antigens = normalize_antigen_name(target)
         prov = dict(source=[COL_TARGET], method="derived", rule_ref="normalize_antigen_name")
+        # A monospecific arm is assigned a target only when exactly one segment is present.
         if len(antigens) == 1:
             rec.set("target_antigen", antigens[0], **prov)
         else:
@@ -232,6 +255,7 @@ class TheraSabDabParser(SourceParser):
         yield rec
 
     # ---------- (2) 双特异：一行 = 两个 binder ----------
+    # Build two arms only when target counts agree, keeping incomplete chain/germline data explicit.
     def _build_bispecific(self, row: dict, name: str, out: Interim) -> Iterator[Record]:
         # 序列组数固定按重链算：实测 HeavySequence(ifbispec) 13.9% 非空、
         # LightSequence(ifbispec) 12.3% 非空，18 行是「有重链无轻链」的第二臂
@@ -250,8 +274,10 @@ class TheraSabDabParser(SourceParser):
             return
 
         germline, germline_reason = _read(row, COL_GENETICS)
+        # Use [s.strip() for s in germline.split(';')] when germline is truthy; otherwise use [].
         germline_segs = [s.strip() for s in germline.split(";")] if germline else []
 
+        # Construct each arm separately so its chains, target, and source ID stay aligned.
         for index, (vh_col, vl_col) in enumerate(arms):
             arm_no = index + 1
             rec = Record(table="binder.binder",
@@ -275,13 +301,19 @@ class TheraSabDabParser(SourceParser):
             # （实测 8 行：6 行只有一段、2 行是 "na"）——
             # mapping 只把「整行判失败」绑在 Target 上，没绑在 Genetics 上，不越权扩大。
             gprov = dict(source=[COL_GENETICS], method="derived", arm=arm_no)
+            # Align germline segments by arm only when the segment counts match.
             if len(germline_segs) == len(arms):
                 seg = germline_segs[index]
+                # A blank or sentinel target segment remains missing rather than becoming a guessed
+                # antigen.
                 is_na = not seg or seg.lower() == NA_TOKEN
+                # Use None when is na is truthy; otherwise use seg.
                 _put(rec, "germline", None if is_na else seg,
                      NullReason.SENTINEL_EMPTY if seg else NullReason.SOURCE_EMPTY, **gprov)
+            # Preserve a genuinely absent germline separately from an inconsistent segmentation.
             elif germline is None:
                 rec.absent("germline", germline_reason, **gprov)
+            # Otherwise, record null together with its source/derivation reason.
             else:
                 rec.absent("germline", NullReason.DERIVATION_FAILED,
                            detail=f"Genetics 拆出 {len(germline_segs)} 段，与 {len(arms)} 个 arm 不符",
@@ -312,12 +344,15 @@ class TheraSabDabParser(SourceParser):
         self._fill_citation(rec, row, name)
         self._fill_experiment_conditions(rec, row, tier)
 
+    # Combine source trial/status fields with their historical snapshot date.
     def _fill_development_stage(self, rec: Record, row: dict) -> None:
         trial, trial_reason = _read(row, COL_CLIN_TRIAL)
         status, status_reason = _read(row, COL_EST_STATUS)
         prov = dict(source=[COL_CLIN_TRIAL, COL_EST_STATUS], method="derived",
                     rule='"{Highest_Clin_Trial} / {Est. Status} (as of 2025-02)"')
+        # Do not synthesize a complete development-stage string from missing trial/status data.
         if trial is None or status is None:
+            # Preserve the first reported null reason from the two source status columns.
             rec.absent("development_stage", trial_reason or status_reason, **prov)
             return
         # "(as of 2025-02)" 是模板的一部分，不是修饰：本源已停更，栏名自带截止日
@@ -332,17 +367,23 @@ class TheraSabDabParser(SourceParser):
         一栏一前缀的写法在栏内含多个适应症时会把状态归属弄丢。
         """
         items, reasons = [], []
+        # Preserve each condition's approval/activity status when combining source columns.
         for col, label in CONDITION_COLUMNS:
             value, reason = _read(row, col)
+            # Retain absence reasons while skipping empty condition columns.
             if value is None:
                 reasons.append(reason)
                 continue
+            # Collect items from value.split(';') only where s.strip().
             items += [f"{label}: {s.strip()}" for s in value.split(";") if s.strip()]
+        # Build mapped values from CONDITION_COLUMNS.
         prov = dict(source=[c for c, _ in CONDITION_COLUMNS], method="derived",
                     rule='各栏以 ";" 拆分后加状态前缀合并')
+        # Use reasons[0] when reasons is truthy; otherwise use NullReason.SOURCE_EMPTY.
         _put(rec, "applicable_scenario", "; ".join(items) or None,
              reasons[0] if reasons else NullReason.SOURCE_EMPTY, **prov)
 
+    # Construct a source citation from reported INN dates, omitting an absent recommendation year.
     def _fill_citation(self, rec: Record, row: dict, name: str) -> None:
         proposed, proposed_reason = _read(row, COL_YEAR_PROPOSED)
         recommended, _ = _read(row, COL_YEAR_RECOMMENDED)
@@ -350,6 +391,7 @@ class TheraSabDabParser(SourceParser):
                     method="derived",
                     rule='"Thera-SAbDab: {Therapeutic}, INN proposed {Year Proposed}, '
                          'recommended {Year Recommended}."')
+        # A missing proposal year leaves this citation unavailable under the mapping rule.
         if proposed is None:
             rec.absent("citation", proposed_reason, **prov)
             return
@@ -369,9 +411,12 @@ class TheraSabDabParser(SourceParser):
         """
         notes, notes_reason = _read(row, COL_NOTES)
         bits = []
+        # Record the similarity tier used so approximate structures are not mistaken for exact ones.
         if tier:
             bits.append(f"structure_template SI: {tier}")
+        # Retain source notes verbatim as part of experimental/source context.
         if notes:
             bits.append(f"Notes: {notes}")
         prov = dict(source=[COL_NOTES, "实际采用的 SI 档位"], method="derived", si_tier=tier)
+        # Represent an empty '; '.join(bits) as None instead of a reported value.
         _put(rec, "experiment_conditions", "; ".join(bits) or None, notes_reason, **prov)

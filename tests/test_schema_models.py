@@ -12,25 +12,33 @@ from cart_db.schema_models import load_schema
 SCHEMA_DIR = Path(__file__).resolve().parents[1] / "docs" / "Schema"
 
 
+# Read YAML fields directly so the test compares generated models with the contract.
 def _yaml_fields(filename: str, table_key: str) -> dict:
     doc = yaml.safe_load((SCHEMA_DIR / filename).read_text(encoding="utf-8"))
     return doc[table_key]["fields"]
 
 
+# Select the generated entity model used by this test.
 def _entity(schema, kind):
+    # Collect items from schema.entities only where e.kind == kind.
     return next(e for e in schema.entities if e.kind == kind)
 
 
+# Verify that shared evidence fields come from yaml.
 def test_shared_evidence_fields_come_from_yaml():
     fields = _yaml_fields("Evidence.yaml", "evidence")
+    # Collect items from fields only where '.' not in name.
     expected = {name for name in fields if "." not in name} - {"record_id"}
     assert set(load_schema().shared_evidence_fields) == expected
 
 
+# Verify that each prefix becomes its own evidence model.
 def test_each_prefix_becomes_its_own_evidence_model():
     schema = load_schema()
     fields = _yaml_fields("Evidence.yaml", "evidence")
+    # Process each kind from ('binder', 'car', 'manufacturing') independently.
     for kind in ("binder", "car", "manufacturing"):
+        # Collect items from fields only where name.startswith(f'{kind}.').
         expected = {
             name.split(".", 1)[1] for name in fields if name.startswith(f"{kind}.")
         } - {f"{kind}_id"}
@@ -58,11 +66,13 @@ def test_same_field_name_under_two_prefixes_does_not_collide():
     assert "persistence" not in manufacturing.model_fields
 
 
+# Verify that entity models match yaml.
 def test_entity_models_match_yaml():
     schema = load_schema()
     cases = [("binder", "Schema_A.yaml", "binder", "binder_id"),
              ("car", "Schema_B.yaml", "car", "car_id"),
              ("manufacturing", "Schema_C.yaml", "manufacturing", "manufacturing_id")]
+    # Process each (kind, filename, table key, pk) from cases independently.
     for kind, filename, table_key, pk in cases:
         expected = set(_yaml_fields(filename, table_key)) - {pk}
         model = _entity(schema, kind).model
@@ -77,9 +87,11 @@ def test_primary_and_foreign_keys_are_never_asked_of_the_model():
     assert "record_id" not in _entity(schema, "binder").evidence_model.model_fields
 
 
+# Verify that allowed values become a closed choice.
 def test_allowed_values_become_a_closed_choice():
     model = _entity(load_schema(), "manufacturing").model
     assert model(t_cell_source="自体").t_cell_source == "自体"
+    # Require the operation to raise the expected error instead of accepting invalid input.
     with pytest.raises(ValidationError):
         model(t_cell_source="autologous")
 
@@ -106,10 +118,12 @@ def test_item_schema_becomes_a_nested_model():
     model = _entity(load_schema(), "car").model
     built = model(modules=[{"module_type": "hinge", "source_molecule": "CD8a", "length": 45}])
     assert built.modules[0].module_type == "hinge"
+    # Require the operation to raise the expected error instead of accepting invalid input.
     with pytest.raises(ValidationError):
         model(modules=[{"module_type": "不存在的模块类型"}])
 
 
+# Verify that combination foreign keys become indices.
 def test_combination_foreign_keys_become_indices():
     combination = load_schema().extraction.model_fields["combinations"].annotation
     fields = combination.__args__[0].model_fields
@@ -119,6 +133,7 @@ def test_combination_foreign_keys_become_indices():
     assert "experiments" in fields
 
 
+# Verify that root model has four lists.
 def test_root_model_has_four_lists():
     assert set(load_schema().extraction.model_fields) == {
         "binders", "cars", "manufacturings", "combinations"}
@@ -127,10 +142,12 @@ def test_root_model_has_four_lists():
 def test_requests_have_one_field_each_in_call_order():
     """每次 LLM 调用只问一张表，顺序固定：combinations 要靠前三次的结果填索引。"""
     schema = load_schema()
+    # Build mapped values from schema.requests.
     names = [name for name, _ in schema.requests]
     assert names == ["binders", "cars", "manufacturings", "combinations"]
 
     extraction_fields = schema.extraction.model_fields
+    # Process each (name, model) from schema.requests independently.
     for name, model in schema.requests:
         assert set(model.model_fields) == {name}
         assert model.model_fields[name].annotation == extraction_fields[name].annotation
@@ -139,6 +156,7 @@ def test_requests_have_one_field_each_in_call_order():
 def test_strict_schema_is_not_empty():
     """回归测试：旧版 data: dict[str, Any] 会被 _strict 变成「一个字段都不准填」。"""
     schema = llm._strict(load_schema().extraction.model_json_schema())
+    # Collect items from schema['$defs'].items() only where k == 'Binder'.
     binder = next(v for k, v in schema["$defs"].items() if k == "Binder")
     assert binder["additionalProperties"] is False
     assert "vh_sequence" in binder["properties"]
@@ -160,6 +178,7 @@ def test_new_yaml_field_appears_without_touching_python(tmp_path):
     assert "isotype" in model.model_fields
 
 
+# Verify that prefix group overlapping a shared field is rejected.
 def test_prefix_group_overlapping_a_shared_field_is_rejected(tmp_path):
     schema_dir = tmp_path / "Schema"
     shutil.copytree(SCHEMA_DIR, schema_dir)
@@ -169,10 +188,12 @@ def test_prefix_group_overlapping_a_shared_field_is_rejected(tmp_path):
         + "\n    binder.citation:\n      type: string\n      nullable: true\n",
         encoding="utf-8",
     )
+    # Require the operation to raise the expected error instead of accepting invalid input.
     with pytest.raises(ValueError, match="与共享字段重名"):
         load_schema(schema_dir)
 
 
+# Verify that load schema default and explicit none are the same object.
 def test_load_schema_default_and_explicit_none_are_the_same_object():
     from cart_db.schema_models import SCHEMA_DIR, load_schema
     assert load_schema() is load_schema(None)

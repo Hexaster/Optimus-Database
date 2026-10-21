@@ -49,10 +49,13 @@ class Route:
     route_id: str
     spec: dict
 
+    # Read an optional route setting, returning the caller's default when absent.
     def get(self, key, default=None):
         return self.spec.get(key, default)
 
+    # Read a mandatory route setting or explain which registry entry is missing.
     def require(self, key):
+        # Stop with a diagnostic: route {self.route_id} 缺少必填项 `{key}`.
         if key not in self.spec:
             raise DownloadError(f"route {self.route_id} 缺少必填项 `{key}`")
         return self.spec[key]
@@ -63,13 +66,18 @@ class Registry:
     path: Path
     raw: dict
 
+    # Use the declared source name, falling back to the registry filename.
     @property
     def source_name(self) -> str:
+        # Prefer self.raw.get('source_name'); if empty or absent, fall back to self.path.stem.
         return self.raw.get("source_name") or self.path.stem
 
+    # Read the executable download block; prose-only source descriptions cannot drive downloads.
     @property
     def download_config(self) -> dict:
         cfg = self.raw.get("下载配置")
+        # Stop with a diagnostic: {self.path.name} 没有「下载配置」块 —— 该源尚未做成可执行的。 registry
+        # 的散文说明不足以驱动下载：查询串、筛选条件、翻页方式、 落盘文件名都必须显式写进「下载配置」。.
         if not cfg:
             raise DownloadError(
                 f"{self.path.name} 没有「下载配置」块 —— 该源尚未做成可执行的。\n"
@@ -78,34 +86,48 @@ class Registry:
             )
         return cfg
 
+    # Return the source module selected by the registry configuration.
     @property
     def downloader(self) -> str:
         return self.download_config["downloader"]
 
+    # Choose the raw snapshot directory name from the registry.
     @property
     def source_dir(self) -> str:
         return self.download_config.get("source_dir", self.path.stem)
 
+    # Return per-source HTTP settings, or defaults when none are declared.
     @property
     def http(self) -> dict:
+        # Use an empty mapping when self.download_config.get('http') is missing or empty.
         return self.download_config.get("http") or {}
 
+    # List configured route identifiers for command-line discovery.
     def route_ids(self) -> list[str]:
+        # Build mapped values from self.download_config.get('routes', []).
         return [r["route_id"] for r in self.download_config.get("routes", [])]
 
+    # Resolve an explicit route, accepting an omitted ID only when the choice is unambiguous.
     def route(self, route_id: str | None = None) -> Route:
+        # Use an empty list when self.download_config.get('routes') is missing or empty.
         routes = self.download_config.get("routes") or []
+        # Stop with a diagnostic: {self.path.name} 的「下载配置」里没有 routes.
         if not routes:
             raise DownloadError(f"{self.path.name} 的「下载配置」里没有 routes")
+        # Without an explicit route, allow only a registry with exactly one choice.
         if route_id is None:
+            # Stop rather than continue with invalid or incomplete input.
             if len(routes) > 1:
                 raise DownloadError(
                     f"{self.path.name} 有多条 route，必须用 --route 指定其一："
                     + ", ".join(self.route_ids())
                 )
             spec = routes[0]
+        # Find the requested route by ID and fail clearly if the registry does not define it.
         else:
+            # Collect items from routes only where r['route_id'] == route_id.
             matched = [r for r in routes if r["route_id"] == route_id]
+            # Stop rather than continue with invalid or incomplete input.
             if not matched:
                 raise DownloadError(
                     f"{self.path.name} 没有 route `{route_id}`；可选："
@@ -118,11 +140,15 @@ class Registry:
 def load_registry(name_or_path: str) -> Registry:
     """接受 `europe_pmc`、`europe_pmc.yaml` 或完整路径。"""
     candidate = Path(name_or_path)
+    # Treat a non-file argument as a registry name and look under the registry directory.
     if not candidate.is_file():
+        # Prefer candidate.stem; if empty or absent, fall back to name_or_path.
         stem = candidate.stem or name_or_path
         candidate = REGISTRY_DIR / f"{stem}.yaml"
+    # Stop with a diagnostic: 找不到 registry：{name_or_path}（查过 {candidate}）.
     if not candidate.is_file():
         raise DownloadError(f"找不到 registry：{name_or_path}（查过 {candidate}）")
+    # Close the file reliably, including when reading or writing raises an error.
     with candidate.open(encoding="utf-8") as fh:
         return Registry(path=candidate, raw=yaml.safe_load(fh))
 
@@ -140,9 +166,12 @@ class Downloaded:
     note: str | None = None
 
 
+# Hash downloaded content in bounded chunks for the snapshot manifest.
 def _sha256(path: Path, chunk: int = 1 << 20) -> str:
     h = hashlib.sha256()
+    # Close the file reliably, including when reading or writing raises an error.
     with path.open("rb") as fh:
+        # Read bounded chunks until EOF to avoid loading the whole file into memory.
         while block := fh.read(chunk):
             h.update(block)
     return h.hexdigest()
@@ -157,14 +186,17 @@ class Snapshot:
 
     MANIFEST = "_manifest.json"
 
+    # Initialize snapshot paths and the file/skip manifest for one source run.
     def __init__(self, source_dir: str, snapshot: str | None = None):
         self.source_dir = source_dir
+        # Prefer snapshot; if empty or absent, fall back to date.today().strftime('%Y%m%d').
         self.snapshot = snapshot or date.today().strftime("%Y%m%d")
         self.dir = SETTINGS.data_root / "raw" / source_dir / self.snapshot
         self.dir.mkdir(parents=True, exist_ok=True)
         self.items: list[Downloaded] = []
         self.skipped: list[dict] = []
 
+    # Create parent directories for a file inside the source snapshot.
     def path(self, name: str) -> Path:
         p = self.dir / name
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -173,16 +205,20 @@ class Snapshot:
     def done(self, name: str) -> bool:
         """已下过且非空 —— 用于断点续传，重跑不会重下几千篇全文。"""
         p = self.dir / name
+        # A resumable download must be an actual file with nonzero size.
         return p.is_file() and p.stat().st_size > 0
 
+    # Save bytes and immediately record the file's checksum and provenance.
     def write_bytes(self, name: str, data: bytes, *, url=None, note=None) -> Path:
         p = self.path(name)
         p.write_bytes(data)
         self._record(p, url, note)
         return p
 
+    # Save readable Unicode JSON and record its checksum and provenance.
     def write_json(self, name: str, obj, *, url=None, note=None) -> Path:
         p = self.path(name)
+        # Close the file reliably, including when reading or writing raises an error.
         with p.open("w", encoding="utf-8") as fh:
             json.dump(obj, fh, ensure_ascii=False, indent=2)
         self._record(p, url, note)
@@ -192,6 +228,7 @@ class Snapshot:
         """把一个已经在磁盘上的文件计入清单（断点续传时用）。"""
         self._record(self.dir / name, url, note)
 
+    # Append file size, checksum, source URL, and observation time to the snapshot inventory.
     def _record(self, p: Path, url, note) -> None:
         self.items.append(
             Downloaded(
@@ -204,10 +241,13 @@ class Snapshot:
             )
         )
 
+    # Retain the reason and identifiers for a file that was not downloaded.
     def skip(self, reason: str, **info) -> None:
         self.skipped.append({"reason": reason, **info})
 
+    # Write a complete manifest describing downloaded files, skipped items, and run metadata.
     def finish(self, *, source_name: str, route_id: str, extra: dict | None = None) -> Path:
+        # Build mapped values from self.items.
         manifest = {
             "source_name": source_name,
             "route_id": route_id,
@@ -221,6 +261,7 @@ class Snapshot:
             **(extra or {}),
         }
         p = self.dir / self.MANIFEST
+        # Close the file reliably, including when reading or writing raises an error.
         with p.open("w", encoding="utf-8") as fh:
             json.dump(manifest, fh, ensure_ascii=False, indent=2)
         return p
@@ -235,8 +276,11 @@ _RETRYABLE = (httpx.TransportError, httpx.HTTPStatusError)
 class Fetcher:
     """带 UA、限速、重试的 HTTP 客户端。参数全部来自 registry 的 http 块。"""
 
+    # Configure HTTP identity, timeout, and request rate for this source.
     def __init__(self, http_cfg: dict | None = None):
+        # Use an empty mapping when http_cfg is missing or empty.
         cfg = http_cfg or {}
+        # Default an absent/empty cfg.get('rate_limit_rps') to zero for this counter or estimate.
         self.rps = float(cfg.get("rate_limit_rps") or 0)
         self._last = 0.0
         # httpx 默认走 HTTP/1.1（未装 h2 时不会协商 http2）。
@@ -251,15 +295,20 @@ class Fetcher:
             http2=False,
         )
 
+    # Enforce the configured minimum interval between HTTP requests.
     def _throttle(self) -> None:
+        # When self.rps is at most 0, finish without producing another result.
         if self.rps <= 0:
             return
         gap = 1.0 / self.rps
         wait = gap - (time.monotonic() - self._last)
+        # Sleep only for the remaining rate-limit interval; already elapsed time needs no extra
+        # delay.
         if wait > 0:
             time.sleep(wait)
         self._last = time.monotonic()
 
+    # Issue a rate-limited GET, raising transient server/throttle errors for the retry decorator.
     @retry(
         retry=retry_if_exception_type(_RETRYABLE),
         stop=stop_after_attempt(6),
@@ -269,23 +318,28 @@ class Fetcher:
     def _get(self, url: str, **kw) -> httpx.Response:
         self._throttle()
         r = self.client.get(url, **kw)
+        # Raise transient server/throttling failures so the retry policy can retry the request.
         if r.status_code >= 500 or r.status_code == 429:
             r.raise_for_status()  # 交给 tenacity 重试
         return r
 
+    # Issue a GET through the rate-limited retry wrapper; callers choose how to handle its status.
     def get(self, url: str, **kw) -> httpx.Response:
         return self._get(url, **kw)
 
+    # Fetch and status-check a response before decoding its JSON.
     def get_json(self, url: str, **kw):
         r = self._get(url, **kw)
         r.raise_for_status()
         return r.json()
 
+    # Fetch and status-check a response before returning its raw bytes.
     def get_bytes(self, url: str, **kw) -> bytes:
         r = self._get(url, **kw)
         r.raise_for_status()
         return r.content
 
+    # Issue a rate-limited POST with the same transient-error retry policy as GET.
     @retry(
         retry=retry_if_exception_type(_RETRYABLE),
         stop=stop_after_attempt(6),
@@ -295,6 +349,7 @@ class Fetcher:
     def _post(self, url: str, **kw) -> httpx.Response:
         self._throttle()
         r = self.client.post(url, **kw)
+        # Raise transient server/throttling failures so the retry policy can retry the request.
         if r.status_code >= 500 or r.status_code == 429:
             r.raise_for_status()  # 交给 tenacity 重试
         return r
@@ -326,6 +381,7 @@ class Fetcher:
         self._throttle()
         dest.parent.mkdir(parents=True, exist_ok=True)
         total = 0
+        # Release this managed resource when the enclosed operation completes or fails.
         with self.client.stream("GET", url, **kw) as r:
             r.raise_for_status()
             # 有 content-encoding 时 httpx 交出的是解压后的字节，
@@ -334,10 +390,14 @@ class Fetcher:
                 None if r.headers.get("content-encoding")
                 else r.headers.get("content-length")
             )
+            # Close the file reliably, including when reading or writing raises an error.
             with dest.open("wb") as fh:
+                # Write response chunks incrementally and count bytes for completeness checks.
                 for chunk in r.iter_bytes(1 << 20):
                     fh.write(chunk)
                     total += len(chunk)
+        # When declared is not None and total != int(declared), remove the obsolete or incomplete
+        # file.
         if declared is not None and total != int(declared):
             dest.unlink(missing_ok=True)  # 不留半个档在磁盘上冒充成功
             raise httpx.TransportError(
@@ -345,12 +405,15 @@ class Fetcher:
             )
         return total
 
+    # Release the HTTP connection pool.
     def close(self) -> None:
         self.client.close()
 
+    # Expose the fetcher inside a with block.
     def __enter__(self):
         return self
 
+    # Close the HTTP client even when a download raises an exception.
     def __exit__(self, *exc):
         self.close()
 
@@ -365,13 +428,16 @@ def register_snapshot(reg: Registry, snap: Snapshot, route: Route) -> int:
     """
     from ..storage import register  # noqa: PLC0415 —— 见 docstring
 
+    # Choose the first configured source endpoint for registration; per-file URLs can override it.
     endpoint = (
         route.get("endpoint")
         or route.get("search_endpoint")
         or route.get("manifest_endpoint")
         or route.get("index_url")
     )
+    # Process each item from snap.items independently.
     for item in snap.items:
+        # Prefer item.url; if empty or absent, fall back to endpoint.
         register(
             source_name=reg.source_name,
             local_path=snap.dir / item.file,

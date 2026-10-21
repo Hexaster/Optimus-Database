@@ -28,6 +28,7 @@ from cart_db.downloaders.base import (  # noqa: E402
 )
 
 
+# Load a declared download route, run it, and preserve a manifest even for partial failures.
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -42,24 +43,31 @@ def main() -> int:
     ap.add_argument("--list", action="store_true", help="列出该 registry 的 route 后退出")
     args = ap.parse_args()
 
+    # Attempt this operation while preserving the explicit recovery/cleanup paths below.
     try:
         reg = load_registry(args.registry)
+    # On DownloadError, report this outcome to the command-line operator.
     except DownloadError as exc:
         print(f"✗ {exc}", file=sys.stderr)
         return 2
 
+    # When args.list, report this outcome to the command-line operator.
     if args.list:
         print(f"{reg.source_name}（{reg.path.name}）")
+        # Process each rid from reg.route_ids() independently.
         for rid in reg.route_ids():
             print(f"  - {rid}")
         return 0
 
+    # Attempt this operation while preserving the explicit recovery/cleanup paths below.
     try:
         route = reg.route(args.route)
         module = importlib.import_module(f"cart_db.downloaders.{reg.downloader}")
+    # On DownloadError, report this outcome to the command-line operator.
     except DownloadError as exc:
         print(f"✗ {exc}", file=sys.stderr)
         return 2
+    # On ModuleNotFoundError, report this outcome to the command-line operator.
     except ModuleNotFoundError as exc:
         print(f"✗ 找不到 downloader 模块 `{reg.downloader}`：{exc}", file=sys.stderr)
         return 2
@@ -69,8 +77,10 @@ def main() -> int:
     print(f"路 : {route.route_id} → {reg.downloader}")
     print(f"落 : {snap.dir}")
 
+    # Attempt this operation while preserving the explicit recovery/cleanup paths below.
     try:
         module.run(reg, route, snap, limit=args.limit, dry_run=args.dry_run)
+    # On DownloadError, report this outcome to the command-line operator.
     except DownloadError as exc:
         print(f"\n✗ {exc}", file=sys.stderr)
         # 即便失败也把已下到的部分记成清单，便于续跑与留证
@@ -80,23 +90,29 @@ def main() -> int:
             print(f"  已落盘部分写入清单：{path}")
         return 1
 
+    # Preview the planned operation and return before the subsequent execution stage.
     if args.dry_run:
         print("\n[dry-run] 未落盘")
         return 0
 
     manifest = snap.finish(source_name=reg.source_name, route_id=route.route_id)
+    # Build mapped values from snap.items.
     total = sum(i.bytes for i in snap.items)
     print(f"\n✓ {len(snap.items)} 个文件，{total:,} bytes，跳过 {len(snap.skipped)}")
     print(f"  清单：{manifest}")
 
+    # When args.register, attempt the operation and retain its explicit failure path.
     if args.register:
+        # Attempt this operation while preserving the explicit recovery/cleanup paths below.
         try:
             n = register_snapshot(reg, snap, route)
             print(f"  已登记 core.source_registry：{n} 条")
+        # On Exception, report this outcome to the command-line operator.
         except Exception as exc:
             print(f"  ⚠ 登记失败（不影响已落盘的数据）：{type(exc).__name__}: {exc}")
     return 0
 
 
+# Run the command only when invoked as a script, not when imported by tests or other modules.
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -1,3 +1,4 @@
+# Legacy direct model client and configured cost estimates; the current runner invokes agent CLIs.
 """Claude 调用封装：结构化抽取 + 提示词缓存 + 用量计费打点。
 
 方案《六、成本预算》按 Claude Sonnet 5 测算，因此默认 model=claude-sonnet-5。
@@ -29,7 +30,9 @@ class DailyCapExceeded(RuntimeError):
     """当日 LLM 费用超过 CART_LLM_DAILY_CAP_CNY，防止批量跑飞。"""
 
 
+# Create the legacy Anthropic API client only after confirming that authentication is configured.
 def _client():
+    # Stop with a diagnostic: ANTHROPIC_API_KEY 未配置。本地建库不需要它；到 Day7 提示词工程时再填进 .env 即可。.
     if not settings.llm_ready:
         raise LLMNotConfigured(
             "ANTHROPIC_API_KEY 未配置。本地建库不需要它；"
@@ -39,7 +42,9 @@ def _client():
     return anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 
+# Read today's recorded legacy API cost from core.llm_usage.
 def spent_today() -> float:
+    # Close the database connection when this operation finishes or raises.
     with connect() as conn:
         cur = conn.execute(
             "SELECT COALESCE(sum(cost_cny),0) FROM core.llm_usage "
@@ -48,11 +53,17 @@ def spent_today() -> float:
         return float(cur.fetchone()[0])
 
 
+# Persist reported token counts and the configured cost estimate, returning the recorded amount.
 def _record_usage(usage, *, model: str, purpose: str,
                   batch_id: uuid.UUID | None, request_id: str | None) -> float:
+    # Default an absent/empty getattr(usage, 'cache_read_input_tokens', 0) to zero for this counter
+    # or estimate.
     cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+    # Default an absent/empty getattr(usage, 'cache_creation_input_tokens', 0) to zero for this
+    # counter or estimate.
     cache_write = getattr(usage, "cache_creation_input_tokens", 0) or 0
     cny = cost_cny(usage.input_tokens, usage.output_tokens, cache_read, cache_write)
+    # Close the database connection when this operation finishes or raises.
     with connect() as conn:
         conn.execute(
             """INSERT INTO core.llm_usage
@@ -67,17 +78,25 @@ def _record_usage(usage, *, model: str, purpose: str,
 
 def _strict(schema: dict) -> dict:
     """结构化输出要求每个 object 都带 additionalProperties: false。"""
+    # Disallow undeclared properties in every structured-output object.
     if schema.get("type") == "object":
         schema["additionalProperties"] = False
         schema.setdefault("required", list(schema.get("properties", {})))
+    # Visit named properties and both schema-definition conventions.
     for key in ("properties", "$defs", "definitions"):
+        # Recurse through every nested schema definition.
         for sub in schema.get(key, {}).values():
+            # Only object-shaped schema fragments can be tightened recursively.
             if isinstance(sub, dict):
                 _strict(sub)
+    # Apply the same object rules to array item schemas.
     if isinstance(schema.get("items"), dict):
         _strict(schema["items"])
+    # Visit each JSON Schema union/composition form.
     for key in ("anyOf", "allOf", "oneOf"):
+        # Tighten all alternatives rather than only the first branch.
         for sub in schema.get(key, []):
+            # Ignore non-object schema fragments during recursive tightening.
             if isinstance(sub, dict):
                 _strict(sub)
     return schema
@@ -100,13 +119,16 @@ def extract(
     3,600 份文档共用同一段提示词，缓存命中后这部分按输入价的 0.1× 计费。
     document 放在 user 轮，每次都变，不参与缓存。
     """
+    # Prefer model; if empty or absent, fall back to settings.llm_model.
     model = model or settings.llm_model
+    # Stop before requesting a model when recorded daily cost has reached the configured cap.
     if (spent := spent_today()) >= settings.llm_daily_cap_cny:
         raise DailyCapExceeded(
             f"当日已消耗 ¥{spent:.2f}，达到上限 ¥{settings.llm_daily_cap_cny:.2f}"
         )
 
     client = _client()
+    # Prefer effort; if empty or absent, fall back to settings.llm_effort.
     response = client.messages.create(
         model=model,
         max_tokens=max_tokens,
@@ -127,8 +149,10 @@ def extract(
     _record_usage(response.usage, model=model, purpose=purpose,
                   batch_id=batch_id, request_id=getattr(response, "_request_id", None))
 
+    # Reject a truncated response instead of trying to parse partial structured output.
     if response.stop_reason == "max_tokens":
         raise RuntimeError(f"输出被 max_tokens 截断，请调大 max_tokens（当前 {max_tokens}）")
+    # Collect items from response.content only where b.type == 'text'.
     text = next(b.text for b in response.content if b.type == "text")
     return schema.model_validate(json.loads(text))
 
@@ -136,6 +160,7 @@ def extract(
 def count_tokens(*, document: str, system_prompt: str, model: str | None = None) -> int:
     """跑批前先估算输入规模，用于核对预算（方案估 ~180M 输入 token）。"""
     client = _client()
+    # Prefer model; if empty or absent, fall back to settings.llm_model.
     resp = client.messages.count_tokens(
         model=model or settings.llm_model,
         system=[{"type": "text", "text": system_prompt}],
@@ -165,6 +190,7 @@ def submit_batch(
     json_schema = _strict(schema.model_json_schema())
     system = [{"type": "text", "text": system_prompt,
                "cache_control": {"type": "ephemeral"}}]
+    # Build mapped values from documents.items().
     requests = [
         Request(
             custom_id=cid,
@@ -187,17 +213,21 @@ def fetch_batch(anthropic_batch_id: str, schema: Type[BaseModel], *,
     """取回批量结果。结果顺序不保证，按 custom_id 取用，不要按位置取。"""
     client = _client()
     batch = client.messages.batches.retrieve(anthropic_batch_id)
+    # Batch results cannot be consumed as final while processing is still active.
     if batch.processing_status != "ended":
         raise RuntimeError(f"批次尚未完成：{batch.processing_status}")
 
     out: dict[str, Any] = {}
+    # Use custom IDs to associate results with documents because return order is not guaranteed.
     for result in client.messages.batches.results(anthropic_batch_id):
+        # Retain per-document API failures while continuing to process successful batch results.
         if result.result.type != "succeeded":
             out[result.custom_id] = {"error": result.result.type}
             continue
         msg = result.result.message
         _record_usage(msg.usage, model=msg.model, purpose=purpose,
                       batch_id=batch_id, request_id=None)
+        # Collect items from msg.content only where b.type == 'text'.
         text = next(b.text for b in msg.content if b.type == "text")
         out[result.custom_id] = schema.model_validate(json.loads(text))
     return out

@@ -114,9 +114,12 @@ _SENTINELS = {"", "na", "n/a", "nan", "none", "null", "-", "--"}
 # --------------------------------------------------------------------------
 # 小工具
 # --------------------------------------------------------------------------
+# Recognize missing spreadsheet cells and declared sentinel spellings.
 def _is_blank(v: Any) -> bool:
+    # A missing cell is empty source data.
     if v is None:
         return True
+    # Pandas represents blank numeric cells as NaN; do not treat them as measurements.
     if isinstance(v, float) and math.isnan(v):
         return True
     return str(v).strip().lower() in _SENTINELS
@@ -124,6 +127,7 @@ def _is_blank(v: Any) -> bool:
 
 def _blank_reason(v: Any) -> str:
     """真空 vs 哨兵。两者都是「数据缺失」，但必须能分开统计。"""
+    # Distinguish absent cells from explicit sentinel strings.
     if v is None or (isinstance(v, float) and math.isnan(v)):
         return NullReason.SOURCE_EMPTY
     return NullReason.SENTINEL_EMPTY
@@ -131,6 +135,7 @@ def _blank_reason(v: Any) -> str:
 
 def _clean(v: Any) -> str | None:
     """取字符串值。metadata.PDB 的值带前导制表符（例 "\\t6v4p"），mapping 要求 strip。"""
+    # Normalize empty/sentinel cells to None while leaving real source text available.
     if _is_blank(v):
         return None
     return str(v).strip()
@@ -158,11 +163,15 @@ def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", str(s).lower()).strip("_")
 
 
+# Parse a numeric cell, returning None for malformed or NaN values.
 def _to_float(v: Any) -> float | None:
+    # Parse numeric source cells without turning invalid text into zero.
     try:
         f = float(v)
+    # On (TypeError, ValueError), leave the result unresolved instead of inventing a value.
     except (TypeError, ValueError):
         return None
+    # Use None when math.isnan(f); otherwise use f.
     return None if math.isnan(f) else f
 
 
@@ -174,6 +183,7 @@ def _check_columns(where: str, declared: list[str], actual: list[str]) -> None:
     d, a = list(declared), list(actual)
     missing = [c for c in d if c not in a]      # mapping 说有、档案没有
     extra = [c for c in a if c not in d]        # 档案有、mapping 没写
+    # Continue only when both declared and actual column inventories agree.
     if not missing and not extra:
         return
     raise ParseError(
@@ -205,14 +215,21 @@ class DotadParser(SourceParser):
     # 只能按顺序区分，故钉在这里并在 __init__ 里断言。
     T_ENTITY, T_EXPERIMENTAL, T_LITERATURE = 0, 1, 2
 
+    # Require the three declared output blocks and initialize lazy workbook/dictionary caches.
     def __init__(self, mapping):
         super().__init__(mapping)
+        # Stop with a diagnostic: mapping 有 {len(self.targets)} 块 target，本 parser 按 3 块写（实体 /
+        # experimental / literature）。targets 结构变了就得改这里。.
         if len(self.targets) != 3:
             raise ParseError(
                 f"mapping 有 {len(self.targets)} 块 target，本 parser 按 3 块写"
                 f"（实体 / experimental / literature）。targets 结构变了就得改这里。"
             )
+        # Evidence blocks must preserve multiple observations for a single source antibody.
         for i, want in ((self.T_EXPERIMENTAL, "many"), (self.T_LITERATURE, "many")):
+            # Stop with a diagnostic:
+            # targets[{i}].record_per_source={self.targets[i].record_per_source}，预期 {want} ——
+            # 证据行必须一对多，否则会 collapse 掉多次观测.
             if self.targets[i].record_per_source != want:
                 raise ParseError(
                     f"targets[{i}].record_per_source={self.targets[i].record_per_source!r}，"
@@ -231,6 +248,8 @@ class DotadParser(SourceParser):
         本 mapping 写的是复数（四个工作簿），调它必抛 ParseError。见档头 M1。
         """
         ds = self.mapping.raw.get("source_datasets")
+        # Stop with a diagnostic: {self.mapping.path.name} 既无 source_datasets 也无
+        # source_dataset，parser 不知道读哪些 raw 档.
         if not ds:
             raise ParseError(
                 f"{self.mapping.path.name} 既无 source_datasets 也无 source_dataset，"
@@ -238,23 +257,29 @@ class DotadParser(SourceParser):
             )
         return ds
 
+    # Resolve and validate one workbook path declared by the mapping.
     def _path(self, key: str) -> Path:
         spec = self._datasets().get(key)
+        # Stop with a diagnostic: mapping.source_datasets 缺 {key}.file.
         if not spec or not spec.get("file"):
             raise ParseError(f"mapping.source_datasets 缺 {key}.file")
         p = ROOT / spec["file"]
+        # Stop with a diagnostic: {key} 指向 {p}，该档不存在.
         if not p.is_file():
             raise ParseError(f"{key} 指向 {p}，该档不存在")
         return p
 
+    # Cache each workbook/sheet pair so repeated field lookups avoid rereading Excel.
     def _sheet(self, key: str, sheet: str) -> pd.DataFrame:
         ck = f"{key}::{sheet}"
+        # Read a workbook sheet once, then reuse the cached dataframe.
         if ck not in self._cache:
             self._cache[ck] = pd.read_excel(
                 self._path(key), sheet_name=sheet, engine="openpyxl"
             )
         return self._cache[ck]
 
+    # Read workbook sheet names for source-specific discovery.
     def _sheet_names(self, key: str) -> list[str]:
         return pd.ExcelFile(self._path(key), engine="openpyxl").sheet_names
 
@@ -273,6 +298,7 @@ class DotadParser(SourceParser):
 
         registry 与 mapping 都写明可直接拿来做 QC 边界检查，不必自己再推一遍。
         """
+        # Load and normalize dictionary lookup keys only on first use.
         if self._field_dict is None:
             df = self._sheet("data_dictionary", "Field Dictionary")
             df = df.copy()
@@ -281,9 +307,11 @@ class DotadParser(SourceParser):
             self._field_dict = df
         return self._field_dict
 
+    # Look up declared measurement units and QC bounds for one sheet column.
     def _field_spec(self, sheet: str, column: str) -> dict:
         df = self._fd()
         hit = df[(df["_sheet"] == _norm_ws(sheet)) & (df["_field"] == _norm_ws(column))]
+        # An unknown field has no declared unit/bounds; do not invent defaults.
         if hit.empty:
             return {}
         r = hit.iloc[0]
@@ -301,10 +329,12 @@ class DotadParser(SourceParser):
         的 hic_rt / tm1_nanodsf 等**不在**这张表里，只被首行的 (*, *) 通配行覆盖，
         而那行的 Harmonized_Endpoint 为空、Comparable_Flag 为 False。
         """
+        # Build the assay-endpoint lookup lazily and preserve explicit wildcard rules.
         if self._endpoint_dict is None:
             df = self._sheet("data_dictionary", "Assay Endpoint Dictionary").copy()
             df["_wb"] = df["Source_Workbook"].map(_norm_ws)
             df["_sheet"] = df["Source_Sheet"].map(_norm_ws)
+            # The callback returns '*' if _norm_ws(v) == '*' else _slug(v).
             df["_key"] = df["Original_Field_Key"].map(
                 lambda v: "*" if _norm_ws(v) == "*" else _slug(v)
             )
@@ -315,9 +345,11 @@ class DotadParser(SourceParser):
         """查 Harmonized_Endpoint。精确 (sheet, key) 优先，其次通配行。查不到返回 None。"""
         df = self._ed()
         wb = df[df["_wb"] == _norm_ws(workbook)]
+        # An absent workbook entry supplies no harmonization rule.
         if wb.empty:
             return None
         key = _slug(column)
+        # Try exact sheet/field matches before progressively broader wildcard rules.
         for cond in (
             (wb["_sheet"] == _norm_ws(sheet)) & (wb["_key"] == key),
             (wb["_sheet"] == "*") & (wb["_key"] == key),
@@ -325,6 +357,8 @@ class DotadParser(SourceParser):
             (wb["_sheet"] == "*") & (wb["_key"] == "*"),
         ):
             hit = wb[cond]
+            # Use the first matching dictionary rule, preserving its unit, transform, and
+            # comparability flags.
             if not hit.empty:
                 r = hit.iloc[0]
                 return {
@@ -349,12 +383,15 @@ class DotadParser(SourceParser):
         故用一个可复现的机械归一：小写 → 去 "et al" → 只留 [a-z0-9]。
         对不上的不猜，citation 记 DERIVATION_FAILED。
         """
+        # Load literature citation joins only when needed.
         if self._link is None:
             df = self._sheet("literature", "link")
             _check_columns("literature[link]", ["name", "PMID", "address"], list(df.columns))
             out = {}
+            # Visit source spreadsheet rows independently, preserving their row-level provenance.
             for _, r in df.iterrows():
                 name = _clean(r["name"])
+                # Only named citation rows can participate in sheet-name lookup.
                 if name:
                     out[self._link_key(name)] = {
                         "name": name,
@@ -364,6 +401,7 @@ class DotadParser(SourceParser):
             self._link = out
         return self._link
 
+    # Normalize literature labels for joining sheet names to source citations.
     @staticmethod
     def _link_key(s: str) -> str:
         return re.sub(r"[^a-z0-9]+", "", re.sub(r"et\s*al\.?", "", str(s).lower()))
@@ -392,19 +430,27 @@ class DotadParser(SourceParser):
         条目里的 source 可能是列表（如 sequences 的 [hc_dna_sequence, lc_dna_sequence]
         合并成一条写），要展平。
         """
+        # Use an empty mapping when self.mapping.raw.get('source_field_inventory') is missing or
+        # empty.
         inv = (self.mapping.raw.get("source_field_inventory") or {}).get(section)
+        # Stop with a diagnostic: {self.mapping.path.name} 的 source_field_inventory 里没有 {section} ——
+        # 无从校验栏名.
         if not inv:
             raise ParseError(
                 f"{self.mapping.path.name} 的 source_field_inventory 里没有 {section} —— "
                 f"无从校验栏名"
             )
         cols: list[str] = []
+        # Flatten scalar/list source declarations into the declared column inventory.
         for item in inv:
             s = item.get("source")
+            # Use s when s is a list; otherwise use [s].
             cols.extend(s if isinstance(s, list) else [s])
         return cols
 
     # ---------- (1) 实体行 ----------
+    # Join sequence rows to metadata by source antibody ID, retaining missing joins and drift
+    # warnings.
     def _iter_entity(self) -> Iterator[dict]:
         md = self._sheet("metadata", "metadata")
         sq = self._sheet("sequences", "sequences")
@@ -424,6 +470,7 @@ class DotadParser(SourceParser):
         # 填充率 0% 的两栏：栏在但全空。若哪天有值了，说明上游变了，值得知道。
         for col in _EMPTY_METADATA_COLUMNS:
             n = int(md[col].notna().sum())
+            # A previously empty source column becoming populated is schema drift worth reporting.
             if n:
                 yield {
                     "_block": "sheet_problem",
@@ -433,6 +480,7 @@ class DotadParser(SourceParser):
                                f"mapping Part 1 的【实测告警】需复核",
                 }
 
+        # Build mapped values from md.iterrows().
         md_by_id = {str(r["antibody_id"]): r for _, r in md.iterrows()}
 
         # mapping source_datasets.sequences.join_to_metadata：以 sequences 为主表左连。
@@ -450,11 +498,14 @@ class DotadParser(SourceParser):
             }
 
     # ---------- (2) experimental 证据行 ----------
+    # Build per-sheet metric plans, then emit source rows with their original positions.
     def _iter_experimental(self) -> Iterator[dict]:
         blk = self.targets[self.T_EXPERIMENTAL]
         # mapping source_datasets.experimental.note 与 targets[1].iterate_over 都写明：
         # 只取 tidy format，average 是同一批数据的派生统计量，两者都灌会重复计数。
         sheets = [s for s in self._sheet_names("experimental") if "tidy" in s.lower()]
+        # Stop with a diagnostic: experimental 工作簿有 {len(sheets)} 个 tidy format 分页，mapping
+        # targets[1].iterate_over 写的是三个：{sheets}.
         if len(sheets) != 3:
             raise ParseError(
                 f"experimental 工作簿有 {len(sheets)} 个 tidy format 分页，"
@@ -462,8 +513,10 @@ class DotadParser(SourceParser):
             )
 
         want = self._declared_sources(blk)
+        # Plan each experimental sheet independently because its columns and observations differ.
         for sheet in sheets:
             df = self._sheet("experimental", sheet)
+            # A sheet without the declared antibody key cannot be joined reliably.
             if "antibody_id" not in df.columns:
                 yield self._sheet_problem(sheet, "missing_record_key",
                                           f"mapping record_key 是 antibody_id，该分页栏为 {list(df.columns)}")
@@ -471,6 +524,7 @@ class DotadParser(SourceParser):
 
             plan, problems = self._plan_experimental(sheet, df, want)
             yield from problems
+            # Preserve experimental source rows and their row numbers for later metric expansion.
             for i, r in df.iterrows():
                 yield {"_block": "experimental", "_sheet": sheet, "_row": int(i),
                        "antibody_id": _clean(r["antibody_id"]), "_r": r, "_plan": plan}
@@ -478,6 +532,7 @@ class DotadParser(SourceParser):
     @staticmethod
     def _declared_sources(blk: TargetBlock) -> dict[str, list[str]]:
         """target 块里 每个目标列 → 它声明的源栏名（原样，不做归一）。"""
+        # Build mapped values from blk.fields.
         return {f.target: f.source_columns for f in blk.fields}
 
     def _plan_experimental(self, sheet: str, df: pd.DataFrame,
@@ -490,10 +545,14 @@ class DotadParser(SourceParser):
         # --- tm_celsius：mapping 规则明写「取 tm1_nanodsf 为主值；tonset 是起始温度
         #     不是 Tm，不得混填」。tm2/tm3 是另外的热转变，mapping 没给落点。
         for col in want.get("tm_celsius", []):
+            # A declared metric absent from this sheet contributes no value.
             if col not in cols:
                 continue
+            # Only the explicitly selected primary thermal transition maps to tm_celsius.
             if col == "tm1_nanodsf":
                 plan[col] = {"target": "tm_celsius", "kind": "numeric"}
+            # Report unmapped thermal-transition columns instead of silently treating them as the
+            # primary melting point.
             else:
                 problems.append(self._sheet_problem(
                     sheet, "metric_declared_but_no_target_rule",
@@ -504,6 +563,7 @@ class DotadParser(SourceParser):
         # --- hydrophobicity：R3 说这是本档最易出错处。源是保留时间（min），
         #     目标列无量纲。必须先经 Harmonized_Endpoint 归一化。
         for col in want.get("hydrophobicity", []):
+            # Skip hydrophobicity fields absent from this sheet before auditing harmonization gaps.
             if col not in cols:
                 continue
             ep = self._endpoint("dotad_experimental_developability_v2.0.xlsx", sheet, col)
@@ -523,9 +583,13 @@ class DotadParser(SourceParser):
         #     只做精确栏名匹配 —— 见档头 M2，三个分页的 acsins 栏名写法不同，
         #     大小写/近名归并是猜，不做。
         for col in want.get("aggregation", []):
+            # Add an aggregation metric only when its declared source column exists.
             if col in cols:
                 plan[col] = {"target": "aggregation", "kind": "text"}
+            # Record the missing declared column and nearby names for mapping review; do not
+            # substitute a guessed column.
             else:
+                # Collect items from cols only where _slug(c).startswith(_slug(col)[:12]).
                 near = [c for c in cols if _slug(c).startswith(_slug(col)[:12])]
                 problems.append(self._sheet_problem(
                     sheet, "declared_column_absent_in_sheet",
@@ -537,8 +601,10 @@ class DotadParser(SourceParser):
         # --- experiment_conditions 的组成部分：production_batch / run 只在第一个
         #     tidy 分页有（档头 M3）。不阻断，但要记下来。
         for col in want.get("experiment_conditions", []):
+            # Sheet and metric names are derived context, not expected spreadsheet columns.
             if col in ("sheet_name", "metric_name"):
                 continue
+            # Record missing context columns explicitly instead of confusing them with empty cells.
             if col not in cols:
                 problems.append(self._sheet_problem(
                     sheet, "condition_part_absent",
@@ -548,12 +614,15 @@ class DotadParser(SourceParser):
         return plan, problems
 
     # ---------- (3) literature 证据行 ----------
+    # Attach mapping plans and citations to literature rows while retaining sheet-level problems.
     def _iter_literature(self) -> Iterator[dict]:
         blk = self.targets[self.T_LITERATURE]
         want = self._declared_sources(blk)
         self._links()  # 提前触发 link 分页的栏名校验
 
+        # Collect items from self._sheet_names('literature') only where s.strip() != 'link'.
         sheets = [s for s in self._sheet_names("literature") if s.strip() != "link"]
+        # Keep each literature sheet's metric plan and citation independent.
         for sheet in sheets:
             df = self._sheet("literature", sheet)
             if "antibody_id" not in df.columns:
@@ -568,6 +637,7 @@ class DotadParser(SourceParser):
             plan, problems = self._plan_literature(sheet, df, want)
             yield from problems
             cite = self._citation_for(sheet)
+            # Emit literature rows with their metric plan and source citation attached.
             for i, r in df.iterrows():
                 yield {"_block": "literature", "_sheet": sheet, "_row": int(i),
                        "antibody_id": _clean(r["antibody_id"]), "_r": r,
@@ -584,11 +654,16 @@ class DotadParser(SourceParser):
         # 只接受**精确**栏名。Jain et al.(2024) 的 'Octet KD (M)' 不存在（档头 M4）。
         for decl in want.get("kd_nm", []):
             d_sheet, d_col = self._split_declared(decl)
+            # Apply a qualified metric declaration only to the named source sheet.
             if d_sheet is None or _norm_ws(d_sheet) != _norm_ws(s):
                 continue
+            # Map affinity only from the exact declared column.
             if d_col in df.columns:
                 plan[d_col] = {"target": "kd_nm", "kind": "numeric"}
+            # Report possible molar-unit columns for review without guessing a replacement for the
+            # missing mapped column.
             else:
+                # Collect items from df.columns only where '(M)' in str(c) or '[M]' in str(c).
                 cand = [c for c in df.columns if "(M)" in str(c) or "[M]" in str(c)]
                 problems.append(self._sheet_problem(
                     sheet, "declared_column_absent_in_sheet",
@@ -601,10 +676,13 @@ class DotadParser(SourceParser):
         # immunogenicity_risk —— 同样按精确栏名。
         for decl in want.get("immunogenicity_risk", []):
             d_sheet, d_col = self._split_declared(decl)
+            # Do not apply an immunogenicity declaration from another sheet.
             if d_sheet is None or _norm_ws(d_sheet) != _norm_ws(s):
                 continue
+            # Use the declared immunogenicity column only when it exists.
             if d_col in df.columns:
                 plan[d_col] = {"target": "immunogenicity_risk", "kind": "text"}
+            # Record a mapping problem when the declared immunogenicity column is absent.
             else:
                 problems.append(self._sheet_problem(
                     sheet, "declared_column_absent_in_sheet",
@@ -615,13 +693,17 @@ class DotadParser(SourceParser):
         # 唯一可执行的依据是 rule_ref: harmonize_endpoint。所以逐栏查
         # [Assay Endpoint Dictionary]，只有 Harmonized_Endpoint == Tm 且单位 degC 才接。
         for col in df.columns:
+            # Skip already mapped metrics and metadata/identifier columns.
             if col in plan or _slug(col) in _NON_METRIC_COLUMNS:
                 continue
             ep = self._endpoint(
                 "dotad_literature_developability_collection_v2.0.xlsx", sheet, col)
+            # Accept thermal stability only when the endpoint dictionary explicitly identifies Tm in
+            # degrees C.
             if ep and ep.get("harmonized_endpoint") == "Tm" and ep.get("endpoint_unit") == "degC":
                 plan[col] = {"target": "tm_celsius", "kind": "numeric", "endpoint": ep}
                 continue
+            # Use ep.get('harmonized_endpoint') when ep is truthy; otherwise use None.
             problems.append(self._sheet_problem(
                 sheet, "no_target_column_for_metric",
                 (f"{col!r}：Harmonized_Endpoint="
@@ -642,15 +724,19 @@ class DotadParser(SourceParser):
         第三种带「分页」二字，要去掉，否则永远匹配不上真实分页名。
         """
         m = re.match(r"^(.*?)\s*(?:分页)?\s*的\s*(.+)$", decl)
+        # Parse the human-readable sheet/column declaration form.
         if m:
             return re.sub(r"\s*分页$", "", m.group(1)), m.group(2)
         m = re.match(r"^(.*et al\.\S*?)\.(.+)$", decl)
+        # Accept the alternate author-sheet dot-column notation.
         if m:
             return m.group(1), m.group(2)
         return None, decl
 
+    # Join a literature sheet to its citation without inventing absent PMID/address data.
     def _citation_for(self, sheet: str) -> dict:
         link = self._links().get(self._link_key(sheet))
+        # A missing citation join remains a derivation failure, not an invented reference.
         if not link:
             return {"text": None, "reason": NullReason.DERIVATION_FAILED,
                     "detail": f"[link] 分页里找不到与分页名 {sheet!r} 对应的行"}
@@ -659,8 +745,11 @@ class DotadParser(SourceParser):
             # 实测 shanehsazzadeh / garbinski 两行的 PMID 与 address 为空。
             return {"text": link["name"], "reason": None, "link": link,
                     "detail": "[link] 该行无 PMID/address，citation 只有作者名"}
+        # Collect items from parts only where p.
         return {"text": " | ".join(p for p in parts if p), "reason": None, "link": link}
 
+    # Create a diagnostic source item that will be written to rejects rather than silently
+    # discarded.
     @staticmethod
     def _sheet_problem(sheet: str, reason: str, detail: str, **info) -> dict:
         return {"_block": "sheet_problem", "_sheet": sheet,
@@ -669,22 +758,31 @@ class DotadParser(SourceParser):
     # ======================================================================
     # build_records
     # ======================================================================
+    # Route entity, experimental, literature, and diagnostic source items to their appropriate
+    # handlers.
     def build_records(self, row: dict, out: Interim) -> Iterator[Record]:
         blk = row["_block"]
+        # Write sheet diagnostics to rejects; they are not scientific records.
         if blk == "sheet_problem":
+            # Collect items from row.items() only where k not in ('_block', '_reason').
             out.reject(row["_reason"], **{k: v for k, v in row.items()
                                           if k not in ("_block", "_reason")})
             return
+        # Entity rows combine antibody sequence and metadata.
         if blk == "entity":
             yield from self._entity_record(row, out)
+        # Experimental rows expand into separate metric/replicate observations.
         elif blk == "experimental":
             yield from self._experimental_records(row, out)
+        # Literature rows retain their original cited measurements.
         elif blk == "literature":
             yield from self._literature_records(row, out)
+        # Otherwise, retain a rejection record rather than silently discard the source row.
         else:
             out.reject("unknown_block", block=blk)
 
     # ---------- (1) 实体行 ----------
+    # Build one legacy binder record from a sequence/metadata join, preserving per-field provenance.
     def _entity_record(self, row: dict, out: Interim) -> Iterator[Record]:
         blk = self.targets[self.T_ENTITY]
         seq, md, aid = row["_seq"], row["_md"], row["antibody_id"]
@@ -703,6 +801,7 @@ class DotadParser(SourceParser):
             if v is None:
                 # VL 空不得默认判为 VHH —— mapping Part 1 明写，须与 Format 交叉判断。
                 rec.absent(tgt, _blank_reason(seq[col]), sheet="sequences", src_column=col, **src)
+            # Otherwise, store the mapped value with its provenance.
             else:
                 rec.set(tgt, v, method="direct", sheet="sequences", src_column=col, **src)
 
@@ -728,8 +827,10 @@ class DotadParser(SourceParser):
         # target_antigen —— rule_ref: normalize_antigen_name 只有描述没有算法，
         # 且 mapping Part 1 写「需逐条判断」。原值 strip 后入库，并标明规则未执行。
         raw_t = _clean(md["Target"])
+        # Missing target text stays absent instead of receiving a guessed antigen.
         if raw_t is None:
             rec.absent("target_antigen", _blank_reason(md["Target"]), src_column="Target", **msrc)
+        # Otherwise, store the mapped value with its provenance.
         else:
             rec.set("target_antigen", raw_t, method="derived",
                     rule_ref="normalize_antigen_name", rule_applied=False,
@@ -740,18 +841,24 @@ class DotadParser(SourceParser):
 
         # structure_template —— 值带前导制表符（实测 "\t6v4p"），mapping 要求 strip
         pdb = _clean(md["PDB"])
+        # An absent PDB reference cannot supply a structure template.
         if pdb is None:
             rec.absent("structure_template", _blank_reason(md["PDB"]), src_column="PDB", **msrc)
+        # Otherwise, store the mapped value with its provenance.
         else:
             rec.set("structure_template", pdb, method="derived", src_column="PDB",
                     rule="strip 前导制表符", raw=repr(md["PDB"]), **msrc)
 
         # development_stage —— 两栏合成，且必须注明 est_status 的截止日
         hi, est = _clean(md["Highest_Clin_Trial"]), _clean(md["est_status_asof_feb2025"])
+        # Without trial or status data, development stage is unreported.
         if hi is None and est is None:
             rec.absent("development_stage", NullReason.SOURCE_EMPTY,
                        src_columns=["Highest_Clin_Trial", "est_status_asof_feb2025"], **msrc)
+        # Otherwise, store the mapped value with its provenance.
         else:
+            # Apply the explicit fallbacks to missing/empty values while retaining any reported
+            # nonempty values.
             rec.set("development_stage", f"{hi or 'NA'} / {est or 'NA'} (as of 2025-02)",
                     method="derived", src_columns=["Highest_Clin_Trial", "est_status_asof_feb2025"],
                     rule='"{Highest_Clin_Trial} / {est_status} (as of 2025-02)"',
@@ -759,37 +866,49 @@ class DotadParser(SourceParser):
 
         # immunogenicity_risk —— "ADA {value}%"，保留原值
         ada = _clean(md["ADAs_rate"])
+        # Missing ADA values remain unknown.
         if ada is None:
             rec.absent("immunogenicity_risk", _blank_reason(md["ADAs_rate"]),
                        src_column="ADAs_rate", **msrc)
+        # Otherwise, store the mapped value with its provenance.
         else:
             rec.set("immunogenicity_risk", f"ADA {ada}%", method="derived",
                     src_column="ADAs_rate", raw=ada, rule='"ADA {ADAs_rate}%"', **msrc)
 
         # citation —— PDB_reference + ADAs_reference
         cites = [c for c in (_clean(md["PDB_reference"]), _clean(md["ADAs_reference"])) if c]
+        # Construct a citation only from source reference parts that are present.
         if cites:
             rec.set("citation", "; ".join(cites), method="derived",
                     src_columns=["PDB_reference", "ADAs_reference"], **msrc)
+        # Otherwise, record null together with its source/derivation reason.
         else:
             rec.absent("citation", NullReason.SOURCE_EMPTY,
                        src_columns=["PDB_reference", "ADAs_reference"], **msrc)
         yield rec
 
+    # Copy a source field or record its explicit missing-value reason.
     @staticmethod
     def _direct(rec: Record, r, column: str, target: str, src: dict) -> None:
         v = _clean(r[column])
+        # Record the reason for an absent direct source value.
         if v is None:
             rec.absent(target, _blank_reason(r[column]), src_column=column, **src)
+        # Otherwise, store the mapped value with its provenance.
         else:
             rec.set(target, v, method="direct", src_column=column, **src)
 
+    # Map the declared antibody format, retaining source text and reporting unsupported formats.
     def _set_format(self, rec: Record, md, seq, src: dict) -> None:
+        # Use an empty mapping when self.mapping.rule_refs.get('derive_binder_format') is missing or
+        # empty.
         spec = self.mapping.rule_refs.get("derive_binder_format") or {}
+        # Use an empty mapping when spec.get('value_map') is missing or empty.
         vmap = spec.get("value_map") or {}
         fallback = spec.get("fallback", "其他")
         raw = _clean(md["Format"])
         has_vl = _clean(seq["VL"]) is not None
+        # Do not infer antibody format from a missing source label.
         if raw is None:
             rec.absent("format", _blank_reason(md["Format"]), src_column="Format", **src)
             return
@@ -800,6 +919,7 @@ class DotadParser(SourceParser):
             # 双特异等 103 个取值里 value_map 没覆盖的，按 mapping 落 fallback。
             prov["note"] = ("value_map 未覆盖该取值，按 rule_refs.fallback 落 "
                             f"{fallback}；双特异分页展开规则 mapping 标注「待定」")
+            # Use 'bispecific_expansion_undecided' when 'ispecific' is in raw; otherwise use None.
             prov["pending"] = "bispecific_expansion_undecided" if "ispecific" in raw else None
             rec.set("format", fallback, **prov)
             return
@@ -811,30 +931,39 @@ class DotadParser(SourceParser):
         rec.set("format", mapped, **prov)
 
     # ---------- (2) experimental 证据行 ----------
+    # Emit a separate record for each usable experimental metric and replicate.
     def _experimental_records(self, row: dict, out: Interim) -> Iterator[Record]:
         blk = self.targets[self.T_EXPERIMENTAL]
         sheet, r, plan, aid = row["_sheet"], row["_r"], row["_plan"], row["antibody_id"]
+        # Without antibody_id the observation has no stable source entity key.
         if not aid:
             out.reject(NullReason.SOURCE_EMPTY, sheet=sheet, row=row["_row"],
                        problems=["antibody_id 为空，无法定 entity_key"])
             return
+        # Use _clean(r['technical_replicate']) when 'technical_replicate' is in r.index; otherwise
+        # use None.
         rep = _clean(r["technical_replicate"]) if "technical_replicate" in r.index else None
         src = {"source_file": self._path("experimental").name, "sheet": sheet, "row": row["_row"]}
 
         # 「每行 × 每个指标栏」→ 一个指标栏一条 Record。绝不 collapse 成一条。
         for col, how in plan.items():
+            # Use r[col] when col is in r.index; otherwise use None.
             raw = r[col] if col in r.index else None
+            # Empty metric cells produce no observation.
             if _is_blank(raw):
                 continue
             fs = self._field_spec(sheet, col)
             rec = Record(table=blk.table, entity_key={"antibody_id": aid})
             rec.set("source_type", "公开库", method="constant")
             rec.set("evidence_level", "同行评议", method="constant")
+            # Prefer rep; if empty or absent, fall back to 'NA'.
             rec.set("source_id", f"{aid}|{sheet}|{col}|rep{rep or 'NA'}", method="derived",
                     rule='"{antibody_id}|{sheet}|{metric}|rep{n}"', **src)
 
+            # Numeric metrics require parsing and dictionary-bound QC before emission.
             if how["kind"] == "numeric":
                 v = _to_float(raw)
+                # Retain a rejection when the source numeric metric cannot be parsed.
                 if v is None:
                     out.reject(NullReason.DERIVATION_FAILED, sheet=sheet, row=row["_row"],
                                column=col, raw=str(raw), problems=["非数值"])
@@ -850,8 +979,10 @@ class DotadParser(SourceParser):
                         unit_from=fs.get("unit"),
                         note="源单位已是 °C，与 tm_celsius 一致，无需换算",
                         qc_bounds=[fs.get("lower_bound"), fs.get("upper_bound")], **src)
+            # Preserve nonnumeric metric text with its reported unit and derivation metadata.
             else:
                 unit = fs.get("unit")
+                # Use f' {unit}' when unit is truthy; otherwise use ''.
                 rec.set(how["target"], f"{col}={raw}" + (f" {unit}" if unit else ""),
                         method="derived", src_column=col, raw=str(raw), unit_from=unit,
                         rule="合成描述串", **src)
@@ -860,11 +991,14 @@ class DotadParser(SourceParser):
                     self._conditions_experimental(sheet, col, r), method="derived", **src)
             yield rec
 
+    # Return the violated dictionary bound, or None when no declared bound is violated.
     @staticmethod
     def _out_of_bounds(v: float, fs: dict) -> str | None:
         lo, hi = fs.get("lower_bound"), fs.get("upper_bound")
+        # Report violation of the lower QC bound only when a lower bound is declared.
         if lo is not None and v < lo:
             return f"{v} < [Field Dictionary].lower_bound {lo}"
+        # Report violation of the upper QC bound only when an upper bound is declared.
         if hi is not None and v > hi:
             return f"{v} > [Field Dictionary].upper_bound {hi}"
         return None
@@ -877,47 +1011,64 @@ class DotadParser(SourceParser):
         与「有栏但值空」区分开。这一列 required: true。
         """
         parts = [f"sheet={sheet}", f"metric={col}"]
+        # Retain batch, run, and replicate context separately for every measurement.
         for k in ("production_batch", "run", "technical_replicate"):
+            # Mark missing columns explicitly; they differ from present but empty cells.
             if k not in r.index:
                 parts.append(f"{k}=<缺栏>")
+            # Otherwise, retain the reported detail: {k}={_clean(r[k]) or '<空>'}.
             else:
+                # Prefer _clean(r[k]); if empty or absent, fall back to '<空>'.
                 parts.append(f"{k}={_clean(r[k]) or '<空>'}")
         return "; ".join(parts)
 
     # ---------- (3) literature 证据行 ----------
+    # Emit source-specific literature measurements with explicit unit/transform rules and citations.
     def _literature_records(self, row: dict, out: Interim) -> Iterator[Record]:
         blk = self.targets[self.T_LITERATURE]
         sheet, r, plan, aid = row["_sheet"], row["_r"], row["_plan"], row["antibody_id"]
+        # A literature observation needs an antibody ID to retain its entity relationship.
         if not aid:
             out.reject(NullReason.SOURCE_EMPTY, sheet=sheet, row=row["_row"],
                        problems=["antibody_id 为空，无法定 entity_key"])
             return
         cite = row["_cite"]
+        # Use an empty mapping when cite.get('link') is missing or empty.
         pmid = (cite.get("link") or {}).get("pmid")
         src = {"source_file": self._path("literature").name, "sheet": sheet, "row": row["_row"]}
+        # Collect items from blk.fields only where f.target == 'kd_nm'.
         kd_rule = next((f for f in blk.fields if f.target == "kd_nm"), None)
 
+        # Emit each literature metric separately instead of collapsing observations by antibody.
         for col, how in plan.items():
+            # Use r[col] when col is in r.index; otherwise use None.
             raw = r[col] if col in r.index else None
+            # Skip empty metric cells rather than emit measured zeros.
             if _is_blank(raw):
                 continue
+            # Use an empty mapping when how.get('endpoint') is missing or empty.
             ep = how.get("endpoint") or {}
             rec = Record(table=blk.table, entity_key={"antibody_id": aid})
             rec.set("source_type", "文献", method="constant",
                     note="原始出处是具体文献，不是公开库整编")
             rec.set("evidence_level", self._evidence_level(sheet, col), method="derived",
                     rule_ref="derive_evidence_level_literature", sheet=sheet, src_column=col)
+            # Prefer pmid; if empty or absent, fall back to sheet.
             rec.set("source_id", f"{pmid or sheet}|{aid}|{col}", method="derived", **src)
 
+            # Keep the source citation when the literature join supplied one.
             if cite["text"]:
                 rec.set("citation", cite["text"], method="derived",
                         rule="由 literature 工作簿的 [link] 分页按 sheet 名连接取得",
                         note=cite.get("detail"))
+            # Otherwise, record null together with its source/derivation reason.
             else:
                 rec.absent("citation", cite["reason"], detail=cite["detail"])
 
+            # Affinity uses the mapping's explicit molar-to-nanomolar rule.
             if how["target"] == "kd_nm":
                 v = _to_float(raw)
+                # Affinity must parse as a positive numeric value.
                 if v is None or v <= 0:
                     out.reject(NullReason.DERIVATION_FAILED, sheet=sheet, row=row["_row"],
                                column=col, raw=str(raw), problems=["KD 非正数值"])
@@ -927,8 +1078,10 @@ class DotadParser(SourceParser):
                 rec.set("kd_nm", v * 1e9, method="derived", src_column=col,
                         unit_from=unit_from, unit_to="nM", factor=1e9,
                         raw=v, rule="nM = 原值 × 1e9", **src)
+            # Thermal-stability metrics follow their dictionary-defined transform.
             elif how["target"] == "tm_celsius":
                 v = _to_float(raw)
+                # Reject unparseable thermal values rather than carrying text into a numeric field.
                 if v is None:
                     out.reject(NullReason.DERIVATION_FAILED, sheet=sheet, row=row["_row"],
                                column=col, raw=str(raw), problems=["非数值"])
@@ -936,8 +1089,10 @@ class DotadParser(SourceParser):
                 # [Assay Endpoint Dictionary].Value_Transform 实测只有一个取值 'negate'
                 # （Jain et al. 的 Tm(Negated)，原值为负）。字典说要转就转，不自作主张。
                 transform = ep.get("value_transform")
+                # Apply the explicitly declared negate transform.
                 if transform == "negate":
                     v = -v
+                # Unknown transforms are rejected instead of interpreted heuristically.
                 elif transform:
                     out.reject("unknown_value_transform", sheet=sheet, row=row["_row"],
                                column=col, value_transform=transform,
@@ -949,11 +1104,14 @@ class DotadParser(SourceParser):
                         harmonized_endpoint=ep.get("harmonized_endpoint"),
                         unit_from=ep.get("endpoint_unit"), value_transform=transform,
                         comparable_flag=ep.get("comparable_flag"), raw=str(raw), **src)
+            # Otherwise, store the mapped value with its provenance.
             else:  # immunogenicity_risk，text
                 rec.set("immunogenicity_risk", f"ADA {_clean(raw)}%", method="derived",
                         src_column=col, raw=str(raw),
                         note='沿用 mapping targets[0] 的 "ADA {value}%" 写法', **src)
 
+            # Apply the explicit fallbacks to missing/empty values while retaining any reported
+            # nonempty values.
             rec.set("experiment_conditions",
                     "; ".join([
                         f"sheet={sheet}", f"metric={col}",
@@ -969,8 +1127,10 @@ class DotadParser(SourceParser):
 
         填错会让 source_weight 从 0.2 抬到 0.7，直接污染下游打分（mapping R4）。
         """
+        # These source sheets contain model predictions, not peer-reviewed measured observations.
         if sheet.strip() in ("Hebditch et al.", "Bailly et al."):
             return "模型预测"
+        # Use '模型预测' when str(column).strip().endswith('.pred'); otherwise use '同行评议'.
         return "模型预测" if str(column).strip().endswith(".pred") else "同行评议"
 
     # assign_uid() / should_include() 刻意不覆写 ——

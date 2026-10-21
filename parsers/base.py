@@ -1,3 +1,4 @@
+# Retained incomplete parser framework. Historical policy/schema descriptions below are explained in docs/legacy_code.md.
 """Parser 公共契约。
 
 parser 的定义（业务侧 2026-08-24 确认）：
@@ -34,6 +35,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 MAPPING_DIR = ROOT / "docs" / "Mapping"
+# Allow CART_DATA_ROOT to relocate parser data; otherwise use the repository data directory.
 DATA_ROOT = Path(os.environ.get("CART_DATA_ROOT") or (ROOT / "data"))
 
 PARSER_VERSION = "0.1.0"
@@ -83,10 +85,12 @@ class Undecided(NotImplementedError):
     带上问题编号与全文，让骨架停在哪、为什么停、停的是哪个决策一目了然。
     """
 
+    # Build a policy-stop exception containing the unresolved question and optional call-site hint.
     def __init__(self, qid: str, hint: str = ""):
         self.qid = qid
         body = OPEN_QUESTIONS.get(qid, "（未登记的问题）")
         msg = f"[{qid}] 未决，骨架在此停止。\n{body}"
+        # Include the call-site hint so a maintainer can locate the unresolved policy.
         if hint:
             msg += f"\n  落点：{hint}"
         super().__init__(msg)
@@ -131,16 +135,23 @@ class FieldRule:
     #: mapping 是文档层，会先于代码层长出新键，这是常态不是错误。
     extra: dict = field(default_factory=dict)
 
+    # Split known field-rule attributes from source-specific extra settings without dropping
+    # metadata.
     @classmethod
     def of(cls, spec: dict) -> "FieldRule":
+        # Collect items from cls.__dataclass_fields__ only where f != 'extra'.
         known = {f for f in cls.__dataclass_fields__ if f != "extra"}
+        # Collect items from spec.items() only where k in known.
         return cls(**{k: v for k, v in spec.items() if k in known},
                    extra={k: v for k, v in spec.items() if k not in known})
 
+    # Normalize absent, scalar, and list source declarations to a list of column names.
     @property
     def source_columns(self) -> list[str]:
+        # A constant/derived rule may have no source columns.
         if self.source is None:
             return []
+        # Use list(self.source) when self.source is a list; otherwise use [self.source].
         return list(self.source) if isinstance(self.source, list) else [self.source]
 
 
@@ -167,24 +178,31 @@ class Mapping:
     path: Path
     raw: dict
 
+    # Use the declared mapping identifier, falling back to its filename.
     @property
     def mapping_id(self) -> str:
+        # Prefer self.raw.get('mapping_id'); if empty or absent, fall back to self.path.stem.
         return self.raw.get("mapping_id") or self.path.stem
 
+    # Return the mapping's declared upstream source name.
     @property
     def source_name(self) -> str:
         return self.raw["source_name"]
 
+    # Return the optional download route associated with this mapping.
     @property
     def route_id(self) -> str | None:
         return self.raw.get("route_id")
 
+    # Expose the mapping's declared readiness, defaulting to unknown.
     @property
     def status(self) -> str:
         return self.raw.get("status", "unknown")
 
+    # Read the declared unit of one output record without inventing a missing grain.
     @property
     def record_grain(self) -> str:
+        # Use empty text when self.raw.get('record_grain') is missing or empty.
         return (self.raw.get("record_grain") or "").strip()
 
     @property
@@ -196,6 +214,7 @@ class Mapping:
         base.py 对此保持中立：mapping 指哪就用哪，不在代码里写死任何一套。
         """
         v = self.raw.get("target_schema")
+        # Stop with a diagnostic: {self.path.name} 缺少 target_schema —— parser 不知道该产出什么词表.
         if not v:
             raise ParseError(f"{self.path.name} 缺少 target_schema —— parser 不知道该产出什么词表")
         return v
@@ -205,6 +224,7 @@ class Mapping:
         """从 target_schema 里取出档案路径部分。"""
         head = self.target_schema.split("→")[0].split("->")[0].strip()
         p = ROOT / head
+        # Stop with a diagnostic: {self.path.name} 的 target_schema 指向 {p}，该档不存在.
         if not p.is_file():
             raise ParseError(f"{self.path.name} 的 target_schema 指向 {p}，该档不存在")
         return p
@@ -220,41 +240,59 @@ class Mapping:
         base 不强求文档层统一措辞 —— 能认的都认，认不到就交回空表，
         由 run() 在清单里显式标注「未登记 raw 输入」，而不是假装链条完整。
         """
+        # Accept either historical source_datasets or source_dataset metadata spelling.
         ds = self.raw.get("source_datasets") or self.raw.get("source_dataset")
+        # An absent dataset declaration leaves provenance incomplete rather than inventing an input.
         if not ds:
             return []
+        # List-form datasets retain their explicit names or their original indices.
         if isinstance(ds, list):
+            # Build mapped values from enumerate(ds).
             return [(str(d.get("name") or i), d) for i, d in enumerate(ds)]
+        # A dictionary of dataset specifications differs from a single dataset specification.
         if all(isinstance(v, dict) for v in ds.values()):
             return list(ds.items())          # 复数：dict-of-dicts
         return [("source_dataset", ds)]      # 单数：本身就是那个 spec
 
+    # Read the single-dataset declaration or stop when the source file is unspecified.
     @property
     def source_dataset(self) -> dict:
         ds = self.raw.get("source_dataset")
+        # Stop with a diagnostic: {self.path.name} 缺少 source_dataset —— 不知道读哪个 raw 档.
         if not ds:
             raise ParseError(f"{self.path.name} 缺少 source_dataset —— 不知道读哪个 raw 档")
         return ds
 
+    # Return the mapping's named derivation rules.
     @property
     def rule_refs(self) -> dict:
+        # Use an empty mapping when self.raw.get('rule_refs') is missing or empty.
         return self.raw.get("rule_refs") or {}
 
     @property
     def not_available(self) -> list[str]:
         """本源填不了的库字段。用来给 null_reason 定 NOT_MAPPED。"""
+        # Apply the explicit fallbacks to missing/empty values while retaining any reported nonempty
+        # values.
         return (self.raw.get("unmapped_target_columns") or {}).get("not_available") or []
 
+    # List columns intentionally left for platform-generated values.
     @property
     def platform_managed(self) -> list[str]:
+        # Apply the explicit fallbacks to missing/empty values while retaining any reported nonempty
+        # values.
         return (self.raw.get("unmapped_target_columns") or {}).get("platform_managed") or []
 
+    # Build typed target blocks from the executable mapping section.
     def targets(self) -> list[TargetBlock]:
         blocks = self.raw.get("targets")
+        # Stop with a diagnostic: {self.path.name} 没有 Part 3 targets 块，无法驱动 parser.
         if not blocks:
             raise ParseError(f"{self.path.name} 没有 Part 3 targets 块，无法驱动 parser")
         out = []
+        # Build every target block with its own field rules and output grain.
         for b in blocks:
+            # Build mapped values from b.get('fields') or [].
             out.append(
                 TargetBlock(
                     table=b["table"],
@@ -272,10 +310,14 @@ class Mapping:
 def load_mapping(name_or_path: str) -> Mapping:
     """接受 `thera_sabdab_to_binder`、`….yaml` 或完整路径。"""
     cand = Path(name_or_path)
+    # Resolve short mapping names under docs/Mapping when no explicit file exists.
     if not cand.is_file():
+        # Prefer cand.stem; if empty or absent, fall back to name_or_path.
         cand = MAPPING_DIR / f"{cand.stem or name_or_path}.yaml"
+    # Stop with a diagnostic: 找不到 mapping：{name_or_path}（查过 {cand}）.
     if not cand.is_file():
         raise ParseError(f"找不到 mapping：{name_or_path}（查过 {cand}）")
+    # Close the file reliably, including when reading or writing raises an error.
     with cand.open(encoding="utf-8") as fh:
         return Mapping(path=cand, raw=yaml.safe_load(fh))
 
@@ -299,16 +341,23 @@ _CONSTRAINT_HEAD = re.compile(
 def _split_top_level(body: str) -> Iterator[str]:
     """按顶层逗号切分。numeric(3,2) 与 GENERATED ALWAYS AS (…) 里的逗号不能切。"""
     depth, buf = 0, []
+    # Scan characters while tracking parentheses so embedded SQL commas are not split.
     for ch in body:
+        # An opening parenthesis enters a nested SQL expression.
         if ch == "(":
             depth += 1
+        # A closing parenthesis returns toward the table-definition level.
         elif ch == ")":
             depth -= 1
+        # Only a comma outside nested expressions separates column declarations.
         if ch == "," and depth == 0:
             yield "".join(buf)
             buf = []
+        # Keep ordinary characters in the current SQL column buffer until a top-level delimiter
+        # appears.
         else:
             buf.append(ch)
+    # Emit the final buffered column when the definition has no trailing comma.
     if buf:
         yield "".join(buf)
 
@@ -321,6 +370,7 @@ class Schema:
     table: str
     columns: dict[str, Column]
 
+    # Read column names and basic constraints from a legacy CREATE TABLE definition.
     @classmethod
     def from_sql(cls, path: Path, table: str) -> "Schema":
         text = path.read_text(encoding="utf-8")
@@ -328,19 +378,24 @@ class Schema:
             r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?" + re.escape(table) + r"\s*\(",
             text, re.I,
         )
+        # Stop with a diagnostic: {path.name} 里找不到 CREATE TABLE {table}.
         if not m:
             raise ParseError(f"{path.name} 里找不到 CREATE TABLE {table}")
         depth, i = 1, m.end()
+        # Scan balanced parentheses to find the end of this SQL table definition.
         while depth and i < len(text):
             depth += (text[i] == "(") - (text[i] == ")")
             i += 1
         body = re.sub(r"--[^\n]*", "", text[m.end():i - 1])   # 去行内注释
         cols: dict[str, Column] = {}
+        # Parse each top-level column/constraint fragment independently.
         for frag in _split_top_level(body):
             frag = frag.strip()
+            # Ignore table constraints and empty fragments; they are not column definitions.
             if not frag or _CONSTRAINT_HEAD.match(frag):
                 continue
             parts = frag.split(None, 1)
+            # Skip fragments lacking both a column name and a type.
             if len(parts) < 2:
                 continue
             name, rest = parts[0], parts[1]
@@ -357,13 +412,16 @@ class Schema:
         """Schema_A.yaml 形态：顶层块 → {table, fields: {name: {type, nullable}}}。"""
         doc = yaml.safe_load(path.read_text(encoding="utf-8"))
         want = table.split(".")[-1]
+        # Collect items from doc.values() only where isinstance(v, dict) and v.get('table') == want.
         block = next(
             (v for v in doc.values()
              if isinstance(v, dict) and v.get("table") == want),
             None,
         )
+        # Stop with a diagnostic: {path.name} 里找不到 table={table}.
         if block is None:
             raise ParseError(f"{path.name} 里找不到 table={table}")
+        # Build mapped values from (block.get('fields') or {}).items().
         cols = {
             name: Column(
                 name=name,
@@ -375,16 +433,23 @@ class Schema:
         }
         return cls(origin=path, table=table, columns=cols)
 
+    # Choose SQL or YAML schema loading from the path explicitly named by the mapping.
     @classmethod
     def for_mapping(cls, mapping: Mapping, table: str) -> "Schema":
         p = mapping.schema_path
+        # Use cls.from_sql(p, table) when p.suffix equals '.sql'; otherwise use cls.from_yaml(p,
+        # table).
         return cls.from_sql(p, table) if p.suffix == ".sql" else cls.from_yaml(p, table)
 
     def unknown(self, names) -> list[str]:
         """mapping 写了、schema 里没有的列 —— mapping 与 schema 脱节的早期信号。"""
+        # Collect items from names only where n not in self.columns.
         return sorted(n for n in names if n not in self.columns)
 
+    # Find required source-populated columns whose values remain absent.
     def missing_required(self, values: dict) -> list[str]:
+        # Collect items from self.columns.values() only where c.not_null and (not c.generated) and
+        # (values.get(c.name) is None).
         return sorted(
             c.name for c in self.columns.values()
             if c.not_null and not c.generated and values.get(c.name) is None
@@ -410,14 +475,19 @@ class Record:
     null_reasons: dict[str, str] = field(default_factory=dict)
     uid: str | None = None
 
+    # Store a mapped value together with any field-level source provenance.
     def set(self, column: str, value: Any, **prov) -> None:
         self.values[column] = value
+        # Keep field provenance only when the mapping supplied it.
         if prov:
             self.provenance[column] = prov
 
+    # Store null with a reason so missing source data remains distinguishable from extraction
+    # failure.
     def absent(self, column: str, reason: str, **prov) -> None:
         self.values[column] = None
         self.null_reasons[column] = reason
+        # Attach provenance to the null reason when it is available.
         if prov:
             self.provenance[column] = prov
 
@@ -428,15 +498,19 @@ def content_uid(*parts: Any) -> str:
     只是工具，不代表 Q2 已定 —— 调用点仍应先过 Undecided("Q2")。
     """
     h = hashlib.sha256()
+    # Separate hash components with a delimiter to avoid ambiguous string concatenations.
     for p in parts:
         h.update(str(p).encode("utf-8"))
         h.update(b"\x1f")
     return h.hexdigest()[:32]
 
 
+# Hash each consumed input in chunks for the provenance manifest.
 def _sha256_file(path: Path) -> str:
     h = hashlib.sha256()
+    # Close the file reliably, including when reading or writing raises an error.
     with path.open("rb") as fh:
+        # Read bounded chunks until EOF to avoid loading the whole file into memory.
         while block := fh.read(1 << 20):
             h.update(block)
     return h.hexdigest()
@@ -458,9 +532,11 @@ class Interim:
     REJECTS = "rejects.jsonl"
     MANIFEST = "_manifest.json"
 
+    # Prepare dated interim output paths and stream bookkeeping for one source parser run.
     def __init__(self, db: str, source_dir: str, parse_date: str | None = None):
         self.db = db
         self.source_dir = source_dir
+        # Prefer parse_date; if empty or absent, fall back to date.today().strftime('%Y%m%d').
         self.parse_date = parse_date or date.today().strftime("%Y%m%d")
         self.dir = DATA_ROOT / "interim" / db / source_dir / self.parse_date
         self.dir.mkdir(parents=True, exist_ok=True)
@@ -471,9 +547,12 @@ class Interim:
         self._rej_fh = None
 
     # --- 输入登记：证据链上「这批数据由哪份 raw + 哪份 mapping 产出」那一环 ---
+    # Register a real input file, its checksum, and its role in producing interim records.
     def consume(self, path: Path, kind: str, note: str | None = None) -> None:
+        # Stop with a clear missing-input diagnostic before reading source data.
         if not path.is_file():
             raise ParseError(f"输入档不存在：{path}")
+        # Use str(path.relative_to(ROOT)) when path.is_relative_to(ROOT); otherwise use str(path).
         self.inputs.append({
             "kind": kind,                     # raw / mapping / schema
             "path": str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path),
@@ -482,16 +561,21 @@ class Interim:
             "note": note,
         })
 
+    # Open record and rejection JSONL streams for the parser run.
     def __enter__(self) -> "Interim":
         self._rec_fh = (self.dir / self.RECORDS).open("w", encoding="utf-8")
         self._rej_fh = (self.dir / self.REJECTS).open("w", encoding="utf-8")
         return self
 
+    # Close both output streams even when parsing stops early.
     def __exit__(self, *exc) -> None:
+        # Handle both resources so one stream cannot be left unread or unclosed.
         for fh in (self._rec_fh, self._rej_fh):
+            # Close only streams that were successfully opened.
             if fh:
                 fh.close()
 
+    # Write one provenance-bearing interim record and increment the accepted-record count.
     def emit(self, rec: Record) -> None:
         self._rec_fh.write(json.dumps(asdict(rec), ensure_ascii=False) + "\n")
         self.n_records += 1
@@ -501,12 +585,17 @@ class Interim:
         self._rej_fh.write(json.dumps({"reason": reason, **info}, ensure_ascii=False) + "\n")
         self.n_rejects += 1
 
+    # Write input checksums, mapping identity, counts, and any incomplete-provenance warning.
     def finish(self, *, mapping: Mapping, extra: dict | None = None) -> Path:
+        # Collect items from self.inputs only where i['kind'] == 'raw'.
         n_raw = sum(1 for i in self.inputs if i["kind"] == "raw")
+        # Choose the result according to n raw is truthy; preserve the alternate path for the other
+        # case.
         warning = None if n_raw else (
             "本批未登记任何 raw 输入档 —— 证据链在「由哪份原始快照产出」这一环是断的。"
             "多半是 mapping 缺 source_dataset(s) 块，或 parser 未覆写 source_paths()。"
         )
+        # Use an empty mapping when extra is missing or empty.
         manifest = {
             "db": self.db,
             "source_name": mapping.source_name,
@@ -525,6 +614,7 @@ class Interim:
             **(extra or {}),
         }
         p = self.dir / self.MANIFEST
+        # Close the file reliably, including when reading or writing raises an error.
         with p.open("w", encoding="utf-8") as fh:
             json.dump(manifest, fh, ensure_ascii=False, indent=2)
         return p
@@ -545,9 +635,11 @@ class SourceParser:
     #: data/interim/<db>/<source_dir>/ 里的 <source_dir>，与 data/raw/ 下的目录名一致
     source_dir: str = ""
 
+    # Bind the source mapping to its target table schemas before parsing rows.
     def __init__(self, mapping: Mapping):
         self.mapping = mapping
         self.targets = mapping.targets()
+        # Build mapped values from self.targets.
         self.schemas = {t.table: Schema.for_mapping(mapping, t.table) for t in self.targets}
 
     # --- 子类必须实现 ---
@@ -560,13 +652,16 @@ class SourceParser:
         raise NotImplementedError
 
     # --- 已定，base 提供 ---
+    # Check mapped columns and required values against the selected legacy target schema.
     def validate(self, rec: Record) -> list[str]:
         schema = self.schemas[rec.table]
         problems = []
         unknown = schema.unknown(rec.values)
+        # Report mapping fields that are absent from the chosen target schema.
         if unknown:
             problems.append(f"schema 无此列：{', '.join(unknown)}")
         missing = schema.missing_required(rec.values)
+        # Report required, non-generated columns that the parser could not fill.
         if missing:
             problems.append(f"NOT NULL 列为空：{', '.join(missing)}")
         return problems
@@ -577,8 +672,10 @@ class SourceParser:
         不这么做的话，「这个源没有这个字段」与「这一行恰好是空」在 interim 里
         长得一模一样，CLAUDE.md 要求的区分就没了。
         """
+        # Mark source-unavailable fields separately from extraction failures.
         for col in self.mapping.not_available:
             rec.null_reasons.setdefault(col, NullReason.NOT_MAPPED)
+        # Leave platform-generated columns to the later database layer.
         for col in self.mapping.platform_managed:
             rec.null_reasons.setdefault(col, NullReason.PLATFORM_MANAGED)
 
@@ -590,36 +687,52 @@ class SourceParser:
         子类应覆写本方法把实际读的路径交回来。
         """
         out = []
+        # Register only source paths actually declared by this mapping.
         for name, spec in self.mapping.source_datasets:
+            # Use spec.get('file') when spec is a dict; otherwise use None.
             f = spec.get("file") if isinstance(spec, dict) else None
+            # Skip dataset entries that do not declare a file.
             if not f:
                 continue
+            # Use Path(f) when Path(f).is_absolute(); otherwise use ROOT / f.
             p = Path(f) if Path(f).is_absolute() else ROOT / f
+            # Include existing raw files in the consumed-input inventory.
             if p.is_file():
                 out.append((p, name))
         return out
 
+    # Stop at the unresolved stable-ID policy; subclasses must implement an agreed rule.
     def assign_uid(self, rec: Record) -> None:
         raise Undecided("Q2", "SourceParser.assign_uid()")
 
+    # Stop at the unresolved inclusion policy instead of guessing which records belong in the
+    # database.
     def should_include(self, rec: Record) -> bool:
         raise Undecided("Q4", "SourceParser.should_include()")
 
     # --- 主循环 ---
+    # Register inputs, build and validate records, then apply the still-explicit ID/inclusion
+    # policies.
     def run(self, out: "Interim", *, limit: int | None = None) -> None:
         out.consume(self.mapping.path, "mapping")
+        # Record the schema file used by every output target.
         for t in self.targets:
             out.consume(self.schemas[t.table].origin, "schema", note=t.table)
+        # Attach each actual raw input path and its role to provenance.
         for path, note in self.source_paths():
             out.consume(path, "raw", note=note)
         n = 0
+        # Read source rows in source order; one row may produce multiple output records.
         for row in self.iter_source_rows():
+            # Stop after the requested number of source rows, not output records.
             if limit is not None and n >= limit:
                 break
             n += 1
+            # Process every observation emitted from this source row independently.
             for rec in self.build_records(row, out):
                 self.fill_absent(rec)
                 problems = self.validate(rec)
+                # Retain failed validation in rejects instead of issuing an ID for a bad record.
                 if problems:
                     out.reject(NullReason.VALIDATION_FAILED,
                                entity_key=rec.entity_key, problems=problems)

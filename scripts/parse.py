@@ -34,6 +34,8 @@ from parsers.base import (  # noqa: E402
 )
 
 
+# Run the legacy mapping parser, distinguishing missing configuration, rejected data, and unresolved
+# policy.
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -46,16 +48,21 @@ def main() -> int:
     ap.add_argument("--list", action="store_true", help="列出已实现的 parser 后退出")
     args = ap.parse_args()
 
+    # List the available legacy parsers and return before loading source data.
     if args.list:
+        # Process each (mid, mod) from KNOWN_PARSERS.items() independently.
         for mid, mod in KNOWN_PARSERS.items():
             print(f"  {mid:28s} → parsers/{mod}.py")
         return 0
 
+    # Reject the input: 需要指定 mapping，或用 --list 查看有哪些.
     if not args.mapping:
         ap.error("需要指定 mapping，或用 --list 查看有哪些")
 
+    # Attempt this operation while preserving the explicit recovery/cleanup paths below.
     try:
         mapping = load_mapping(args.mapping)
+    # On ParseError, report this outcome to the command-line operator.
     except ParseError as exc:
         print(f"✗ {exc}", file=sys.stderr)
         return 2
@@ -66,7 +73,9 @@ def main() -> int:
     #   sabdab_to_binder.yaml → mapping_id: sabdab2_to_binder
     # load_mapping() 本来就是按档名找档的，档名才是稳定的那个键。
     mod_name = KNOWN_PARSERS.get(mapping.path.stem) or KNOWN_PARSERS.get(mapping.mapping_id)
+    # When mod name is empty or false, report this outcome to the command-line operator.
     if not mod_name:
+        # Prefer ', '.join(KNOWN_PARSERS); if empty or absent, fall back to '（无）'.
         print(
             f"✗ mapping `{mapping.path.stem}`（档内 mapping_id={mapping.mapping_id}）"
             f"还没有对应的 parser。\n  已实现：{', '.join(KNOWN_PARSERS) or '（无）'}",
@@ -74,23 +83,30 @@ def main() -> int:
         )
         return 2
 
+    # Attempt this operation while preserving the explicit recovery/cleanup paths below.
     try:
         module = importlib.import_module(f"parsers.{mod_name}")
+    # On ModuleNotFoundError, report this outcome to the command-line operator.
     except ModuleNotFoundError as exc:
         print(f"✗ 找不到 parser 模块 `parsers.{mod_name}`：{exc}", file=sys.stderr)
         return 2
 
+    # Collect items from vars(module).values() only where isinstance(v, type) and issubclass(v,
+    # SourceParser) and (v is not SourceParser).
     parser_cls = next(
         (v for v in vars(module).values()
          if isinstance(v, type) and issubclass(v, SourceParser) and v is not SourceParser),
         None,
     )
+    # When parser cls is absent, report this outcome to the command-line operator.
     if parser_cls is None:
         print(f"✗ parsers/{mod_name}.py 里没有 SourceParser 的子类", file=sys.stderr)
         return 2
 
+    # Attempt this operation while preserving the explicit recovery/cleanup paths below.
     try:
         parser = parser_cls(mapping)
+    # On ParseError, report this outcome to the command-line operator.
     except ParseError as exc:
         print(f"✗ {exc}", file=sys.stderr)
         return 2
@@ -98,22 +114,28 @@ def main() -> int:
     db = parser.targets[0].db_name
     print(f"源  : {mapping.source_name}（{mapping.path.name}，status={mapping.status}）")
     print(f"映射: {mapping.mapping_id} → {mapping.target_schema}")
+    # Prefer mapping.record_grain; if empty or absent, fall back to '（mapping 未声明）'.
     print(f"粒度: {mapping.record_grain or '（mapping 未声明）'}")
 
     # 契约自检：mapping 写了、schema 里却没有的列，是两层脱节最早的信号。
     # 这类问题该在 dry-run 阶段就看见，而不是跑完几万行才发现。
     for t in parser.targets:
+        # Build mapped values from t.fields.
         unknown = parser.schemas[t.table].unknown(f.target for f in t.fields)
+        # Use f" ⚠ schema 无此列：{', '.join(unknown)}" when unknown is truthy; otherwise use ''.
         flag = f"  ⚠ schema 无此列：{', '.join(unknown)}" if unknown else ""
         print(f"  - {t.table}  记录数/源行={t.record_per_source}  字段={len(t.fields)}{flag}")
 
+    # Preview the planned operation and return before the subsequent execution stage.
     if args.dry_run:
         print("\n[dry-run] 未落盘")
         return 0
 
     out = Interim(db, parser.source_dir, args.parse_date)
     print(f"落  : {out.dir}")
+    # Attempt this operation while preserving the explicit recovery/cleanup paths below.
     try:
+        # Release this managed resource when the enclosed operation completes or fails.
         with out:
             parser.run(out, limit=args.limit)
     except Undecided as exc:
@@ -123,6 +145,7 @@ def main() -> int:
         path = out.finish(mapping=mapping, extra={"halted_at": exc.qid})
         print(f"  已产出部分写入清单：{path}", file=sys.stderr)
         return 3
+    # On ParseError, report this outcome to the command-line operator.
     except ParseError as exc:
         print(f"\n✗ {exc}", file=sys.stderr)
         path = out.finish(mapping=mapping, extra={"failed": str(exc)})
@@ -135,5 +158,6 @@ def main() -> int:
     return 0
 
 
+# Run the command only when invoked as a script, not when imported by tests or other modules.
 if __name__ == "__main__":
     raise SystemExit(main())

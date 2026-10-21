@@ -19,7 +19,9 @@ CREATE INDEX IF NOT EXISTS qc_open_idx ON qc.finding (status, severity);
 -- QC 通过率：Day15 复核门槛 ≥95%
 CREATE OR REPLACE VIEW qc.pass_rate AS
 SELECT count(*) FILTER (WHERE status IN ('fixed','accepted'))::numeric
+       -- Only fixed/accepted findings enter the numerator; NULLIF avoids division by zero for no findings.
        / NULLIF(count(*),0) AS pass_rate,
+       -- Count open critical/major findings separately from the aggregate pass rate.
        count(*) FILTER (WHERE status='open' AND severity='P0') AS open_p0,
        count(*) FILTER (WHERE status='open' AND severity='P1') AS open_p1
 FROM qc.finding;

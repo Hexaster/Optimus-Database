@@ -95,11 +95,14 @@ def clean(raw: Any) -> tuple[str | None, str | None]:
     真空与哨兵 "NA" 都是「数据缺失」，但必须分开记 —— CLAUDE.md 要求区分缺失的种类，
     且朴素非空判断会把 "NA" 当成有值。
     """
+    # Missing source cells receive SOURCE_EMPTY rather than a fabricated value.
     if raw is None:
         return None, NullReason.SOURCE_EMPTY
     s = str(raw).strip()
+    # Whitespace-only source cells are empty.
     if not s:
         return None, NullReason.SOURCE_EMPTY
+    # The explicit NA sentinel remains distinguishable from a truly empty cell.
     if s.upper() in SENTINELS:
         return None, NullReason.SENTINEL_EMPTY
     return s, None
@@ -111,9 +114,11 @@ class SabDabParser(SourceParser):
     mapping_id = "sabdab_to_binder"
     source_dir = "sabdab"
 
+    # Validate the selected route and resolve the snapshot and executable summary mapping.
     def __init__(self, mapping, *, snapshot: str | None = None,
                  route: str = ROUTE_SUMMARY, summary_name: str = SUMMARY_CSV):
         super().__init__(mapping)
+        # Stop with a diagnostic: 未知 route：{route}.
         if route not in (ROUTE_SUMMARY, ROUTE_STRUCTURES):
             raise ParseError(f"未知 route：{route}")
         self.route = route
@@ -124,20 +129,26 @@ class SabDabParser(SourceParser):
     # ------------------------------------------------------------------
     # 输入定位
     # ------------------------------------------------------------------
+    # Use the requested snapshot, otherwise the last lexically sorted snapshot directory.
     def _resolve_snapshot(self, snapshot: str | None) -> Path:
         base = DATA_ROOT / "raw" / self.source_dir
+        # An explicit snapshot takes precedence over automatic latest-directory selection.
         if snapshot:
             p = base / snapshot
+            # Stop with a diagnostic: 快照目录不存在：{p}.
             if not p.is_dir():
                 raise ParseError(f"快照目录不存在：{p}")
             return p
+        # Collect items from base.glob('*') only where d.is_dir().
         dirs = sorted(d for d in base.glob("*") if d.is_dir())
+        # Stop with a diagnostic: {base} 下没有任何快照目录.
         if not dirs:
             raise ParseError(f"{base} 下没有任何快照目录")
         return dirs[-1]   # 目录名是 YYYYMMDD，字典序即时间序
 
     def _summary_block(self) -> TargetBlock:
         """Part 3 只有一块 target（binder.binder）。多于一块说明 mapping 变了，显式停。"""
+        # Stop with a diagnostic: 预期 Part 3 只有 1 个 target 块，实得 {len(self.targets)}.
         if len(self.targets) != 1:
             raise ParseError(f"预期 Part 3 只有 1 个 target 块，实得 {len(self.targets)}")
         return self.targets[0]
@@ -150,24 +161,31 @@ class SabDabParser(SourceParser):
         第二个独立的 route（record_grain: 一个 mmCIF 结构档），写在顶层 `structures_route:` 下。
         base 看不到它，所以这里直接从 mapping.raw 取 —— 不改 base，也不把它伪装成第二个 target。
         """
+        # Use an empty mapping when self.mapping.raw.get('structures_route') is missing or empty.
         return self.mapping.raw.get("structures_route") or {}
 
     # ------------------------------------------------------------------
     # 读源
     # ------------------------------------------------------------------
+    # Choose summary rows or structure-archive member metadata for the selected route.
     def iter_source_rows(self) -> Iterator[dict]:
+        # The summary route reads tabular antibody instances.
         if self.route == ROUTE_SUMMARY:
             yield from self.iter_summary_rows()
+        # Structure routes iterate downloaded archive files rather than summary CSV rows.
         else:
             yield from self.iter_structure_files()
 
     def iter_summary_rows(self) -> Iterator[dict]:
         """all_summary.csv 逐行。一行 = 一条 antibody instance，不去重。"""
         path = self.snapshot_dir / self.summary_name
+        # Stop with a clear missing-input diagnostic before reading source data.
         if not path.is_file():
             raise ParseError(f"summary 档不存在：{path}")
+        # Close the file reliably, including when reading or writing raises an error.
         with path.open(newline="", encoding="utf-8") as fh:
             reader = csv.DictReader(fh)
+            # Use an empty list when reader.fieldnames is missing or empty.
             self._check_columns(reader.fieldnames or [], path)
             for i, row in enumerate(reader, start=2):   # 2 = 表头之后第一行
                 row["_route"] = ROUTE_SUMMARY
@@ -182,19 +200,26 @@ class SabDabParser(SourceParser):
         裁切档档名里的两条链即 summary 的 Hchain / Lchain。
         """
         path = self.snapshot_dir / STRUCTURES_TGZ
+        # Stop with a clear missing-input diagnostic before reading source data.
         if not path.is_file():
             raise ParseError(f"结构档打包不存在：{path}")
+        # Close the archive after inspecting its members.
         with tarfile.open(path, "r:gz") as tf:
+            # Inspect archive members without extracting arbitrary paths to disk.
             for member in tf.getmembers():
+                # Skip archive directories and other non-file members.
                 if not member.isfile():
                     continue
                 name = Path(member.name).name
                 full, crop = _CIF_FULL_RE.match(name), _CIF_CROP_RE.match(name)
+                # A full mmCIF filename identifies the PDB but does not identify one chain pair.
                 if full:
                     meta = {"kind": "full", "PDB": full["pdb"], "Hchain": None, "Lchain": None}
+                # A cropped filename explicitly supplies heavy/light chain labels.
                 elif crop:
                     meta = {"kind": "crop", "PDB": crop["pdb"],
                             "Hchain": crop["h"], "Lchain": crop["l"]}
+                # Otherwise, stop with a diagnostic: {path.name} 内出现无法识别的档名：{member.name}.
                 else:
                     raise ParseError(f"{path.name} 内出现无法识别的档名：{member.name}")
                 yield {"_route": ROUTE_STRUCTURES, "_archive": str(path),
@@ -202,15 +227,19 @@ class SabDabParser(SourceParser):
 
     def _check_columns(self, header: list[str], path: Path) -> None:
         """mapping 引用的栏必须真实存在。缺栏 = mapping 与档案脱节，早停好过后面填出空值。"""
+        # Collect distinct values from self.block.fields; f.source_columns.
         want = {c for f in self.block.fields for c in f.source_columns}
         missing = sorted(want - set(header))
+        # Stop with a diagnostic: {path.name} 缺少 mapping 引用的栏：{', '.join(missing)}.
         if missing:
             raise ParseError(f"{path.name} 缺少 mapping 引用的栏：{', '.join(missing)}")
 
     # ------------------------------------------------------------------
     # 建记录
     # ------------------------------------------------------------------
+    # Dispatch source rows to summary mapping or the explicitly unimplemented structure handler.
     def build_records(self, row: dict, out: Interim) -> Iterator[Record]:
+        # Structure metadata goes to the deliberately unimplemented sequence-extraction handler.
         if row.get("_route") == ROUTE_STRUCTURES:
             yield from self.build_structure_records(row, out)
             return
@@ -218,39 +247,52 @@ class SabDabParser(SourceParser):
 
     def build_summary_records(self, row: dict, out: Interim) -> Iterator[Record]:
         """一行 instance → 一条 Record（record_per_source: one）。"""
+        # Build mapped values from self.block.entity_key.
         rec = Record(
             table=self.block.table,
             entity_key={k: (row.get(k) or None) for k in self.block.entity_key},
         )
+        # Execute the mapping rule for each target field.
         for rule in self.block.fields:
+            # A constant rule obtains its value from the mapping, not the source row.
             if rule.method == "constant":
                 if rule.value is None:
                     # mapping 显式写 value: null（contrary_evidence）—— 本源结构上就没有这种标记。
                     rec.absent(rule.target, NullReason.NOT_MAPPED,
                                method="constant", note=rule.note)
+                # Otherwise, store the mapped value with its provenance.
                 else:
                     rec.set(rule.target, rule.value, method="constant")
+            # A direct rule preserves the declared source cell and its missing-value reason.
             elif rule.method == "direct":
                 col = rule.source_columns[0]
                 val, reason = clean(row.get(col))
+                # Empty/sentinel source values are recorded as absent with provenance.
                 if reason:
                     rec.absent(rule.target, reason, source=col, method="direct")
+                # Otherwise, store the mapped value with its provenance.
                 else:
                     rec.set(rule.target, val, source=col, method="direct")
+            # Derived fields dispatch to explicit handlers rather than evaluating prose rules.
             elif rule.method == "derived":
                 handler = self._DERIVED.get(rule.target)
+                # Stop with a diagnostic: mapping 的 {rule.target} 是 derived，但 parser 没有对应实现.
                 if handler is None:
                     raise ParseError(
                         f"mapping 的 {rule.target} 是 derived，但 parser 没有对应实现"
                     )
                 handler(self, row, rule, rec)
+            # Otherwise, stop with a diagnostic: 未知 method：{rule.method}（target={rule.target}）.
             else:
                 raise ParseError(f"未知 method：{rule.method}（target={rule.target}）")
 
+        # Collect items from self.block.fields only where r.required and rec.values.get(r.target) is
+        # None.
         missing_required = [
             r.target for r in self.block.fields
             if r.required and rec.values.get(r.target) is None
         ]
+        # Reject a record if a mapping-required field could not be produced.
         if missing_required:
             out.reject("required_missing", line=row.get("_line"),
                        entity_key=rec.entity_key, columns=missing_required)
@@ -308,18 +350,26 @@ class SabDabParser(SourceParser):
         compound, _ = clean(row.get("compound"))
         pdb, _ = clean(row.get("PDB"))
         raw_date, _ = clean(row.get("date"))
+        # Use raw_date.split('/')[0] when raw date is truthy; otherwise use None.
         year = raw_date.split("/")[0] if raw_date else None
+        # Discard an invalid year rather than guessing how to repair its date.
         if year and not re.fullmatch(r"\d{4}", year):
             year = None            # 源格式实测 YYYY/MM/DD；不合就不猜
         parts = []
+        # Include reported authors and the year when available.
         if authors:
+            # Use f'{authors} ({year}).' when year is truthy; otherwise use f'{authors}.'.
             parts.append(f"{authors} ({year})." if year else f"{authors}.")
+        # A known year is still useful when the author field is missing.
         elif year:
             parts.append(f"({year}).")
+        # Include a reported compound description in the citation.
         if compound:
             parts.append(f"{compound}.")
+        # Keep the original PDB spelling in the source citation.
         if pdb:
             parts.append(f"PDB {pdb}.")   # 保留源写法 pdb_00008gho，不自行改写成 8GHO
+        # A citation with no reported components remains absent.
         if not parts:
             rec.absent(rule.target, NullReason.SOURCE_EMPTY, source=rule.source_columns)
             return
@@ -332,10 +382,12 @@ class SabDabParser(SourceParser):
         res, _ = clean(row.get("resolution"))
         rfree, _ = clean(row.get("r_free"))
         rfac, _ = clean(row.get("r_factor"))
+        # Collect items from the declared input collections only where p.
         parts = [p for p in (method,
                              f"{res} Å" if res else None,
                              f"Rfree {rfree}" if rfree else None,
                              f"Rfactor {rfac}" if rfac else None) if p]
+        # No structural-method components means experimental conditions remain unknown.
         if not parts:
             rec.absent(rule.target, NullReason.SOURCE_EMPTY, source=rule.source_columns)
             return
@@ -345,6 +397,7 @@ class SabDabParser(SourceParser):
     def _d_target_antigen(self, row: dict, rule, rec: Record) -> None:
         """rule_ref: normalize_antigen_name —— 去构建体后缀，保留抗原本名。"""
         val, reason = clean(row.get("antigen_name"))
+        # An absent antigen label cannot be normalized into a target name.
         if reason:
             rec.absent(rule.target, reason, source="antigen_name",
                        rule_ref=rule.rule_ref)
@@ -353,7 +406,9 @@ class SabDabParser(SourceParser):
         changed = True
         while changed:                      # "X peptide ECD" 这类叠加后缀
             changed = False
+            # Check only the explicitly allowed construct suffixes.
             for suf in ANTIGEN_SUFFIXES:
+                # Remove a matching suffix, then repeat in case suffixes are stacked.
                 if name.lower().endswith(suf):
                     name, changed = name[: -len(suf)].strip(), True
         if not name:                        # 整条只剩后缀，说明规则不适用于这一行
@@ -370,9 +425,12 @@ class SabDabParser(SourceParser):
         不等于「表位是线性还是构象」。若引用可追溯性检查要求每个值都有原文出处，
         此栏应整栏改填 未知 —— 改法是改 mapping 的 value_map，不是改这里。
         """
+        # Build mapped values from (rule.extra.get('value_map') or {}).items().
         vmap = {str(k).upper(): v for k, v in (rule.extra.get("value_map") or {}).items()}
+        # Use empty text when row.get('antigen_type') is missing or empty.
         raw = (row.get("antigen_type") or "").strip()
         val = vmap.get(raw.upper())
+        # An antigen type outside the explicit value map cannot produce an inferred epitope kind.
         if val is None:
             rec.absent(rule.target, NullReason.DERIVATION_FAILED,
                        source="antigen_type", raw=raw,
@@ -392,6 +450,7 @@ class SabDabParser(SourceParser):
         if chain_reason:                    # 实测 NA 表示该 instance 无抗原（全库 21,914 中 19,560 有抗原）
             rec.absent(rule.target, chain_reason, source=rule.source_columns)
             return
+        # A missing PDB identifier prevents a compound structure reference.
         if pdb_reason:
             rec.absent(rule.target, pdb_reason, source=rule.source_columns)
             return
@@ -405,11 +464,17 @@ class SabDabParser(SourceParser):
         """
         h, h_reason = clean(row.get("heavy_species"))
         l, l_reason = clean(row.get("light_species"))
+        # When both chain species are known, retain agreement or explicitly label the difference.
         if h and l:
+            # Use h when h equals l; otherwise use f'H:{h}/L:{l}'.
             val = h if h == l else f"H:{h}/L:{l}"
+        # With only one species, label its chain rather than implying both chains share it.
         elif h or l:
+            # Use f'H:{h}' when h is truthy; otherwise use f'L:{l}'.
             val = f"H:{h}" if h else f"L:{l}"
+        # Otherwise, record null together with its source/derivation reason.
         else:
+            # Prefer h_reason; if empty or absent, fall back to l_reason.
             rec.absent(rule.target, h_reason or l_reason, source=rule.source_columns)
             return
         rec.set(rule.target, val, source=rule.source_columns, method="derived",
@@ -418,6 +483,7 @@ class SabDabParser(SourceParser):
     def _d_species_reactivity(self, row: dict, rule, rec: Record) -> None:
         """antigen_species。单点观察（本结构里结合的抗原来自哪个物种），非跨物种反应性谱。"""
         val, reason = clean(row.get("antigen_species"))
+        # Unreported antigen species cannot establish species reactivity.
         if reason:
             rec.absent(rule.target, reason, source="antigen_species")
             return
@@ -431,19 +497,25 @@ class SabDabParser(SourceParser):
         而 compound 写明 "anti-GUCY2C-scFv antibody" —— 只看 type 会把这个 scFv 判成 其他。
         """
         compound, _ = clean(row.get("compound"))
+        # Prefer a format explicitly stated in the compound description.
         if compound:
             m = _FORMAT_RE.search(compound)
+            # Use the matched format keyword before consulting the less-specific type column.
             if m:
                 rec.set(rule.target, FORMAT_WORDS[m.group(1).lower()],
                         source="compound", method="derived", rule_ref=rule.rule_ref,
                         raw=m.group(0), note="由 compound 文本判定，优先于 type 栏")
                 return
+        # Build mapped values from (rule.extra.get('value_map') or {}).items().
         vmap = {str(k).upper(): v for k, v in (rule.extra.get("value_map") or {}).items()}
+        # Use empty text when row.get('type') is missing or empty.
         raw_type = (row.get("type") or "").strip()
         val = vmap.get(raw_type.upper())
+        # Unmapped types receive the mapping's declared Other fallback.
         if val is None:
             val = "其他"                     # rule_refs.derive_binder_format.fallback
             note = "type 不在 value_map 内，按 mapping 的 fallback 落 其他"
+        # A recognized source type records the direct mapping explanation.
         else:
             note = "由 type 栏判定"
         rec.set(rule.target, val, source=rule.source_columns, method="derived",
@@ -476,12 +548,19 @@ class SabDabParser(SourceParser):
         （这是 mapping 与 base 的键名脱节，如实记录，不改 mapping 也不改 base。）
         """
         super().fill_absent(rec)            # platform_managed 那块键名一致，base 能读到
+        # Add this source's missing-field reasons without overwriting existing audit explanations.
         for col in self._absent_columns():
             rec.null_reasons.setdefault(col, NullReason.NOT_MAPPED)
 
+    # Collect unmapped columns, adding summary-only gaps only for the summary route.
     def _absent_columns(self) -> list[str]:
+        # Use an empty mapping when self.mapping.raw.get('unmapped_target_columns') is missing or
+        # empty.
         um = self.mapping.raw.get("unmapped_target_columns") or {}
+        # Use an empty list when um.get('not_available_at_all') is missing or empty.
         cols = list(um.get("not_available_at_all") or [])
+        # Apply the explicit fallbacks to missing/empty values while retaining any reported nonempty
+        # values.
         cols += list((um.get("epitope_gap") or {}).get("columns") or [])
         if self.route == ROUTE_SUMMARY:
             # 序列三栏只在 summary route 缺；structures route 落地后这里不该再声明缺失。
