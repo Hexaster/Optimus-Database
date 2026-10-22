@@ -35,6 +35,7 @@ sys.path.insert(0, str(REPO / "src"))
 
 from cart_db.agent_output import OutputError, prepare_output
 from cart_db.figures import validate_figures
+from cart_db.animal_figures import validate_animal_figures
 from cart_db.artifacts import artifact_manifest, verify_artifacts
 from cart_db.pipeline import checksum, write_json
 from cart_db.extraction_progress import ExtractionProgress, stream_agent, codex_status, claude_status
@@ -74,10 +75,14 @@ Follow the skill with this run's overrides:
   identifiers, schema field names, and scientific sequences unchanged.
 Read docs/Schema/*.yaml first, then the document, then write
 {out_dir}/data.jsonl, {out_dir}/reasoning.md (a concise evidence and decision summary),
-and, if there are exceptions, {out_dir}/error_log.jsonl.
+and, if there are exceptions, {out_dir}/error_log.jsonl. When animal figures support
+animal efficacy, safety, or cell-kinetics results, also write only those source figure
+copies and their `manifest.json` under {out_dir}/animal_figures/.
 In reasoning.md, reference records by table, row number, and field name rather than
 local IDs, because the runner replaces IDs during publication. Keep scratch material
-separate from final artifacts. figures.jsonl and img/ are also published.
+separate from final artifacts. figures.jsonl and img/ are also published. The optional
+animal_figures/ directory is published only after its manifest links to validated animal
+result rows.
 In reasoning.md link relevant evidence to img/ paths and figure/panel labels;
 use table, one-based JSONL line, and field rather than temporary record IDs.
 
@@ -568,6 +573,8 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
             if (final_dir / name).is_file():
                 shutil.copyfile(final_dir / name, draft_dir / name)
                 preserved[name] = checksum(draft_dir / name)
+        if (final_dir / "animal_figures").is_dir():
+            shutil.copytree(final_dir / "animal_figures", draft_dir / "animal_figures")
     started = time.monotonic()
     usage = empty_usage()
     cost = 0.0
@@ -621,6 +628,11 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
                 output = candidate.read_text(encoding="utf-8")
             else:
                 output = prepare_output(candidate)
+                normalized_candidate = draft_dir / "normalized.candidate.jsonl"
+                normalized_candidate.write_text(output, encoding="utf-8")
+                animal_figures = draft_dir / "animal_figures"
+                if animal_figures.exists():
+                    validate_animal_figures(animal_figures, normalized_candidate)
             reasoning = draft_dir / "reasoning.md"
             # A valid JSONL without a nonempty evidence summary is incomplete extraction output.
             if not reasoning.is_file() or not reasoning.read_text(encoding="utf-8").strip():
@@ -680,7 +692,7 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
             # Full extraction also refreshes data and removes any obsolete exception log.
             if not figures_only:
                 names = ["original.jsonl", "error_log.jsonl", "reasoning.md", "figures.jsonl",
-                         "img", "data.jsonl", "source_manifest.json"]
+                         "img", "animal_figures", "data.jsonl", "source_manifest.json"]
             publish_artifacts(draft_dir, final_dir, names)
         except (OSError, ValueError) as exc:
             result.update(ok=False, reason=f"输出发布失败：{exc}")
