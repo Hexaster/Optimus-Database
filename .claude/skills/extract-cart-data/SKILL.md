@@ -31,6 +31,53 @@ Use one agent by default. Do not spawn subagents or launch other agent processes
 
 Follow the output-folder and runner-override rules below. Work only on the assigned document and its output files; `--workers` is managed by the runner, not by this skill. Keep rendered pages, downloads, and drafts in a unique temporary directory per run, or in a separate scratch subdirectory of the runner's private staging workspace when its override requires all writes there. Do not consult previous extraction outputs to fill source gaps. Do not modify schemas, code, or other documents' results during extraction.
 
+## Animal and clinical evidence fields
+
+Use the active `docs/Schema/Evidence.yaml` definitions for the exact keys, nested shapes, and field-level descriptions. The `animal.*` and `clinical.*` names are literal fields on an evidence row, not new tables. Nested item keys belong inside their declared JSON field; do not emit them as extra evidence columns. Use the existing source, entity, and combination relationships to retain attribution.
+
+- `study_type` identifies the setting of the specific observation: `in_vitro`, `animal`, `clinical`, `computational`, or `other`. Split observations from different settings even when reported in one paper. A study's clinical phase does not make its accompanying animal experiments clinical evidence.
+- `study_source` records journal, publication year, and clinical registry ID. Keep source identity in `source_id` and the evidence location in `citation`; a registration ID does not replace either.
+- `animal.model` records the reported species, strain, sex, age, disease/tumor model, and immune status. `animal.study_groups` records each source-defined arm's sample size, comparator, baseline, intervention, follow-up, randomization, and blinding. Do not infer unreported model characteristics or study-design safeguards.
+- `animal.efficacy_outcomes` stores attributable tumor burden, tumor inhibition, survival, or other animal efficacy observations. `animal.safety_outcomes` stores reported weight change, pathology, organ toxicity, death, or other animal safety observations. Do not impose human response criteria or clinical toxicity grades on animal results.
+- `animal.cell_kinetics` stores animal expansion, distribution, and persistence, preserving tissue, assay, analyte, units, and time. Human kinetics belong in the clinical field.
+### Clinical metrics and accepted inputs
+
+The clinical fields follow the existing A/B/C pattern: each field has one defined quantity or property and an explicit type. Read the current YAML for exact keys and nested contracts. The old `clinical.cohorts`, `clinical.efficacy_outcomes`, `clinical.safety_outcomes`, and `clinical.cell_kinetics` containers are retired and must not be emitted. `clinical.trial_design` and `clinical.assessment_schedule` now accept strings only, not the former JSON structures.
+
+- **Study and baseline.** Use `clinical.trial_phase` and `clinical.trial_design` for phase and design features only. `clinical.enrolled_count` and `clinical.infused_count` are reported integer counts, distinct from each result's analysis denominator. `clinical.patient_baseline` holds one identified patient/cohort's pretreatment characteristics and treatment background; no post-treatment results or follow-up narratives. Store a baseline observation once rather than copying it into every later specimen record.
+- **One conditions object per evidence row.** Use `clinical.measurement_conditions` for the patient/cohort label, relevant analysis population, actual assessment time, assay, specimen, analyte, response criteria, MRD decision threshold, toxicity grading, safety observation window, treatment relatedness, AUC interval, detection limit and result-specific statistical qualifications. Populate only members relevant to that row's metric. Keep response standards in `response_criteria`, assay techniques in `method`, toxicity standards in `grading_system`, and source-specific endpoint definitions in `endpoint_definition`; do not repeat the same text across them. Keep citations in the existing `citation` field and actual units in the measurement object. Repeat the identifying conditions necessary to interpret an independent evidence row; do not assume that a different population, assay or protocol can be inherited solely from a shared DOI or product name.
+- **Individual response versus population rates.** `clinical.response` accepts a reported individual response category, such as CR, CRi, PR or sCR. `clinical.mrd_status` accepts the explicit individual status; `clinical.mrd_level` accepts an actual quantitative MRD result. Never turn an individual response into a 100% rate or infer MRD negativity from CR. `clinical.orr`, `clinical.cr_rate`, `clinical.cri_rate`, `clinical.cr_or_cri_rate`, `clinical.pr_rate`, `clinical.mrd_negative_rate`, `clinical.mrd_negative_cr_rate`, `clinical.relapse_rate` and `clinical.disease_free_rate` accept only `{rate: measurement|null, numerator: integer|null, denominator: integer|null}` for that named endpoint. Keep a reported count/denominator when no rate is given, leaving rate null. Do not calculate missing ORR by adding CR and PR or derive counts from rounded rates.
+- **Time-to-event.** `clinical.dor`, `clinical.pfs`, `clinical.efs` and `clinical.os` accept a source-reported duration measurement and/or an explicit `not_reached` or `not_estimable` status. Landmark survival percentages go in the corresponding `clinical.pfs_rate`, `clinical.efs_rate` or `clinical.os_rate`, with the landmark and time origin in the shared conditions. A patient follow-up duration is not automatically a survival duration.
+- **Named toxicities.** `clinical.crs`, `clinical.icans` and `clinical.dlt` each accept only that event's reported grade, incidence/count, onset, duration/recovery and management. `clinical.ice_score` accepts the actual score and does not establish an ICANS grade by itself. A reported grade 0 is not an invented 0% event rate. Other events go into `clinical.cytopenias`, `clinical.infections` or `clinical.other_adverse_events` by the exact event name; do not also copy them into the dedicated CRS/ICANS/DLT fields. `clinical.ae` and `clinical.sae` accept overall patient incidence/count at that classification level, not a sum of individual events or overlapping grades. Keep grading system, window and relatedness in the one shared conditions object. Do not assume ASTCT 2019, CTCAE 5.0 or a 28-day DLT window.
+- **Human cellular kinetics and biomarkers.** `clinical.cmax`, `clinical.tmax` and `clinical.auc` accept the actual reported peak, peak time and exposure measurements. Non-peak specimen results belong in `clinical.car_t_cell_count`, `clinical.car_t_ratio` or `clinical.transgene_level`; preserve the actual readout, denominator, unit, assay and specimen. `clinical.persistence` holds reported detectable duration and/or a qualitative detection observation; a single positive sample does not justify an inferred duration. Explicit qualitative group comparisons without metric values may use `clinical.kinetics_comparison`. Human specimen cytokine concentrations/detection observations belong in `clinical.cytokine_levels`, not in adverse-event fields or in-vitro manufacturing release fields. Do not duplicate an in-vivo result in `car.persistence` or another generic A/B/C result field.
+- **Schedule.** `clinical.assessment_schedule` contains only the actual reported assessment names, visits/frequency and time origin. Observed result times belong in the conditions of their respective result rows. Do not copy the whole schedule or response protocol into each outcome or substitute example visits such as D28/M3/M6/M12.
+
+Keep multiple named metrics together when they describe the same source observation and share the same conditions. Split evidence rows when patient/cohort, analysis population, denominator, assessment time, assay or other distinguishing conditions differ. Preserve numerator/denominator per named rate field; different endpoints need not share a denominator. Shared context is written once per row, not once inside every metric.
+
+For animal outcome and kinetics arrays, continue using one item per source-supported group, analysis population, endpoint, assessment time and other distinguishing conditions. Match `group_id` to the source-defined context; it is not a platform UUID. Preserve reported numerator/denominator and use `source_locator` for item-level attribution. Numerical values use the shared measurement structure.
+
+Use animal fields only for animal observations and clinical fields only for human clinical observations. Unreported or inapplicable nullable fields remain null. Examples and reference-document conventions are not study data. Do not repeat the same observation solely because it is reported in a caption, abstract or supplementary table: consolidate only when source identity, patient/population, event, time, conditions and statistical scope establish that it is the same observation, retaining every source location and unresolved conflict. In particular, a patient's same CRS/ICANS event grade repeated beside later kinetic samples is not a new safety event at every sampling date.
+
+### Return source figures for animal results
+
+When an animal evidence row cites or relies on a source figure or panel, return a copy of that original figure in `{out_dir}/animal_figures/` so reviewers can inspect the visual evidence alongside the structured result. Include only figures that support populated `animal.efficacy_outcomes`, `animal.safety_outcomes`, or `animal.cell_kinetics`; do not include figures used only for human, in-vitro, manufacturing, or construct evidence. Prefer the publisher/PMC figure asset or supplied supplement image and copy it without editing. For a PDF-only source, render and crop the complete relevant figure from its page at readable resolution; keep panel labels, axes, legends, and scale bars. Do not redraw, annotate, or estimate missing figure content. If a figure is unavailable or cannot be isolated reliably, leave the image out and record the limitation in `reasoning.md` or `error_log.jsonl` as appropriate.
+
+Use a simple unique filename per figure, with its original extension (`.png`, `.jpg`, `.tif`, `.webp`, `.svg`, or `.pdf`). Add `{out_dir}/animal_figures/manifest.json` with this structure, mapping each copied file to the final one-based physical JSONL row numbers of animal evidence it supports:
+
+```json
+{
+  "figures": [
+    {
+      "file": "Figure_2.png",
+      "source_locator": "Figure 2A-C",
+      "evidence_rows": [4, 5]
+    }
+  ]
+}
+```
+
+Do not copy the full article PDF as a substitute for a figure. If no relevant animal figure is available, omit the `animal_figures/` directory entirely. Keep unrelated downloads and scratch files outside this directory; the runner publishes this directory only after checking the manifest and its links to evidence rows.
+
 ## Independent extraction and cross-check
 
 Apply only when the user or runner explicitly enables subagents.
@@ -82,7 +129,7 @@ Apply these steps in both single-agent and enabled independent-extraction modes.
 
 Build a temporary inventory from Methods, Results, captions, and tables, with one entry per source-described experiment or independent process, not per parameter. Include source locations, the measured or processed subject, actual groups and conditions, and readouts where applicable. Add source-supported entities from claims or embodiments under the extraction-scope rules below; an experiment inventory must not exclude otherwise eligible entity data.
 
-Keep the inventory open to additions during extraction and review. Record only combinations of conditions actually reported; do not generate a Cartesian product of doses, time points, or groups. Distinguish inaccessible source content from information not reported, using the source-recovery rules above.
+Keep the inventory open to additions during extraction and review. Record only combinations of conditions actually reported; do not generate a Cartesian product of doses, time points, or groups. Distinguish inaccessible source content from information not reported, using the source-recovery rules above. Within each experiment, inventory separately reported observations by source location/panel, group, time/round, sample or donor identity when given, observation level (representative sample, individual sample/donor, or aggregate statistic), and readout/denominator. Include numerical labels in representative plots as well as summary panels. These are observation entries within an experiment, not automatically independent experiments. Preserve unknown identities and levels as unknown; do not infer a donor identity from panel order.
 
 ### Coverage review: what was missed?
 
@@ -90,6 +137,7 @@ After drafting, return to source sections, Methods, captions, and tables rather 
 
 - **Operations:** subject, steps, reagent names and product identifiers, amounts or concentrations, times, temperatures, equipment, and post-processing.
 - **Experiments:** experimental and control groups, doses or E:T ratios, time points, tissues, sample sizes, replicates, and readouts.
+- **Observation coverage:** map every inventoried representative, individual, and aggregate observation to its own attributable output row/readout or an explicit gap. A group mean or estimated range does not cover separately reported individual values, even if they fall within that range. Conversely, individual values do not replace a reported aggregate. Revisit any observation marked duplicate and verify that it is the same observation under the identity rule below.
 
 Do not replace explicit parameters or enumerated groups with a broad summary. An experiment without exact numerical results may support an image-estimated range under the rules below, or qualitative or method information where an active field permits it; do not force that information into a numerical or unrelated field. Facts already fully stored in the correct location need not be duplicated for coverage. Do not invent unreported checklist items.
 
@@ -119,7 +167,11 @@ Distinguish generic options, concrete proposed embodiments, and experimentally u
 
 **Combinations:** create an ABC combination only when the source links all three components to the same experimental system or product. Extract identifiable components when A, B, or C is missing, but do not fabricate a complete combination.
 
-**Evidence:** for the same ABC combination, keep multiple readouts from the same experiment under the same conditions in one evidence row, even when they appear in different figure panels. Separate rows when the combination, experiment, or conditions differ, including groups, target cells, E:T ratios, time points, or stimulation rounds. Shared figure numbers or entity IDs alone do not establish the same experiment. Repeated descriptions of the same experiment are not independent evidence. Never transfer a measurement between entities or experiments without explicit source support.
+**Evidence:** for the same ABC combination, keep multiple readouts from the same experiment, conditions, and observation identity in one evidence row, even when they appear in different figure panels. Separate rows when the combination, experiment, conditions, or observation identity differ, including groups, target cells, E:T ratios, time points, stimulation rounds, individual samples/donors, and representative versus aggregate observations. Shared figure numbers or entity IDs alone do not establish observation identity. Never transfer a measurement between entities or observations without explicit source support.
+
+**Observation identity and deduplication:** merge repeated reporting only when the source establishes the same experiment, subject/sample or aggregate population, conditions, readout/denominator, and statistical scope. A representative sample, each reported individual donor, and an aggregate statistic are distinct observations: retain each source-supported observation with an active schema destination. Similar values, numerical overlap, a shared group label, or membership in the same experiment do not make them duplicates. Do not omit representative values merely because they are not group statistics. When text and a figure repeat the same observation, store it once with the relevant source locations; different observations are not a source conflict merely because their values differ.
+
+Use existing fields to preserve these distinctions: state the source-supported observation level, sample/donor label when given, group and time/round in `applicable_scenario`; retain the measurement’s statistical meaning and gate/denominator in `raw`, and the exact panel/table location in `citation`. Do not invent schema keys or donor labels. If the source does not identify a representative sample, distinguish it by its source location and leave its sample identity unspecified. Separate evidence rows do not imply independent biological replicates: retain a source-established relationship to the same experiment/cohort in the context, do not increase sample size, and do not calculate a new mean or pooled statistic from representative and aggregate records. Reuse the appropriate entity and combination IDs.
 
 Match the quantity's meaning before its format: EC50 is not Kd, viral titer is not transduction efficiency, CD107a is not target-cell killing, and clinical Cmax/AUC is not manufacturing VCN. Apply current YAML definitions for overlapping indicators and their designated storage locations. An assessment on day 10 alone does not establish a ten-day manufacturing duration.
 
@@ -152,7 +204,7 @@ Do not reconstruct missing regions or infer VH/VL/linker/module boundaries witho
 
 When a quantitative plot lacks an explicit value for an attributable group and condition, attempt pixel-based estimation if an active measurement field matches the plotted readout. An absent number label alone is not a reason to retain only experimental conditions.
 
-- Prefer an explicit value in text, tables, data labels or supplied numerical data for the same readout. Do not duplicate it with an estimate from its illustration. Inspect the source image and caption; use the highest usable resolution available, preserving panel identity. Enlarging a low-resolution image does not create extra precision.
+- Prefer an explicit value in text, tables, data labels or supplied numerical data for the same observation identity and readout. Do not duplicate it with an estimate from its illustration. This does not allow an explicit representative/individual value to replace a different aggregate observation, or an aggregate value to replace representative/individual observations; retain each under the observation-identity rule above. Inspect the source image and caption; use the highest usable resolution available, preserving panel identity. Enlarging a low-resolution image does not create extra precision.
 - Establish the group, time/round, readout, unit and axis scale. Calibrate against at least two readable ticks in the relevant axis segment, recording their numeric values and pixel coordinates. Interpolate in data space for linear axes and log space for logarithmic axes; respect reversed axes, multipliers and axis breaks. If calibration or group attribution is unreliable, leave the affected value null and document the specific limitation.
 - Identify a pixel interval covering the bar's result edge or the relevant marker/curve at the specified x position. Account for line thickness, image resolution, overlap and calibration uncertainty; round bounds outward at a precision supported by the figure. Do not use an arbitrary fixed percentage margin, infer points hidden by overlap, extrapolate beyond the plotted domain, or estimate unreadable flow-cytometry percentages from dot density. Interpolation needed to map pixels onto an axis is allowed; inventing unreported experimental time points is not.
 - Store `kind: image_estimated_range`, with `lower < upper`, source `unit`, and `value`/`error` null. This interval expresses reading precision, not biological variation, a donor range, SD, SEM or a confidence interval. Estimate the plotted central value where applicable, not the span of its error bars; do not fabricate an error term. A mean ± SD explicitly reported elsewhere stays a mean ± SD.
@@ -169,16 +221,23 @@ Use actual source identifiers such as DOI, PMCID, patent accession, or internal 
 
 ### One folder per document
 
-Use `data/normalised/<source-stem>/` for each document. If the user overrides the output root, keep the same per-document folder structure under that root. Each document has at most three final files:
+Use `data/normalised/<source-stem>/` for each document. If the user overrides the output root, keep the same per-document folder structure under that root. Each document has the structured extraction files and validated figure artifacts managed by the runner:
 
 ```text
 <source-stem>/
   data.jsonl
-  error_log.jsonl   # only when exceptions occur
+  original.jsonl
   reasoning.md
+  error_log.jsonl       # only when exceptions occur
+  figures.jsonl         # validated source-figure inventory
+  img/                  # validated figure crops
+  animal_figures/       # only when animal-result figures are available
+    manifest.json
+    Figure_2.png
+  source_manifest.json  # runner checksums and provenance
 ```
 
-Always write `data.jsonl` and `reasoning.md`, including when extraction returns no records. Keep independent drafts, review material, downloads, rendered pages, and other scratch artifacts outside the final document folder. When the runner requires writes inside its private staging workspace, keep scratch material separate from the three final files there; only the final artifacts are published. Do not create additional per-document reports, alternate data formats, or timestamped copies. On a rerun, refresh these final artifacts for the current extraction; do not append new data or reasoning to a previous run. Start the exception log fresh for this run, removing a previous generated `error_log.jsonl` if the current run has no exceptions.
+Always write `data.jsonl` and `reasoning.md`, including when extraction returns no records. The runner publishes normalized and original JSONL, the figure inventory and image directory, the source manifest, optional exceptions, and `animal_figures/` only when validated animal-result figures are available. Keep independent drafts, review material, downloads, rendered pages, and other scratch artifacts outside the final document folder. Do not create additional per-document reports, alternate data formats, or timestamped copies. On a rerun, refresh these final artifacts for the current extraction; do not append new data or reasoning to a previous run. Start the exception log fresh for this run, removing a previous generated `error_log.jsonl` if the current run has no exceptions.
 
 ### Reasoning summary
 
@@ -194,7 +253,7 @@ Summarize final decisions and their supporting evidence; do not reproduce step-b
 
 ### Runner overrides
 
-When the runner supplies a private staging directory, write `data.jsonl`, `reasoning.md`, and optional `error_log.jsonl` directly there; do not add a `<source-stem>/` subfolder. The runner publishes them into the final per-document folder. Follow its explicit overrides for write locations, identifiers, nullable-field completion, and normalization. If it assigns final UUIDs, reference records in `reasoning.md` by table, row number, and field name so references survive publication. If it performs normalization, preserve source values and leave conversion to the runner; report validation or normalization as pending until verified rather than claiming the runner has already completed them. The UUID and normalization instructions below apply when those steps have not been delegated to the runner.
+When the runner supplies a private staging directory, write `data.jsonl`, `reasoning.md`, optional `error_log.jsonl`, and animal-result figure copies plus their manifest directly there; do not add a `<source-stem>/` subfolder. The runner publishes validated artifacts into the final per-document folder. Follow its explicit overrides for write locations, identifiers, nullable-field completion, and normalization. If it assigns final UUIDs, reference records in `reasoning.md` by table, row number, and field name so references survive publication. If it performs normalization, preserve source values and leave conversion to the runner; report validation or normalization as pending until verified rather than claiming the runner has already completed them. The UUID and normalization instructions below apply when those steps have not been delegated to the runner.
 
 ### Data file
 
@@ -247,5 +306,5 @@ Before reporting completion:
 - Verify the inventory was checked against the source, including Methods, Results, captions, and tables, and that each entry has a final disposition. Check for missing parameters, groups, controls, time points, and tissues wherever the active schema can store them.
 - Complete the semantic review of attribution, molecular formats, process stages, comparison bounds, and negation scope. Cross-check values, entity links, groups, and source locations; resolve discrepancies from the document rather than another model's answer.
 - Parse each output line and check field names, shapes, types, enums, missing values, and required provenance against active YAML. Check identifiers against the active execution contract (UUIDs by default or document-local labels under the runner override), foreign-key targets, and row order. YAML `check`/`pattern` rules are not automatically enforced by every project parser; do not claim validation merely because JSON parses.
-- Verify normalization succeeded (or was explicitly delegated to the runner), and only current-run exceptions remain. Verify the final document folder contains only `data.jsonl`, `reasoning.md`, and optional `error_log.jsonl`; scratch files in runner staging must remain separate from these publishable artifacts. Check that the non-empty reasoning summary reflects the final records and actual cross-check/validation status.
+- Verify normalization succeeded (or was explicitly delegated to the runner), and only current-run exceptions remain. Verify the final document folder contains the runner-managed structured data and figure bundle, optional `animal_figures/` only when validated copies are available, and no scratch files. Check that separately reported representative, individual and aggregate observations remain distinguishable in output and coverage notes, and that the non-empty reasoning summary reflects the final records and actual cross-check/validation status.
 - Count written rows by table and exceptions from the files. Report counts, unresolved failures, and whether extraction was single-agent or independently cross-checked.
