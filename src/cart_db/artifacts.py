@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from .ingest_schema import contract_hash
+from .animal_figures import validate_animal_figures
 
 
 # Hash a source or artifact in bounded chunks for safe extraction-resume checks.
@@ -53,6 +54,12 @@ def _artifact_names(directory, source, *, require_figures):
     if require_figures:
         from .figures import validate_figures
         validate_figures(directory, source=source)
+    animal_dir = directory / "animal_figures"
+    if animal_dir.is_symlink():
+        raise ValueError("animal_figures must be a regular directory")
+    if animal_dir.exists():
+        animal_files = validate_animal_figures(animal_dir, directory / "data.jsonl")
+        names.update(path.relative_to(directory).as_posix() for path in animal_files)
     return names
 
 
