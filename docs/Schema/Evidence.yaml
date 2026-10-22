@@ -845,3 +845,1300 @@ evidence:
           description: 该细胞因子的测量浓度。
           preferred_unit: pg/mL
           check: "对 value、lower、upper 中每个非 null 的 x，要求 x >= 0"
+
+    # Study-specific animal and clinical evidence fields. Unreported or inapplicable fields remain null.
+    study_type:
+      type: string
+      nullable: true
+      description: 'Study setting for this evidence record: in_vitro, animal, clinical, computational, or other. Classify
+        the specific experiment or cohort, not the highest development stage mentioned in the document.'
+      allowed_values:
+      - in_vitro
+      - animal
+      - clinical
+      - computational
+      - other
+    study_source:
+      type: json
+      nullable: true
+      description: Publication metadata for this study. Keep source identity and exact evidence locations in source_id
+        and citation; a trial registration number does not replace either.
+      item_schema:
+        journal:
+          type: string
+          nullable: true
+          description: Source journal name as reported.
+        publication_year:
+          type: integer
+          nullable: true
+          description: Publication year of the source.
+          check: non-negative integer
+        trial_registration_id:
+          type: string
+          nullable: true
+          description: Reported clinical trial registry accession, such as an NCT identifier.
+      shape: object
+    animal.model:
+      type: json
+      nullable: true
+      description: Animal species, strain, sex, age, disease or tumor model, and immune status explicitly reported for
+        this experiment. Do not infer an animal model from a cell-line name.
+      item_schema:
+        species:
+          type: string
+          nullable: true
+          description: Animal species reported for this experiment.
+        strain:
+          type: string
+          nullable: true
+          description: Reported animal strain.
+        sex:
+          type: string
+          nullable: true
+          description: Reported animal sex.
+        age:
+          type: string
+          nullable: true
+          description: Reported animal age, retaining its unit and summary form.
+        disease_model:
+          type: string
+          nullable: true
+          description: Reported disease or tumor model name and model type.
+        immune_status:
+          type: string
+          nullable: true
+          description: Reported immune status of the animals; do not infer it from model expectations.
+      shape: object
+    animal.study_groups:
+      type: json
+      nullable: true
+      description: Animal study arms and their reported sample sizes, comparators, pretreatment baseline, interventions,
+        follow-up, randomization, and blinding. One item per source-defined group.
+      item_schema:
+        group_id:
+          type: string
+          nullable: true
+          description: Source-defined arm, cohort, or dose-group label. Use the same label to associate context and
+            results; this is not a platform UUID.
+        population:
+          type: string
+          nullable: true
+          description: Source-defined analysis population or animal subset for this item. Do not combine different populations.
+        sample_size:
+          type: integer
+          nullable: true
+          description: Number of individuals in this group or analysis population as explicitly reported. Do not infer
+            it from plotted points.
+          check: non-negative integer
+        comparator:
+          type: string
+          nullable: true
+          description: Source-reported control arm or comparator treatment.
+        baseline:
+          type: string
+          nullable: true
+          description: Reported disease state or tumor burden before treatment.
+        intervention:
+          type: string
+          nullable: true
+          description: Treatment identity and administration information reported for this animal group.
+        follow_up:
+          type: string
+          nullable: true
+          description: Reported observation or follow-up duration, with its time origin.
+        randomization:
+          type: string
+          nullable: true
+          description: Reported randomization method or explicit reporting status. Absence of a statement is null.
+        blinding:
+          type: string
+          nullable: true
+          description: Reported blinding method or explicit reporting status. Absence of a statement is null.
+      shape: array
+    animal.efficacy_outcomes:
+      type: json
+      nullable: true
+      description: Animal efficacy observations such as tumor burden, tumor inhibition, and survival. One item per group,
+        endpoint, analysis population, and assessment time. Do not apply human response criteria.
+      item_schema:
+        group_id:
+          type: string
+          nullable: true
+          description: Source-defined arm, cohort, or dose-group label. Use the same label to associate context and
+            results; this is not a platform UUID.
+        population:
+          type: string
+          nullable: true
+          description: Source-defined analysis population or animal subset for this item. Do not combine different populations.
+        sample_size:
+          type: integer
+          nullable: true
+          description: Number of individuals in this group or analysis population as explicitly reported. Do not infer
+            it from plotted points.
+          check: non-negative integer
+        endpoint:
+          type: string
+          nullable: true
+          description: Exact endpoint or readout name; preserve distinctions between rates, counts, durations, scores,
+            and concentrations.
+        definition:
+          type: string
+          nullable: true
+          description: Source-specific endpoint definition, response requirements, or event components. Do not substitute
+            a textbook definition.
+        value:
+          type: measurement
+          nullable: true
+          description: Source-reported result in the shared measurement structure. Preserve mean versus median, bounds,
+            ranges, uncertainty, and raw wording. Not reached or not estimable is not zero; retain it in statistical_details.
+        unit:
+          type: string
+          nullable: true
+          description: Actual unit for this result. Leave null if unknown or dimensionless; do not infer units from
+            a preferred convention. Keep it consistent with measurement.unit when both are supplied.
+        numerator:
+          type: integer
+          nullable: true
+          description: Reported count of individuals with the event or response. Do not calculate it from a rounded
+            percentage.
+          check: non-negative integer
+        denominator:
+          type: integer
+          nullable: true
+          description: Reported analysis denominator for this exact result. Do not default to enrollment, infusion count,
+            or the denominator of another endpoint.
+          check: non-negative integer
+        assessment_time:
+          type: string
+          nullable: true
+          description: Assessment time and its time origin as reported. Distinguish time since infusion, enrollment,
+            response, or another anchor.
+        method:
+          type: string
+          nullable: true
+          description: Reported assay method or evaluation standard and version for this observation.
+        statistical_details:
+          type: string
+          nullable: true
+          description: Reported confidence intervals, censoring, not-reached/not-estimable status, comparator, statistical
+            tests, and other statistical qualifications.
+        source_locator:
+          type: string
+          nullable: true
+          description: Exact source location for this item, such as page, table, figure/panel, paragraph, or supplement.
+            Do not invent locations.
+      shape: array
+    animal.safety_outcomes:
+      type: json
+      nullable: true
+      description: Animal safety observations such as weight change, organ toxicity, histopathology, or death. Preserve
+        the actual endpoint, group, denominator, and window; do not assume clinical toxicity grades.
+      item_schema:
+        group_id:
+          type: string
+          nullable: true
+          description: Source-defined arm, cohort, or dose-group label. Use the same label to associate context and
+            results; this is not a platform UUID.
+        population:
+          type: string
+          nullable: true
+          description: Source-defined analysis population or animal subset for this item. Do not combine different populations.
+        sample_size:
+          type: integer
+          nullable: true
+          description: Number of individuals in this group or analysis population as explicitly reported. Do not infer
+            it from plotted points.
+          check: non-negative integer
+        endpoint:
+          type: string
+          nullable: true
+          description: Exact endpoint or readout name; preserve distinctions between rates, counts, durations, scores,
+            and concentrations.
+        definition:
+          type: string
+          nullable: true
+          description: Source-specific endpoint definition, response requirements, or event components. Do not substitute
+            a textbook definition.
+        value:
+          type: measurement
+          nullable: true
+          description: Source-reported result in the shared measurement structure. Preserve mean versus median, bounds,
+            ranges, uncertainty, and raw wording. Not reached or not estimable is not zero; retain it in statistical_details.
+        unit:
+          type: string
+          nullable: true
+          description: Actual unit for this result. Leave null if unknown or dimensionless; do not infer units from
+            a preferred convention. Keep it consistent with measurement.unit when both are supplied.
+        numerator:
+          type: integer
+          nullable: true
+          description: Reported count of individuals with the event or response. Do not calculate it from a rounded
+            percentage.
+          check: non-negative integer
+        denominator:
+          type: integer
+          nullable: true
+          description: Reported analysis denominator for this exact result. Do not default to enrollment, infusion count,
+            or the denominator of another endpoint.
+          check: non-negative integer
+        assessment_time:
+          type: string
+          nullable: true
+          description: Assessment time and its time origin as reported. Distinguish time since infusion, enrollment,
+            response, or another anchor.
+        method:
+          type: string
+          nullable: true
+          description: Reported assay method or evaluation standard and version for this observation.
+        statistical_details:
+          type: string
+          nullable: true
+          description: Reported confidence intervals, censoring, not-reached/not-estimable status, comparator, statistical
+            tests, and other statistical qualifications.
+        source_locator:
+          type: string
+          nullable: true
+          description: Exact source location for this item, such as page, table, figure/panel, paragraph, or supplement.
+            Do not invent locations.
+        grade:
+          type: string
+          nullable: true
+          description: Reported event severity or grade range, including any-grade and grade-specific results. Do not
+            combine these as independent patient counts.
+        grading_system:
+          type: string
+          nullable: true
+          description: Reported severity grading system and version. Do not assume ASTCT, CTCAE, or a particular version.
+        observation_window:
+          type: string
+          nullable: true
+          description: Safety observation interval and its time origin for this result.
+        relatedness:
+          type: string
+          nullable: true
+          description: Source-reported attribution to treatment. A temporal association alone does not establish causality.
+      shape: array
+    animal.cell_kinetics:
+      type: json
+      nullable: true
+      description: Animal in-vivo expansion, distribution, and persistence observations. Separate groups, tissues, assays,
+        readouts, units, and time points; do not place human kinetics here.
+      item_schema:
+        group_id:
+          type: string
+          nullable: true
+          description: Source-defined arm, cohort, or dose-group label. Use the same label to associate context and
+            results; this is not a platform UUID.
+        population:
+          type: string
+          nullable: true
+          description: Source-defined analysis population or animal subset for this item. Do not combine different populations.
+        sample_size:
+          type: integer
+          nullable: true
+          description: Number of individuals in this group or analysis population as explicitly reported. Do not infer
+            it from plotted points.
+          check: non-negative integer
+        endpoint:
+          type: string
+          nullable: true
+          description: Exact endpoint or readout name; preserve distinctions between rates, counts, durations, scores,
+            and concentrations.
+        definition:
+          type: string
+          nullable: true
+          description: Source-specific endpoint definition, response requirements, or event components. Do not substitute
+            a textbook definition.
+        value:
+          type: measurement
+          nullable: true
+          description: Source-reported result in the shared measurement structure. Preserve mean versus median, bounds,
+            ranges, uncertainty, and raw wording. Not reached or not estimable is not zero; retain it in statistical_details.
+        unit:
+          type: string
+          nullable: true
+          description: Actual unit for this result. Leave null if unknown or dimensionless; do not infer units from
+            a preferred convention. Keep it consistent with measurement.unit when both are supplied.
+        numerator:
+          type: integer
+          nullable: true
+          description: Reported count of individuals with the event or response. Do not calculate it from a rounded
+            percentage.
+          check: non-negative integer
+        denominator:
+          type: integer
+          nullable: true
+          description: Reported analysis denominator for this exact result. Do not default to enrollment, infusion count,
+            or the denominator of another endpoint.
+          check: non-negative integer
+        assessment_time:
+          type: string
+          nullable: true
+          description: Assessment time and its time origin as reported. Distinguish time since infusion, enrollment,
+            response, or another anchor.
+        method:
+          type: string
+          nullable: true
+          description: Reported assay method or evaluation standard and version for this observation.
+        statistical_details:
+          type: string
+          nullable: true
+          description: Reported confidence intervals, censoring, not-reached/not-estimable status, comparator, statistical
+            tests, and other statistical qualifications.
+        source_locator:
+          type: string
+          nullable: true
+          description: Exact source location for this item, such as page, table, figure/panel, paragraph, or supplement.
+            Do not invent locations.
+        specimen:
+          type: string
+          nullable: true
+          description: Reported sample or tissue in which cellular kinetics were measured.
+        analyte:
+          type: string
+          nullable: true
+          description: Reported measured entity, such as CAR-positive cells or transgene copies. Do not conflate distinct
+            assay readouts.
+        integration_window:
+          type: string
+          nullable: true
+          description: Reported AUC integration interval and time origin. Do not assume AUC(0–28d).
+        detection_threshold:
+          type: string
+          nullable: true
+          description: Reported detection limit or persistence threshold, including units and criterion.
+      shape: array
+    # Named clinical metrics: one defined quantity/property per field, with shared row conditions.
+    clinical.trial_phase:
+      type: string
+      nullable: true
+      description: Reported clinical trial phase only, such as phase I or I/II. Do not infer it from sample size.
+    clinical.trial_design:
+      type: string
+      nullable: true
+      description: 'Trial design features only: single/multicenter, single-arm or comparative, randomization, blinding
+        and dose-escalation design. Do not add baseline, endpoint results, counts or assessment criteria here.'
+    clinical.enrolled_count:
+      type: integer
+      nullable: true
+      description: Number enrolled in the trial, explicitly reported. Not the treated, evaluable or event-specific
+        denominator.
+    clinical.infused_count:
+      type: integer
+      nullable: true
+      description: Number actually receiving the CAR-T infusion, explicitly reported. Not the enrolled or endpoint-specific
+        evaluable count.
+    clinical.patient_baseline:
+      type: json
+      shape: object
+      nullable: true
+      description: Pretreatment characteristics and treatment context for one source-defined patient or cohort.
+        Identify the subject in clinical.measurement_conditions. Store a baseline observation once; do not recreate
+        it merely to accompany every later sample/result.
+      item_schema:
+        age_summary:
+          type: string
+          nullable: true
+          description: Reported age distribution or individual age, retaining units and summary form.
+        disease_status:
+          type: string
+          nullable: true
+          description: Reported disease, subtype and relapsed/refractory state before treatment.
+        prior_therapies:
+          type: string
+          nullable: true
+          description: Prior treatments, treatment lines and prior transplant/CAR-T as actually reported.
+        baseline_tumor_burden:
+          type: string
+          nullable: true
+          description: Pretreatment tumor burden, retaining readout, actual value, unit and summary form.
+        lymphodepletion:
+          type: string
+          nullable: true
+          description: Reported lymphodepletion regimen for this population; no inferred regimen.
+        infused_product:
+          type: string
+          nullable: true
+          description: Administered CAR-T product identity and source-reported dose; not manufacturing process
+            or release results.
+        t_cell_subsets:
+          type: string
+          nullable: true
+          description: Infused-product subset composition explicitly reported as cohort context. Do not duplicate
+            a separately stored manufacturing or CAR phenotype measurement.
+        other_baseline:
+          type: string
+          nullable: true
+          description: Other reported pretreatment patient characteristics only. Excludes follow-up, post-treatment
+            events and free-form study summaries.
+    clinical.measurement_conditions:
+      type: json
+      shape: object
+      nullable: true
+      description: One shared conditions object for the clinical metrics on this evidence row, following binder.measurement_conditions.
+        Populate only conditions relevant to the recorded metric. Split rows when populations, denominators, assessment
+        times or assays differ. Keep provenance in source_id/citation and baseline in patient_baseline.
+      item_schema:
+        group_id:
+          type: string
+          nullable: true
+          description: Exact source patient/cohort/group label. Reuse only when the source establishes the same
+            subject within this source and product.
+        population:
+          type: string
+          nullable: true
+          description: Analysis-population definition needed to interpret the current result. Do not repeat baseline
+            or product descriptions.
+        sample_size:
+          type: integer
+          nullable: true
+          description: Reported number of individuals contributing to this analysis. Not a rate numerator; leave
+            null if it only duplicates that endpoint denominator without adding an analysis distinction.
+        assessment_time:
+          type: string
+          nullable: true
+          description: Actual result-assessment time or landmark and its origin, such as day 14 after infusion.
+            Not the entire study visit schedule.
+        method:
+          type: string
+          nullable: true
+          description: Assay or measurement technique for the current metric, such as qPCR or flow cytometry. Response
+            criteria belong in response_criteria and toxicity grading in grading_system.
+        specimen:
+          type: string
+          nullable: true
+          description: Measured human specimen or compartment, such as peripheral blood, marrow or CSF.
+        analyte:
+          type: string
+          nullable: true
+          description: Actually measured entity/readout, for example CAR-positive cells or transgene copies. Do
+            not conflate them.
+        response_criteria:
+          type: string
+          nullable: true
+          description: Reported efficacy response standard and version for this response result. Excludes assay
+            descriptions, toxicity grading and full copied protocol text.
+        endpoint_definition:
+          type: string
+          nullable: true
+          description: Source-specific endpoint/event definition needed for this result, such as the time origin
+            and event components of EFS. Do not copy a textbook definition or repeat response_criteria.
+        mrd_threshold:
+          type: string
+          nullable: true
+          description: Reported MRD decision threshold or assay sensitivity, with unit and decision rule. Only
+            for an MRD-related result; do not default to 0.01%.
+        confirmation:
+          type: string
+          nullable: true
+          description: Additional confirmation explicitly required for the current response, such as marrow or
+            repeat imaging. Omit text already fully represented by method or response_criteria.
+        grading_system:
+          type: string
+          nullable: true
+          description: Reported toxicity grading standard and version for the current event. Do not assume ASTCT
+            2019 or CTCAE 5.0.
+        observation_window:
+          type: string
+          nullable: true
+          description: Source-reported safety observation interval and time origin for the current event. Do not
+            assume a 28-day DLT window.
+        relatedness:
+          type: string
+          nullable: true
+          description: Source-reported treatment attribution for the current adverse event. Temporal association
+            alone is insufficient.
+        integration_window:
+          type: string
+          nullable: true
+          description: Reported AUC integration interval and time origin. Populate for clinical.auc only; do not
+            default to days 0–28.
+        detection_threshold:
+          type: string
+          nullable: true
+          description: Reported detection limit/criterion needed for this cellular kinetics or MRD measurement.
+            Do not repeat the MRD decision threshold here.
+        statistical_details:
+          type: string
+          nullable: true
+          description: Result-specific CI, censoring, statistical test or comparison qualification. Do not restate
+            the result, cohort baseline or source citation.
+    clinical.response:
+      type: string
+      nullable: true
+      description: Reported categorical response for an individual patient or explicitly identified representative
+        case, such as CR, CRi, PR or sCR. Keep MRD status in clinical.mrd_status. Do not turn one patient response
+        into a 100% rate.
+    clinical.orr:
+      type: json
+      shape: object
+      nullable: true
+      description: Objective response rate explicitly reported as ORR. Accept only the reported rate and/or explicit
+        event count and denominator. No calculated ORR from component rates, count back-calculation, or patient-level
+        response labels. Shared conditions are recorded once in clinical.measurement_conditions.
+      item_schema:
+        rate:
+          type: measurement
+          nullable: true
+          description: Source-reported percentage or proportion for this named endpoint. Preserve the actual unit
+            and raw wording; do not calculate a rate from counts.
+          preferred_unit: '%'
+        numerator:
+          type: integer
+          nullable: true
+          description: Explicitly reported number meeting this endpoint. Do not derive it from a rounded rate.
+        denominator:
+          type: integer
+          nullable: true
+          description: Explicitly reported analysis denominator for this exact endpoint. Do not substitute enrollment
+            or another endpoint denominator.
+    clinical.cr_rate:
+      type: json
+      shape: object
+      nullable: true
+      description: Complete-remission/response rate explicitly reported as CR; not CRi. Accept only the reported
+        rate and/or explicit event count and denominator. No calculated ORR from component rates, count back-calculation,
+        or patient-level response labels. Shared conditions are recorded once in clinical.measurement_conditions.
+      item_schema:
+        rate:
+          type: measurement
+          nullable: true
+          description: Source-reported percentage or proportion for this named endpoint. Preserve the actual unit
+            and raw wording; do not calculate a rate from counts.
+          preferred_unit: '%'
+        numerator:
+          type: integer
+          nullable: true
+          description: Explicitly reported number meeting this endpoint. Do not derive it from a rounded rate.
+        denominator:
+          type: integer
+          nullable: true
+          description: Explicitly reported analysis denominator for this exact endpoint. Do not substitute enrollment
+            or another endpoint denominator.
+    clinical.cri_rate:
+      type: json
+      shape: object
+      nullable: true
+      description: Complete remission with incomplete count recovery, explicitly reported as CRi. Accept only the
+        reported rate and/or explicit event count and denominator. No calculated ORR from component rates, count
+        back-calculation, or patient-level response labels. Shared conditions are recorded once in clinical.measurement_conditions.
+      item_schema:
+        rate:
+          type: measurement
+          nullable: true
+          description: Source-reported percentage or proportion for this named endpoint. Preserve the actual unit
+            and raw wording; do not calculate a rate from counts.
+          preferred_unit: '%'
+        numerator:
+          type: integer
+          nullable: true
+          description: Explicitly reported number meeting this endpoint. Do not derive it from a rounded rate.
+        denominator:
+          type: integer
+          nullable: true
+          description: Explicitly reported analysis denominator for this exact endpoint. Do not substitute enrollment
+            or another endpoint denominator.
+    clinical.cr_or_cri_rate:
+      type: json
+      shape: object
+      nullable: true
+      description: Combined CR-or-CRi proportion/count only when explicitly reported as that combined endpoint;
+        not CR alone or an assumed ORR. Accept only the reported rate and/or explicit event count and denominator.
+        No calculated ORR from component rates, count back-calculation, or patient-level response labels. Shared
+        conditions are recorded once in clinical.measurement_conditions.
+      item_schema:
+        rate:
+          type: measurement
+          nullable: true
+          description: Source-reported percentage or proportion for this named endpoint. Preserve the actual unit
+            and raw wording; do not calculate a rate from counts.
+          preferred_unit: '%'
+        numerator:
+          type: integer
+          nullable: true
+          description: Explicitly reported number meeting this endpoint. Do not derive it from a rounded rate.
+        denominator:
+          type: integer
+          nullable: true
+          description: Explicitly reported analysis denominator for this exact endpoint. Do not substitute enrollment
+            or another endpoint denominator.
+    clinical.pr_rate:
+      type: json
+      shape: object
+      nullable: true
+      description: Partial-response/remission rate explicitly reported as PR. Accept only the reported rate and/or
+        explicit event count and denominator. No calculated ORR from component rates, count back-calculation, or
+        patient-level response labels. Shared conditions are recorded once in clinical.measurement_conditions.
+      item_schema:
+        rate:
+          type: measurement
+          nullable: true
+          description: Source-reported percentage or proportion for this named endpoint. Preserve the actual unit
+            and raw wording; do not calculate a rate from counts.
+          preferred_unit: '%'
+        numerator:
+          type: integer
+          nullable: true
+          description: Explicitly reported number meeting this endpoint. Do not derive it from a rounded rate.
+        denominator:
+          type: integer
+          nullable: true
+          description: Explicitly reported analysis denominator for this exact endpoint. Do not substitute enrollment
+            or another endpoint denominator.
+    clinical.mrd_negative_rate:
+      type: json
+      shape: object
+      nullable: true
+      description: MRD-negative rate for the exact reported analysis population; do not silently equate MRD-negative
+        CR and all MRD negativity. Accept only the reported rate and/or explicit event count and denominator. No
+        calculated ORR from component rates, count back-calculation, or patient-level response labels. Shared conditions
+        are recorded once in clinical.measurement_conditions.
+      item_schema:
+        rate:
+          type: measurement
+          nullable: true
+          description: Source-reported percentage or proportion for this named endpoint. Preserve the actual unit
+            and raw wording; do not calculate a rate from counts.
+          preferred_unit: '%'
+        numerator:
+          type: integer
+          nullable: true
+          description: Explicitly reported number meeting this endpoint. Do not derive it from a rounded rate.
+        denominator:
+          type: integer
+          nullable: true
+          description: Explicitly reported analysis denominator for this exact endpoint. Do not substitute enrollment
+            or another endpoint denominator.
+    clinical.mrd_negative_cr_rate:
+      type: json
+      shape: object
+      nullable: true
+      description: MRD-negative complete remission/response proportion/count explicitly reported as that combined
+        endpoint; preserve the source response definition and do not substitute ORR or MRD negativity alone. Accept
+        only the reported rate and/or explicit event count and denominator. No calculated ORR from component rates,
+        count back-calculation, or patient-level response labels. Shared conditions are recorded once in clinical.measurement_conditions.
+      item_schema:
+        rate:
+          type: measurement
+          nullable: true
+          description: Source-reported percentage or proportion for this named endpoint. Preserve the actual unit
+            and raw wording; do not calculate a rate from counts.
+          preferred_unit: '%'
+        numerator:
+          type: integer
+          nullable: true
+          description: Explicitly reported number meeting this endpoint. Do not derive it from a rounded rate.
+        denominator:
+          type: integer
+          nullable: true
+          description: Explicitly reported analysis denominator for this exact endpoint. Do not substitute enrollment
+            or another endpoint denominator.
+    clinical.relapse_rate:
+      type: json
+      shape: object
+      nullable: true
+      description: Relapse proportion/count for the reported follow-up population. Accept only the reported rate
+        and/or explicit event count and denominator. No calculated ORR from component rates, count back-calculation,
+        or patient-level response labels. Shared conditions are recorded once in clinical.measurement_conditions.
+      item_schema:
+        rate:
+          type: measurement
+          nullable: true
+          description: Source-reported percentage or proportion for this named endpoint. Preserve the actual unit
+            and raw wording; do not calculate a rate from counts.
+          preferred_unit: '%'
+        numerator:
+          type: integer
+          nullable: true
+          description: Explicitly reported number meeting this endpoint. Do not derive it from a rounded rate.
+        denominator:
+          type: integer
+          nullable: true
+          description: Explicitly reported analysis denominator for this exact endpoint. Do not substitute enrollment
+            or another endpoint denominator.
+    clinical.disease_free_rate:
+      type: json
+      shape: object
+      nullable: true
+      description: Source-reported disease-free proportion/count at the specified assessment; not a Kaplan–Meier
+        DFS estimate unless explicitly reported as such. Accept only the reported rate and/or explicit event count
+        and denominator. No calculated ORR from component rates, count back-calculation, or patient-level response
+        labels. Shared conditions are recorded once in clinical.measurement_conditions.
+      item_schema:
+        rate:
+          type: measurement
+          nullable: true
+          description: Source-reported percentage or proportion for this named endpoint. Preserve the actual unit
+            and raw wording; do not calculate a rate from counts.
+          preferred_unit: '%'
+        numerator:
+          type: integer
+          nullable: true
+          description: Explicitly reported number meeting this endpoint. Do not derive it from a rounded rate.
+        denominator:
+          type: integer
+          nullable: true
+          description: Explicitly reported analysis denominator for this exact endpoint. Do not substitute enrollment
+            or another endpoint denominator.
+    clinical.mrd_status:
+      type: string
+      nullable: true
+      description: Explicitly reported individual MRD status only; do not infer negativity from CR or an unreported
+        detection threshold.
+      allowed_values:
+      - negative
+      - positive
+      - indeterminate
+    clinical.mrd_level:
+      type: measurement
+      nullable: true
+      description: Actual measured MRD burden in the reported unit. Not the negativity threshold or proportion
+        of patients with MRD negativity.
+    clinical.dor:
+      type: json
+      shape: object
+      nullable: true
+      description: Source-reported duration of response duration or explicit not-reached/not-estimable status.
+        Preserve time origin and endpoint definition in measurement_conditions. No conversion of landmark percentages
+        into durations.
+      item_schema:
+        duration:
+          type: measurement
+          nullable: true
+          description: Source-reported time-to-event duration, preserving median/mean, bounds and units. A landmark
+            survival percentage belongs in the corresponding *_rate field.
+          preferred_unit: day
+        status:
+          type: string
+          nullable: true
+          description: Only an explicitly reported not-reached or not-estimable status; absent duration alone is
+            not such a status.
+          allowed_values:
+          - not_reached
+          - not_estimable
+    clinical.pfs:
+      type: json
+      shape: object
+      nullable: true
+      description: Source-reported progression-free survival duration or explicit not-reached/not-estimable status.
+        Preserve time origin and endpoint definition in measurement_conditions. No conversion of landmark percentages
+        into durations.
+      item_schema:
+        duration:
+          type: measurement
+          nullable: true
+          description: Source-reported time-to-event duration, preserving median/mean, bounds and units. A landmark
+            survival percentage belongs in the corresponding *_rate field.
+          preferred_unit: day
+        status:
+          type: string
+          nullable: true
+          description: Only an explicitly reported not-reached or not-estimable status; absent duration alone is
+            not such a status.
+          allowed_values:
+          - not_reached
+          - not_estimable
+    clinical.efs:
+      type: json
+      shape: object
+      nullable: true
+      description: Source-reported event-free survival duration or explicit not-reached/not-estimable status. Preserve
+        time origin and endpoint definition in measurement_conditions. No conversion of landmark percentages into
+        durations.
+      item_schema:
+        duration:
+          type: measurement
+          nullable: true
+          description: Source-reported time-to-event duration, preserving median/mean, bounds and units. A landmark
+            survival percentage belongs in the corresponding *_rate field.
+          preferred_unit: day
+        status:
+          type: string
+          nullable: true
+          description: Only an explicitly reported not-reached or not-estimable status; absent duration alone is
+            not such a status.
+          allowed_values:
+          - not_reached
+          - not_estimable
+    clinical.os:
+      type: json
+      shape: object
+      nullable: true
+      description: Source-reported overall survival duration or explicit not-reached/not-estimable status. Preserve
+        time origin and endpoint definition in measurement_conditions. No conversion of landmark percentages into
+        durations.
+      item_schema:
+        duration:
+          type: measurement
+          nullable: true
+          description: Source-reported time-to-event duration, preserving median/mean, bounds and units. A landmark
+            survival percentage belongs in the corresponding *_rate field.
+          preferred_unit: day
+        status:
+          type: string
+          nullable: true
+          description: Only an explicitly reported not-reached or not-estimable status; absent duration alone is
+            not such a status.
+          allowed_values:
+          - not_reached
+          - not_estimable
+    clinical.pfs_rate:
+      type: json
+      shape: object
+      nullable: true
+      description: Explicitly reported landmark PFS estimate. Keep landmark/time origin in measurement_conditions.assessment_time;
+        do not compute it from raw counts or substitute a median survival duration. Kaplan–Meier estimates need
+        not have an event-count numerator.
+      item_schema:
+        rate:
+          type: measurement
+          nullable: true
+          description: Source-reported percentage or proportion for this named endpoint. Preserve the actual unit
+            and raw wording; do not calculate a rate from counts.
+          preferred_unit: '%'
+        numerator:
+          type: integer
+          nullable: true
+          description: Explicitly reported number meeting this endpoint. Do not derive it from a rounded rate.
+        denominator:
+          type: integer
+          nullable: true
+          description: Explicitly reported analysis denominator for this exact endpoint. Do not substitute enrollment
+            or another endpoint denominator.
+    clinical.efs_rate:
+      type: json
+      shape: object
+      nullable: true
+      description: Explicitly reported landmark EFS estimate. Keep landmark/time origin in measurement_conditions.assessment_time;
+        do not compute it from raw counts or substitute a median survival duration. Kaplan–Meier estimates need
+        not have an event-count numerator.
+      item_schema:
+        rate:
+          type: measurement
+          nullable: true
+          description: Source-reported percentage or proportion for this named endpoint. Preserve the actual unit
+            and raw wording; do not calculate a rate from counts.
+          preferred_unit: '%'
+        numerator:
+          type: integer
+          nullable: true
+          description: Explicitly reported number meeting this endpoint. Do not derive it from a rounded rate.
+        denominator:
+          type: integer
+          nullable: true
+          description: Explicitly reported analysis denominator for this exact endpoint. Do not substitute enrollment
+            or another endpoint denominator.
+    clinical.os_rate:
+      type: json
+      shape: object
+      nullable: true
+      description: Explicitly reported landmark OS estimate. Keep landmark/time origin in measurement_conditions.assessment_time;
+        do not compute it from raw counts or substitute a median survival duration. Kaplan–Meier estimates need
+        not have an event-count numerator.
+      item_schema:
+        rate:
+          type: measurement
+          nullable: true
+          description: Source-reported percentage or proportion for this named endpoint. Preserve the actual unit
+            and raw wording; do not calculate a rate from counts.
+          preferred_unit: '%'
+        numerator:
+          type: integer
+          nullable: true
+          description: Explicitly reported number meeting this endpoint. Do not derive it from a rounded rate.
+        denominator:
+          type: integer
+          nullable: true
+          description: Explicitly reported analysis denominator for this exact endpoint. Do not substitute enrollment
+            or another endpoint denominator.
+    clinical.crs:
+      type: json
+      shape: object
+      nullable: true
+      description: 'Only the reported cytokine release syndrome observation: grade, incidence/count, onset, duration/recovery
+        and management. Grading system, window and relatedness belong once in measurement_conditions. Do not repeat
+        the event name or a generic event definition in this object. Do not copy the same patient event into every
+        later sampling row.'
+      item_schema:
+        grade:
+          type: string
+          nullable: true
+          description: Source-reported severity, including any-grade or a grade range. A grade of 0 is a reported
+            grade, not an incidence percentage.
+        rate:
+          type: measurement
+          nullable: true
+          description: Source-reported percentage or proportion for this named endpoint. Preserve the actual unit
+            and raw wording; do not calculate a rate from counts.
+          preferred_unit: '%'
+        numerator:
+          type: integer
+          nullable: true
+          description: Explicitly reported number meeting this endpoint. Do not derive it from a rounded rate.
+        denominator:
+          type: integer
+          nullable: true
+          description: Explicitly reported analysis denominator for this exact endpoint. Do not substitute enrollment
+            or another endpoint denominator.
+        onset_time:
+          type: string
+          nullable: true
+          description: Reported onset time, including summary statistic, range and time origin where supplied.
+        duration_or_recovery:
+          type: string
+          nullable: true
+          description: Reported event duration or recovery, preserving which is being described.
+        management:
+          type: string
+          nullable: true
+          description: Treatment or supportive management actually reported for this event; not recommendations.
+    clinical.icans:
+      type: json
+      shape: object
+      nullable: true
+      description: 'Only the reported immune effector cell-associated neurotoxicity syndrome observation: grade,
+        incidence/count, onset, duration/recovery and management. Grading system, window and relatedness belong
+        once in measurement_conditions. Do not repeat the event name or a generic event definition in this object.
+        Do not copy the same patient event into every later sampling row.'
+      item_schema:
+        grade:
+          type: string
+          nullable: true
+          description: Source-reported severity, including any-grade or a grade range. A grade of 0 is a reported
+            grade, not an incidence percentage.
+        rate:
+          type: measurement
+          nullable: true
+          description: Source-reported percentage or proportion for this named endpoint. Preserve the actual unit
+            and raw wording; do not calculate a rate from counts.
+          preferred_unit: '%'
+        numerator:
+          type: integer
+          nullable: true
+          description: Explicitly reported number meeting this endpoint. Do not derive it from a rounded rate.
+        denominator:
+          type: integer
+          nullable: true
+          description: Explicitly reported analysis denominator for this exact endpoint. Do not substitute enrollment
+            or another endpoint denominator.
+        onset_time:
+          type: string
+          nullable: true
+          description: Reported onset time, including summary statistic, range and time origin where supplied.
+        duration_or_recovery:
+          type: string
+          nullable: true
+          description: Reported event duration or recovery, preserving which is being described.
+        management:
+          type: string
+          nullable: true
+          description: Treatment or supportive management actually reported for this event; not recommendations.
+    clinical.dlt:
+      type: json
+      shape: object
+      nullable: true
+      description: 'Only the reported dose-limiting toxicity observation: grade, incidence/count, onset, duration/recovery
+        and management. Grading system, window and relatedness belong once in measurement_conditions. Do not repeat
+        the event name or a generic event definition in this object. Do not copy the same patient event into every
+        later sampling row.'
+      item_schema:
+        grade:
+          type: string
+          nullable: true
+          description: Source-reported severity, including any-grade or a grade range. A grade of 0 is a reported
+            grade, not an incidence percentage.
+        rate:
+          type: measurement
+          nullable: true
+          description: Source-reported percentage or proportion for this named endpoint. Preserve the actual unit
+            and raw wording; do not calculate a rate from counts.
+          preferred_unit: '%'
+        numerator:
+          type: integer
+          nullable: true
+          description: Explicitly reported number meeting this endpoint. Do not derive it from a rounded rate.
+        denominator:
+          type: integer
+          nullable: true
+          description: Explicitly reported analysis denominator for this exact endpoint. Do not substitute enrollment
+            or another endpoint denominator.
+        onset_time:
+          type: string
+          nullable: true
+          description: Reported onset time, including summary statistic, range and time origin where supplied.
+        duration_or_recovery:
+          type: string
+          nullable: true
+          description: Reported event duration or recovery, preserving which is being described.
+        management:
+          type: string
+          nullable: true
+          description: Treatment or supportive management actually reported for this event; not recommendations.
+    clinical.ice_score:
+      type: measurement
+      nullable: true
+      description: Reported ICE score only. Do not infer the score from ICANS grade or infer ICANS grade from this
+        score.
+    clinical.cytopenias:
+      type: json
+      shape: array
+      nullable: true
+      description: One item per specific event and grade within hematological cytopenias, including neutropenia,
+        thrombocytopenia, anemia or lymphopenia. Only event observations belong here. Separate records for different
+        populations or observation windows. Preserve event hierarchy without summing overlapping grades.
+      item_schema:
+        event:
+          type: string
+          nullable: false
+          description: Exact source-reported event/type name; not a free-form study summary.
+        grade:
+          type: string
+          nullable: true
+          description: Source-reported severity, including any-grade or a grade range. A grade of 0 is a reported
+            grade, not an incidence percentage.
+        rate:
+          type: measurement
+          nullable: true
+          description: Source-reported percentage or proportion for this named endpoint. Preserve the actual unit
+            and raw wording; do not calculate a rate from counts.
+          preferred_unit: '%'
+        numerator:
+          type: integer
+          nullable: true
+          description: Explicitly reported number meeting this endpoint. Do not derive it from a rounded rate.
+        denominator:
+          type: integer
+          nullable: true
+          description: Explicitly reported analysis denominator for this exact endpoint. Do not substitute enrollment
+            or another endpoint denominator.
+        onset_time:
+          type: string
+          nullable: true
+          description: Reported onset time, including summary statistic, range and time origin where supplied.
+        duration_or_recovery:
+          type: string
+          nullable: true
+          description: Reported event duration or recovery, preserving which is being described.
+        management:
+          type: string
+          nullable: true
+          description: Treatment or supportive management actually reported for this event; not recommendations.
+    clinical.infections:
+      type: json
+      shape: array
+      nullable: true
+      description: One item per specific event and grade within reported clinical infections, retaining organism/site/type
+        when supplied. Only event observations belong here. Separate records for different populations or observation
+        windows. Preserve event hierarchy without summing overlapping grades.
+      item_schema:
+        event:
+          type: string
+          nullable: false
+          description: Exact source-reported event/type name; not a free-form study summary.
+        grade:
+          type: string
+          nullable: true
+          description: Source-reported severity, including any-grade or a grade range. A grade of 0 is a reported
+            grade, not an incidence percentage.
+        rate:
+          type: measurement
+          nullable: true
+          description: Source-reported percentage or proportion for this named endpoint. Preserve the actual unit
+            and raw wording; do not calculate a rate from counts.
+          preferred_unit: '%'
+        numerator:
+          type: integer
+          nullable: true
+          description: Explicitly reported number meeting this endpoint. Do not derive it from a rounded rate.
+        denominator:
+          type: integer
+          nullable: true
+          description: Explicitly reported analysis denominator for this exact endpoint. Do not substitute enrollment
+            or another endpoint denominator.
+        onset_time:
+          type: string
+          nullable: true
+          description: Reported onset time, including summary statistic, range and time origin where supplied.
+        duration_or_recovery:
+          type: string
+          nullable: true
+          description: Reported event duration or recovery, preserving which is being described.
+        management:
+          type: string
+          nullable: true
+          description: Treatment or supportive management actually reported for this event; not recommendations.
+    clinical.other_adverse_events:
+      type: json
+      shape: array
+      nullable: true
+      description: One item per specific event and grade within other named clinical adverse events, including
+        HLH/MAS, B-cell aplasia, hypogammaglobulinemia, TLS or secondary malignancy; excludes CRS, ICANS, DLT,
+        cytopenias and infections which have dedicated fields. Only event observations belong here. Separate records
+        for different populations or observation windows. Preserve event hierarchy without summing overlapping
+        grades.
+      item_schema:
+        event:
+          type: string
+          nullable: false
+          description: Exact source-reported event/type name; not a free-form study summary.
+        grade:
+          type: string
+          nullable: true
+          description: Source-reported severity, including any-grade or a grade range. A grade of 0 is a reported
+            grade, not an incidence percentage.
+        rate:
+          type: measurement
+          nullable: true
+          description: Source-reported percentage or proportion for this named endpoint. Preserve the actual unit
+            and raw wording; do not calculate a rate from counts.
+          preferred_unit: '%'
+        numerator:
+          type: integer
+          nullable: true
+          description: Explicitly reported number meeting this endpoint. Do not derive it from a rounded rate.
+        denominator:
+          type: integer
+          nullable: true
+          description: Explicitly reported analysis denominator for this exact endpoint. Do not substitute enrollment
+            or another endpoint denominator.
+        onset_time:
+          type: string
+          nullable: true
+          description: Reported onset time, including summary statistic, range and time origin where supplied.
+        duration_or_recovery:
+          type: string
+          nullable: true
+          description: Reported event duration or recovery, preserving which is being described.
+        management:
+          type: string
+          nullable: true
+          description: Treatment or supportive management actually reported for this event; not recommendations.
+    clinical.ae:
+      type: json
+      shape: object
+      nullable: true
+      description: Overall proportion/count of patients with AE, only when explicitly reported at that classification
+        level. Individual named adverse events belong in their dedicated event fields; do not sum events or grades
+        to generate this overall result.
+      item_schema:
+        rate:
+          type: measurement
+          nullable: true
+          description: Source-reported percentage or proportion for this named endpoint. Preserve the actual unit
+            and raw wording; do not calculate a rate from counts.
+          preferred_unit: '%'
+        numerator:
+          type: integer
+          nullable: true
+          description: Explicitly reported number meeting this endpoint. Do not derive it from a rounded rate.
+        denominator:
+          type: integer
+          nullable: true
+          description: Explicitly reported analysis denominator for this exact endpoint. Do not substitute enrollment
+            or another endpoint denominator.
+    clinical.sae:
+      type: json
+      shape: object
+      nullable: true
+      description: Overall proportion/count of patients with SAE, only when explicitly reported at that classification
+        level. Individual named adverse events belong in their dedicated event fields; do not sum events or grades
+        to generate this overall result.
+      item_schema:
+        rate:
+          type: measurement
+          nullable: true
+          description: Source-reported percentage or proportion for this named endpoint. Preserve the actual unit
+            and raw wording; do not calculate a rate from counts.
+          preferred_unit: '%'
+        numerator:
+          type: integer
+          nullable: true
+          description: Explicitly reported number meeting this endpoint. Do not derive it from a rounded rate.
+        denominator:
+          type: integer
+          nullable: true
+          description: Explicitly reported analysis denominator for this exact endpoint. Do not substitute enrollment
+            or another endpoint denominator.
+    clinical.cmax:
+      type: measurement
+      nullable: true
+      description: Reported peak human CAR-T abundance/exposure readout. Distinguish qPCR transgene copies, flow-cytometric
+        counts and percentages in measurement_conditions; a single sampled non-peak measurement is not Cmax.
+    clinical.tmax:
+      type: measurement
+      nullable: true
+      description: Reported time to peak, preserving the infusion or other source time origin. Not an assumed day
+        7–14 range.
+      preferred_unit: day
+    clinical.auc:
+      type: measurement
+      nullable: true
+      description: Reported CAR-T exposure AUC. Preserve actual integration interval, assay and analyte in measurement_conditions;
+        do not default to AUC(0–28d).
+    clinical.car_t_cell_count:
+      type: measurement
+      nullable: true
+      description: Human CAR-T cell count or concentration at the specified specimen/time. Not transgene copies,
+        percentage, peak by assumption or a manufacturing cell yield.
+    clinical.car_t_ratio:
+      type: measurement
+      nullable: true
+      description: Human CAR-positive cell percentage or proportion at the specified specimen/time; preserve the
+        gated denominator in raw/analyte. Not infused-product CAR-positive ratio or a peak by assumption.
+      preferred_unit: '%'
+    clinical.transgene_level:
+      type: measurement
+      nullable: true
+      description: Human in-vivo transgene abundance measured by qPCR or another reported method, with original
+        denominator/unit. Not manufacturing VCN or flow-cytometric cell counts.
+    clinical.persistence:
+      type: json
+      shape: object
+      nullable: true
+      description: Reported human CAR-T persistence duration and/or qualitative detection status. A single positive
+        sample on day X is not automatically an X-day measured persistence duration; retain that observation without
+        inventing a duration.
+      item_schema:
+        duration:
+          type: measurement
+          nullable: true
+          description: Explicitly reported persistence/detectable duration only.
+          preferred_unit: day
+        observation:
+          type: string
+          nullable: true
+          description: Reported ongoing/lost detection or qualitative persistence observation only; not the assay
+            protocol.
+    clinical.cytokine_levels:
+      type: json
+      shape: array
+      nullable: true
+      description: Human specimen cytokine concentrations or explicitly reported detection status associated with
+        clinical observation. One item per cytokine; use common specimen, time and assay conditions. These are
+        biomarkers, not adverse-event incidences or in-vitro manufacturing release assays.
+      item_schema:
+        cytokine:
+          type: string
+          nullable: false
+          description: Exact reported cytokine/analyte name.
+        value:
+          type: measurement
+          nullable: true
+          description: Reported human specimen cytokine concentration in the actual unit; not a patient response
+            rate.
+        observation:
+          type: string
+          nullable: true
+          description: Reported not-detected or qualitative detection observation; non-detection is not zero concentration.
+    clinical.kinetics_comparison:
+      type: string
+      nullable: true
+      description: Explicit qualitative comparison of human CAR-T expansion/exposure/persistence between source-defined
+        groups when exact metric values are unavailable. Identify the metric and actual comparison; do not repeat
+        numerical results already stored in cmax/tmax/auc/persistence.
+    clinical.assessment_schedule:
+      type: string
+      nullable: true
+      description: Source-reported study visit schedule/frequency with the assessment names and time origin only.
+        Not observed response values, assay descriptions or repeated full response definitions. Record only when
+        this row documents the schedule; do not copy it into every result. Do not assume D28/M3/M6/M12.
