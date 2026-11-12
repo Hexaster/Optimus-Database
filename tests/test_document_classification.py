@@ -8,6 +8,7 @@ import httpx
 import pytest
 
 from cart_db import document_classification as classifier
+from cart_db import retry
 from cart_db.artifacts import checksum, verify_artifacts
 
 spec = importlib.util.spec_from_file_location('patent_runner', Path(__file__).parents[1] / 'scripts/run_extraction_agent.py')
@@ -114,3 +115,114 @@ def test_patent_entity_links_and_route_guard(tmp_path):
     assert result[1]['data']['entity_links'][0]['entity_id'] == result[0]['data']['binder_id']
     with pytest.raises(ValueError, match='require Jev patent'):
         prepare_output(path, document_type='literature')
+
+
+@pytest.mark.parametrize('error', [httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError])
+def test_transport_diagnostics(tmp_path, monkeypatch, error):
+    monkeypatch.setattr(retry.time, 'sleep', lambda delay: None)
+    path = tmp_path / 'input.md'
+    path.write_text('Synthetic classification input')
+    monkeypatch.setattr(classifier, 'settings', replace(classifier.settings, openrouter_api_key='test-key'))
+    def fail(request):
+        raise error('sensitive transport detail', request=request)
+    client = httpx.Client
+    monkeypatch.setattr(classifier.httpx, 'Client', lambda **kw: client(transport=httpx.MockTransport(fail), **kw))
+    with pytest.raises(ValueError) as caught:
+        classifier.classify_document(path, timeout=120)
+    assert error.__name__ in str(caught.value)
+    assert 'sensitive transport detail' not in str(caught.value)
+
+
+@pytest.mark.parametrize('status,success_after,calls_expected', [(503, 5, 6), (429, 1, 2), (401, 9, 1), (503, 9, 6)])
+def test_retry_policy(tmp_path, monkeypatch, status, success_after, calls_expected):
+    path = tmp_path / 'input.md'
+    path.write_text('Synthetic document')
+    monkeypatch.setattr(classifier, 'settings', replace(classifier.settings, openrouter_api_key='test-key'))
+    waits, calls = [], []
+    monkeypatch.setattr(retry.time, 'sleep', waits.append)
+    def respond(request):
+        calls.append(request)
+        if len(calls) <= success_after:
+            return httpx.Response(status)
+        return httpx.Response(200, json=receipt(path)['response'])
+    client = httpx.Client
+    monkeypatch.setattr(classifier.httpx, 'Client', lambda **kw: client(transport=httpx.MockTransport(respond), **kw))
+    if success_after < 6:
+        result = classifier.classify_document(path, timeout=120)
+        assert result['document_type'] == 'literature'
+        assert len(result['attempts']) == calls_expected
+        if status == 503:
+            assert result['cost_usd'] is None
+    else:
+        with pytest.raises(ValueError, match=f'已尝试 {calls_expected} 次'):
+            classifier.classify_document(path, timeout=120)
+    assert len(calls) == calls_expected
+    assert waits == [1, 2, 4, 8, 16][:calls_expected-1]
+
+
+@pytest.mark.parametrize('failures', [2, 6])
+def test_extraction_transport_retries(tmp_path, monkeypatch, failures):
+    source = tmp_path / 'paper.md'
+    source.write_text('Synthetic document')
+    classifications, calls, waits = [], [], []
+    def classify(path, **kw):
+        classifications.append(path)
+        return receipt(path)
+    monkeypatch.setattr(runner, 'classify_document', classify)
+    monkeypatch.setattr(runner.time, 'sleep', waits.append)
+    def fake(path, *, out_dir, **kw):
+        calls.append(kw)
+        ok = len(calls) > failures
+        if ok:
+            (out_dir / 'data.jsonl').write_text('')
+            (out_dir / 'reasoning.md').write_text('Synthetic evidence')
+            (out_dir / 'figures.jsonl').write_text('')
+            (out_dir / 'img').mkdir(exist_ok=True)
+        return dict(ok=ok, reason='connection failure', usage=runner.empty_usage(), usage_known=True, cost=0.01)
+    monkeypatch.setattr(runner, '_run_agent', fake)
+    result = runner.run_one(source, out_dir=tmp_path / 'output', timeout=120, budget=None, validation_retries=0)
+    assert result['ok'] == (failures < 6)
+    assert len(calls) == min(failures + 1, 6)
+    assert len(classifications) == 1
+    assert waits == [1, 2, 4, 8, 16][:min(failures, 5)]
+    assert result['cost'] == pytest.approx(.001 + .01 * len(calls))
+
+
+def test_shared_retry_honors_deadline(monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr(retry.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(retry.time, 'sleep', lambda seconds: pytest.fail('insufficient time for retry'))
+    calls = []
+    def operation(remaining):
+        calls.append(remaining)
+        clock[0] += 1.5
+        raise retry.CallFailure('temporary failure')
+    with pytest.raises(ValueError, match='剩余时间不足'):
+        retry.call_with_retry(operation, timeout=2, label='test', on_status=lambda _: None)
+    assert calls == [2]
+
+
+def test_shared_retry_leaves_validation_errors_to_caller():
+    calls = []
+    def operation(remaining):
+        calls.append(remaining)
+        raise ValueError('invalid output')
+    with pytest.raises(ValueError, match='invalid output'):
+        retry.call_with_retry(operation, timeout=10, label='test', on_status=lambda _: None)
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize('message,expected', [
+    ('HTTP 429', 'API 限流'), ('HTTP 401', 'API 认证或权限失败'),
+    ('request timed out', 'API 请求超时'),
+    ('stream disconnected', 'API 流连接中断'),
+    ('connection reset', 'API 网络连接失败'),
+])
+def test_codex_error_progress(message, expected):
+    from cart_db.extraction_progress import codex_status
+    assert expected in codex_status({'type': 'error', 'message': message})
+
+
+def test_codex_error_progress_does_not_echo_credentials():
+    from cart_db.extraction_progress import codex_status
+    assert 'secret-test-key' not in codex_status({'type': 'error', 'message': 'secret-test-key'})

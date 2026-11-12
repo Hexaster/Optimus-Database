@@ -30,7 +30,18 @@ def codex_status(event):
         return "正在处理文档，等待新的进度"
     # Report a transport/execution problem without exposing raw diagnostic content.
     if kind == "error":
-        return "连接或执行遇到问题，等待后续事件"
+        message = str(event.get("message") or event.get("error") or "").lower()
+        if "429" in message or "rate limit" in message:
+            return "API 限流，等待重试"
+        if "401" in message or "403" in message or "unauthorized" in message:
+            return "API 认证或权限失败，等待调用结束"
+        if "timeout" in message or "timed out" in message:
+            return "API 请求超时，等待重试"
+        if "stream disconnected" in message or "reconnecting" in message:
+            return "API 流连接中断，正在重连"
+        if "connection" in message or "connect" in message:
+            return "API 网络连接失败，等待重试"
+        return "Codex 返回错误事件，具体原因将在调用结束后保存到诊断日志"
     # A failed turn is waiting for the runner to collect diagnostics.
     if kind == "turn.failed":
         return "本次调用失败，正在收集诊断信息"
