@@ -186,3 +186,9 @@ PYTHONPATH=src python -m pytest tests/test_pipeline.py tests/test_ingest.py -q
 专利文件作为附属上下文保留，暂不写入新的关系数据库表。抽取阶段不生成 `claim_scope_assessments`。
 校验修正复用已有分类；仅补图不调用 Jev。正常 resume 要求存在有效分类记录，旧结果需重新抽取才能符合新流程。
 Jev 返回的费用和 token 计入文档总消耗；未返回费用且设置了预算时，停止后续抽取。
+
+Jev 临时失败后最多重试 5 次（共 6 次请求），默认依次等待 1、2、4、8、16 秒，受文档总超时约束。连接异常、HTTP 408/429/5xx 和非 JSON 响应可重试；其他 HTTP 错误直接报告。成功结果保留 attempts 调用记录。超时或服务端异常后的失败请求费用可能未返回，此时总费用记为未知；启用费用上限时沿用既有预算规则停止后续抽取，使用 --budget 0 可取消该上限。
+
+数据抽取后端调用失败后同样最多重试 5 次，共 6 次调用，依次等待 1、2、4、8、16 秒。重试复用当前草稿与 Jev 分类结果，累计 token 和已知费用；文档总超时及预算约束继续生效。调用重试与 --validation-retries 控制的输出校验修正独立计数。
+
+Jev 和抽取后端统一使用 `src/cart_db/retry.py::call_with_retry`，集中管理最多 5 次重试、退避等待、总超时和失败记录。HTTP 适配器负责标记可重试状态，CLI 适配器负责转换执行结果并累计费用。Codex 的内部 API 请求由 Codex CLI 管理，runner 的公共重试作用于一次 CLI 执行；输出校验修正仍由 `--validation-retries` 控制。

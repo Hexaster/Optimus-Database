@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import hashlib
 import math
+import logging
 from pathlib import Path
 
 import httpx
 
 from .artifacts import checksum
 from .config import settings
+from .retry import CallFailure, call_with_retry
 
 ROUTING_VERSION = 1
 QUESTION = {
@@ -82,30 +84,53 @@ def decision(response: dict) -> str:
 
 
 def classify_document(path: Path, *, timeout: float) -> dict:
-    """One typed decision, no silent LLM/filename fallback and no automatic paid retry."""
+    """Classify with up to five retries within the document time allowance."""
     if not settings.openrouter_api_key:
         raise ValueError("未配置 OPENROUTER_API_KEY，无法进行 Jev 文献/专利分类")
     source_hash = checksum(path)
     state = classification_state(path)
     request = {"model": settings.jev_model, "state": state,
                "questions": {"document_type": QUESTION}}
-    try:
-        with httpx.Client(timeout=min(timeout, 60.0)) as client:
-            result = client.post(
-                "https://openrouter.ai/api/alpha/decisions",
-                headers={"Authorization": f"Bearer {settings.openrouter_api_key}"}, json=request,
-            )
-            result.raise_for_status()
-            response = result.json()
-    except httpx.HTTPStatusError as exc:
-        raise ValueError(f"Jev 分类请求失败，HTTP {exc.response.status_code}") from None
-    except (httpx.RequestError, ValueError):
-        raise ValueError("Jev 分类连接失败、超时或响应不是 JSON") from None
+    attempts = []
+    uncertain_cost = False
+
+    def invoke(remaining):
+        nonlocal uncertain_cost
+        try:
+            with httpx.Client(timeout=min(remaining, 60.0)) as client:
+                result = client.post(
+                    "https://openrouter.ai/api/alpha/decisions",
+                    headers={"Authorization": f"Bearer {settings.openrouter_api_key}"}, json=request,
+                )
+                result.raise_for_status()
+                return result.json()
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            uncertain_cost = uncertain_cost or status == 408 or status >= 500
+            try:
+                retry_after = float(exc.response.headers.get("Retry-After", "0"))
+            except ValueError:
+                retry_after = 0
+            raise CallFailure(f"HTTP {status}",
+                              retryable=status in (408, 429) or 500 <= status < 600,
+                              retry_after=retry_after) from None
+        except httpx.RequestError as exc:
+            uncertain_cost = True
+            raise CallFailure(type(exc).__name__) from None
+        except ValueError:
+            uncertain_cost = True
+            raise CallFailure(f"响应不是 JSON：HTTP {result.status_code}，响应长度 {len(result.content)} bytes") from None
+
+    response = call_with_retry(
+        invoke, timeout=timeout, label="Jev 分类请求", attempts=attempts,
+        on_status=logging.getLogger(__name__).warning,
+    )
     route = decision(response)
     if checksum(path) != source_hash:
         raise ValueError("分类期间源文件发生变化")
     return {
         "routing_version": ROUTING_VERSION, "source_sha256": source_hash,
         "document_type": route, "request": request, "response": response,
-        "cost_usd": response["usage"].get("cost"),
+        "cost_usd": None if uncertain_cost else response["usage"].get("cost"),
+        "attempts": attempts,
     }

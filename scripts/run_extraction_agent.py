@@ -35,6 +35,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
 from cart_db.document_classification import classify_document
+from cart_db.retry import CallFailure, call_with_retry
 from cart_db.agent_output import OutputError, prepare_output
 from cart_db.figures import validate_figures
 from cart_db.artifacts import artifact_manifest, verify_artifacts
@@ -637,25 +638,35 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
         if budget is not None and (not known_cost or cost >= budget):
             result.update(ok=False, reason="剩余预算不足或 Jev 费用未知，未启动提取")
             break
-        # Use budget - cost when budget is supplied; otherwise use None.
-        attempt_budget = budget - cost if budget is not None else None
-        result = _run_agent(path, out_dir=draft_dir, timeout=remaining,
-                            budget=attempt_budget, correction=correction, figures_only=figures_only,
-                            document_type=document_type,
-                            diagnostics_dir=draft_dir, on_status=on_status, **kwargs)
-        # Accumulate token counters across the initial call and validation repairs.
-        for key in usage:
-            usage[key] += result["usage"][key]
-        # Usage is fully known only if every attempt, including repairs, reported its usage.
-        known_usage = known_usage and result["usage_known"]
-        # Once any attempt has unknown cost, the full document cost remains unknown.
-        if result["cost"] is None:
-            known_cost = False
-        # Accumulate the cost reported by this attempt, including validation-repair calls.
-        else:
-            cost += result["cost"]
-        # Backend failure ends the retry loop; schema repair is only for successful model output.
-        if not result["ok"]:
+        # Each backend adapts its outcome to the same external-call retry policy.
+        def invoke(remaining):
+            nonlocal result, known_usage, known_cost, cost
+            if budget is not None and (not known_cost or cost >= budget):
+                raise CallFailure("剩余预算不足或调用费用未知", retryable=False)
+            attempt_budget = budget - cost if budget is not None else None
+            result = _run_agent(path, out_dir=draft_dir, timeout=remaining,
+                                budget=attempt_budget, correction=correction, figures_only=figures_only,
+                                document_type=document_type,
+                                diagnostics_dir=draft_dir, on_status=on_status, **kwargs)
+            for key in usage:
+                usage[key] += result["usage"][key]
+            known_usage = known_usage and result["usage_known"]
+            if result["cost"] is None:
+                known_cost = False
+            else:
+                cost += result["cost"]
+            if not result["ok"]:
+                can_retry = budget is None or (known_cost and cost < budget)
+                reason = result["reason"]
+                if not can_retry:
+                    reason += "；剩余预算不足或调用费用未知"
+                raise CallFailure(reason, retryable=can_retry)
+            return result
+
+        try:
+            result = call_with_retry(invoke, timeout=remaining, label="抽取调用", on_status=notify)
+        except ValueError as exc:
+            result.update(ok=False, reason=str(exc))
             break
         # Validate the draft and its evidence summary before publishing any output files.
         try:
