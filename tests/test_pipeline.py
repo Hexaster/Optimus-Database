@@ -22,6 +22,12 @@ runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
 
 
+@pytest.fixture(autouse=True)
+def mock_document_classification(monkeypatch):
+    from test_document_classification import receipt
+    monkeypatch.setattr(runner, "classify_document", lambda path, **kw: receipt(path))
+
+
 # Build a duration measurement fixture with raw source wording.
 def measurement(value, unit=None):
     # Use empty text when unit is missing or empty.

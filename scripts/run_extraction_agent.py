@@ -29,10 +29,12 @@ import tempfile
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
+from cart_db.document_classification import classify_document
 from cart_db.agent_output import OutputError, prepare_output
 from cart_db.figures import validate_figures
 from cart_db.artifacts import artifact_manifest, verify_artifacts
@@ -72,7 +74,21 @@ Follow the skill with this run's overrides:
   and add a message field to every exception with a Simplified Chinese explanation
   of the specific problem and the action taken. Keep source quotes, raw_value,
   identifiers, schema field names, and scientific sequences unchanged.
-Read docs/Schema/*.yaml first, then the document, then write
+Document classification by Jev: {document_type}.
+For BOTH literature and patent, extract ALL applicable existing binder, car,
+manufacturing, abc_combination_db1 and evidence records using the normal workflow.
+Classification only enables ADDITIONAL patent extraction; it never replaces or
+narrows the scientific extraction.
+If patent: additionally use docs/Schema/Schema_Patent.yaml and append patent rows
+AFTER all scientific rows in data.jsonl. At least one patent metadata row is required,
+even if claims or sequence listings are unavailable; record those gaps faithfully.
+Entity links use IDs of scientific rows in this same draft. Do not generate
+claim_scope_assessments; leave it null. The runner rewrites linked IDs and publishes
+patent rows separately as patent.jsonl (and patent.original.jsonl for the raw rows).
+For patent evidence in reasoning.md, use patent.jsonl row numbers counted from 1.
+If literature: do not extract patent rows, even when the paper cites patents.
+Do not write or modify document_classification.json; it is owned by the runner.
+Read the applicable YAML schemas first, then the document, then write
 {out_dir}/data.jsonl, {out_dir}/reasoning.md (a concise evidence and decision summary),
 and, if there are exceptions, {out_dir}/error_log.jsonl.
 In reasoning.md, reference records by table, row number, and field name rather than
@@ -101,7 +117,12 @@ def child_env(agent: str) -> dict[str, str]:
     # Pass OpenAI-compatible settings only to the Codex backend.
     if agent == "codex":
         # Use the configured API key when one is present.
-        if settings.openai_api_key:
+        if urlparse(settings.openai_base_url or "").hostname == "openrouter.ai":
+            # Every OpenRouter request shares one credential, including Codex and Jev.
+            if not settings.openrouter_api_key:
+                raise ValueError("OpenRouter 调用必须配置 OPENROUTER_API_KEY")
+            env["OPENAI_API_KEY"] = settings.openrouter_api_key
+        elif settings.openai_api_key:
             env["OPENAI_API_KEY"] = settings.openai_api_key
         # Forward the configured provider endpoint alongside its credentials.
         if settings.openai_base_url:
@@ -321,6 +342,7 @@ def _run_agent(path: Path, *, agent: str, out_dir: Path, timeout: int,
     effort: str, input_price: float | None, cached_input_price: float | None,
     output_price: float | None, subagent: bool = False,
     correction: str = "",
+    document_type: str = "unclassified",
     figures_only: bool = False,
     diagnostics_dir: Path | None = None,
     on_status=None,
@@ -330,6 +352,7 @@ def _run_agent(path: Path, *, agent: str, out_dir: Path, timeout: int,
     # Choose the result according to subagent is truthy; preserve the alternate path for the other
     # case.
     prompt = PROMPT.format(
+        document_type=document_type,
         skill=SKILL, skill_path=".claude/skills/extract-cart-data/SKILL.md",
         path=path.as_posix(), stem=path.stem,
         out_dir=out_dir.relative_to(REPO).as_posix(),
@@ -560,10 +583,12 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
     final_dir = out_dir / path.stem
     source_hash = checksum(path)
     preserved = {}
+    protected_names = ("data.jsonl", "original.jsonl", "reasoning.md", "error_log.jsonl",
+                       "document_classification.json", "patent.jsonl", "patent.original.jsonl")
     # Backfills require verified provenance before any model work and keep scientific rows intact.
     if figures_only:
         previous = verify_artifacts(final_dir, path, require_figures=False)
-        for name in ("data.jsonl", "original.jsonl", "reasoning.md", "error_log.jsonl"):
+        for name in protected_names:
             # Optional exception logs are copied only when present in the existing result.
             if (final_dir / name).is_file():
                 shutil.copyfile(final_dir / name, draft_dir / name)
@@ -574,6 +599,34 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
     known_cost = known_usage = True
     correction = ""
     result = dict(ok=False, reason="", usage=usage, cost=None, usage_known=False)
+    classification = None
+    document_type = "unclassified"
+    if not figures_only:
+        notify("正在通过 OpenRouter 调用 Jev 判断文献或专利")
+        try:
+            classification = classify_document(path, timeout=timeout)
+            write_json(draft_dir / "document_classification.json", classification)
+            document_type = classification["document_type"]
+            jev_usage = classification["response"]["usage"]
+            usage["input"] += jev_usage["input_tokens"]
+            usage["output"] += jev_usage["output_tokens"]
+            known_cost = classification["cost_usd"] is not None
+            cost = classification["cost_usd"] or 0.0
+            if classification["source_sha256"] != source_hash:
+                raise ValueError("Jev 分类期间源文件发生变化")
+            if document_type not in ("literature", "patent"):
+                raise ValueError("Jev 无法确定文件类型；请核对文档后重试")
+            notify("Jev：专利；常规抽取并额外提取专利信息" if document_type == "patent"
+                   else "Jev：文献；执行常规抽取")
+        except (ValueError, OSError) as exc:
+            # No extraction may start without an actual typed routing decision.
+            result.update(reason=str(exc), draft_dir=str(draft_dir),
+                          user_reason=f"文档分类未通过：{exc}；诊断保留于 {draft_dir}",
+                          seconds=time.monotonic() - started, usage=usage,
+                          usage_known=classification is not None,
+                          cost=cost if classification is not None and known_cost else None)
+            save_diagnostics(draft_dir, kwargs.get("env", {}), str(exc), "", None)
+            return result
     # Run the initial attempt and bounded repairs within the same document time/budget allowance.
     for attempt in range(validation_retries + 1):
         remaining = timeout - (time.monotonic() - started)
@@ -581,10 +634,14 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
         if remaining <= 0:
             result.update(ok=False, reason="单份总超时（包含校验修正）")
             break
+        if budget is not None and (not known_cost or cost >= budget):
+            result.update(ok=False, reason="剩余预算不足或 Jev 费用未知，未启动提取")
+            break
         # Use budget - cost when budget is supplied; otherwise use None.
         attempt_budget = budget - cost if budget is not None else None
         result = _run_agent(path, out_dir=draft_dir, timeout=remaining,
                             budget=attempt_budget, correction=correction, figures_only=figures_only,
+                            document_type=document_type,
                             diagnostics_dir=draft_dir, on_status=on_status, **kwargs)
         # Accumulate token counters across the initial call and validation repairs.
         for key in usage:
@@ -609,7 +666,7 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
                 raise OutputError("Source changed during extraction")
             # Backfills must not regenerate UUIDs or change any scientific extraction artifact.
             if figures_only:
-                for name in ("data.jsonl", "original.jsonl", "reasoning.md", "error_log.jsonl"):
+                for name in protected_names:
                     # Adding an exception log is also an unauthorized structured-output change.
                     if name not in preserved:
                         if (draft_dir / name).exists():
@@ -620,7 +677,10 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
                         raise OutputError(f"Figure backfill modified {name}")
                 output = candidate.read_text(encoding="utf-8")
             else:
-                output = prepare_output(candidate)
+                saved = json.loads((draft_dir / "document_classification.json").read_text())
+                if saved != classification:
+                    raise OutputError("Agent modified runner-owned document classification")
+                output = prepare_output(candidate, document_type=document_type)
             reasoning = draft_dir / "reasoning.md"
             # A valid JSONL without a nonempty evidence summary is incomplete extraction output.
             if not reasoning.is_file() or not reasoning.read_text(encoding="utf-8").strip():
@@ -655,8 +715,23 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
         try:
             notify("校验通过，正在保存正式结果")
             if not figures_only:
-                shutil.copyfile(candidate, draft_dir / "original.jsonl")
-                candidate.write_text(output, encoding="utf-8")
+                # Validate combined rows first, so patent links use final scientific UUIDs.
+                raw = candidate.read_text(encoding="utf-8")
+                for text, scientific_name, patent_name in (
+                    (raw, "original.jsonl", "patent.original.jsonl"),
+                    (output, "data.jsonl", "patent.jsonl"),
+                ):
+                    scientific, patents = [], []
+                    for line in text.splitlines():
+                        if line.strip():
+                            (patents if json.loads(line)["table"] == "patent" else scientific).append(line)
+                    (draft_dir / scientific_name).write_text(
+                        "".join(line + "\n" for line in scientific), encoding="utf-8")
+                    if document_type == "patent":
+                        (draft_dir / patent_name).write_text(
+                            "".join(line + "\n" for line in patents), encoding="utf-8")
+                    else:
+                        (draft_dir / patent_name).unlink(missing_ok=True)
             manifest = artifact_manifest(draft_dir, path, agent=kwargs.get("agent"),
                                          model=kwargs.get("model"))
             # Hash again at the publication boundary, including extraction-only runs.
@@ -680,7 +755,8 @@ def run_one(path: Path, *, out_dir: Path, timeout: int, budget: float | None,
             # Full extraction also refreshes data and removes any obsolete exception log.
             if not figures_only:
                 names = ["original.jsonl", "error_log.jsonl", "reasoning.md", "figures.jsonl",
-                         "img", "data.jsonl", "source_manifest.json"]
+                         "img", "data.jsonl", "document_classification.json",
+                         "patent.jsonl", "patent.original.jsonl", "source_manifest.json"]
             publish_artifacts(draft_dir, final_dir, names)
         except (OSError, ValueError) as exc:
             result.update(ok=False, reason=f"输出发布失败：{exc}")
@@ -724,7 +800,9 @@ def tally(out_dir: Path, stem: str) -> str:
     tables: dict[str, int] = {}
     bad = 0
     # Count actual output rows rather than trusting the agent's reported totals.
-    for line in rows.read_text(encoding="utf-8").splitlines():
+    for line in (rows.read_text(encoding="utf-8") +
+                 ((out_dir / "patent.jsonl").read_text(encoding="utf-8")
+                  if (out_dir / "patent.jsonl").is_file() else "")).splitlines():
         # Ignore blank transport/input lines without creating an empty record.
         if not line.strip():
             continue
@@ -831,7 +909,7 @@ def main(argv: list[str] | None = None) -> int:
             # Existing outputs must pass provenance/image checks; never silently skip old results.
             if (out_dir / path.stem / "data.jsonl").exists():
                 try:
-                    verify_artifacts(out_dir / path.stem, path)
+                    verify_artifacts(out_dir / path.stem, path, require_classification=True)
                 except ValueError as exc:
                     parser.error(str(exc))
             else:
@@ -894,6 +972,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         print("预览结束：未调用模型，未连接或修改数据库")
         return 0
+
+    if not args.figures_only and not settings.openrouter_api_key:
+        parser.error("请配置 OPENROUTER_API_KEY；Jev 与其他 OpenRouter 调用共用此 key")
 
     # Backfill is an artifact operation; database import can be run separately after it succeeds.
     if args.figures_only and args.import_db:

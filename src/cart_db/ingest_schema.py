@@ -39,7 +39,7 @@ def contract_hash():
 
     # Build mapped values from load_schema().tables.items().
     return digest({t: {n: project(s) for n, s in f.items()}
-                   for t, f in load_schema().tables.items()})
+                   for t, f in load_schema().tables.items() if t in TABLES})
 
 
 def migrate(conn):

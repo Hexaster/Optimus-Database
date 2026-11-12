@@ -19,9 +19,31 @@ If an applicable API is unavailable, inaccessible, lacks the figure, or returns 
 
 Record the API/metadata route, original asset URL, retrieval date, source identifier, chosen asset and quality assessment, and any PDF fallback reason in the figure metadata or evidence summary. Retain source hashes and PDF page/crop coordinates where applicable. Do not invent provenance or mislabel an API image as a PDF crop. These acquisition rules also apply to the dedicated image subagent; local-only export helpers do not replace source retrieval.
 
+## Jev document classification and additional patent extraction
+
+The runner first calls Jev through OpenRouter and supplies a verified `literature`
+or `patent` classification. Both routes must perform the complete existing scientific
+extraction: Binder, CAR, manufacturing, combinations and experimental evidence.
+Classification enables additional patent extraction only; it never substitutes for
+or reduces the existing extraction work.
+
+For `patent`, additionally read `docs/Schema/Schema_Patent.yaml` and append `patent`
+rows after the scientific rows in the draft `data.jsonl`. Preserve document versions,
+Claim dependency logic, sequence references and source locations. Create a patent
+metadata record even when some content is missing, with explicit extraction issues.
+Use document-local scientific entity labels in `entity_links`; the runner rewrites
+them. Leave `claim_scope_assessments` null; it belongs to later analysis.
+The runner publishes these additional rows to `patent.jsonl` and preserves their raw
+form in `patent.original.jsonl`. In reasoning.md use per-file final row numbers.
+
+For `literature`, do not output patent records just because a paper cites patents.
+Do not alter the runner-owned `document_classification.json`. Classification errors
+or `unknown` stop the run before extraction. If invoked without a verified runner
+classification, do not guess it or claim Jev ran; use the runner first.
+
 ## Workflow and execution scope
 
-1. Read all current `docs/Schema/*.yaml` files. Active YAML fields, types, descriptions, and enums are authoritative; commented-out definitions are not fields.
+1. Read the scientific schemas and, only for the patent route, `docs/Schema/Schema_Patent.yaml`. Active YAML fields, types, descriptions, and enums are authoritative; commented-out definitions are not fields.
 2. Read the supplied document, including relevant tables, figures, captions, and supplied supplements. Follow the source-reading rules below.
 3. Build a temporary inventory of source-described experiments and independent processes, then extract their distinct entities, combinations, and evidence into active schema fields. Follow Coverage and semantic review below.
 4. Return to the source to check coverage, then check attribution and meaning. Update the inventory and draft for omissions found during review.

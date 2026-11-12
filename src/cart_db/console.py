@@ -4,7 +4,7 @@ import json
 
 
 TABLE_NAMES = {"binder": "结合域", "car": "CAR 构型", "manufacturing": "制造工艺",
-               "abc_combination_db1": "组合", "evidence": "证据"}
+               "abc_combination_db1": "组合", "evidence": "证据", "patent": "专利"}
 STATUS_NAMES = {"published": "已入库", "pending": "待审核", "invalid": "质检未通过"}
 PENDING_REASONS = {
     "Reviewed target is still pending": "审核指定的目标尚未入库",

@@ -147,7 +147,7 @@ def _unique_object(pairs):
     return result
 
 
-def prepare_output(path: Path) -> str:
+def prepare_output(path: Path, *, document_type: str | None = None) -> str:
     """Return canonical JSONL; never modify the candidate on validation failure.
 
     Agent IDs are document-local reference labels, replaced with UUID4s only
@@ -184,6 +184,8 @@ def prepare_output(path: Path) -> str:
         # Refuse unknown tables before selecting a field schema.
         if not isinstance(table, str) or table not in schema.tables:
             _fail(loc, "unknown table")
+        if table == "patent" and document_type not in (None, "patent"):
+            _fail(loc, "patent rows require Jev patent classification")
         fields = schema.tables[table]
         data = row["data"]
         # Require an object payload before generating its final primary key.
@@ -217,6 +219,33 @@ def prepare_output(path: Path) -> str:
             if (target, value) not in ids:
                 _fail(f"{loc}.{name}", f"unresolved reference to {target}: {value}")
             row.data[name] = ids[target, value]
+        if row.table == "patent":
+            if row.data["claim_scope_assessments"] is not None:
+                _fail(loc, "claim_scope_assessments must be null during extraction")
+            claims = row.data["claims"] or []
+            claim_map = {claim["claim_number"]: claim for claim in claims}
+            if len(claim_map) != len(claims):
+                _fail(loc, "duplicate claim_number within patent version")
+            sequences = row.data["sequences"] or []
+            if len({seq["seq_id_no"] for seq in sequences}) != len(sequences):
+                _fail(loc, "duplicate seq_id_no within patent version")
+            for i, link in enumerate(row.data["entity_links"] or []):
+                field = f"{loc}.entity_links[{i}]"
+                target = link["entity_type"], link["entity_id"]
+                if target not in ids:
+                    _fail(field, "unresolved linked entity")
+                link["entity_id"] = ids[target]
+                if link["relation_type"] == "disclosed_in_description":
+                    if link["claim_number"] is not None or link["subject_index"] is not None:
+                        _fail(field, "description link must not identify a claim subject")
+                else:
+                    claim = claim_map.get(link["claim_number"])
+                    subjects = (claim or {}).get("protected_subject_matter") or []
+                    index = link["subject_index"]
+                    if type(index) is not int or not 0 <= index < len(subjects):
+                        _fail(field, "unresolved claim subject")
+                    if subjects[index]["subject_type"] != link["entity_type"]:
+                        _fail(field, "linked entity type differs from protected subject")
         # Evidence needs explicit owners independent of the row's measurement values.
         if row.table == schema.evidence_table:
             # Collect items from schema.entities only where row.data[entity.fk_column] is not None.
@@ -232,6 +261,8 @@ def prepare_output(path: Path) -> str:
                     if name.startswith(entity.kind + ".")
                 ):
                     _fail(loc, f"{entity.kind} measurements require its entity reference")
+    if document_type == "patent" and not any(row.table == "patent" for row in rows):
+        _fail("data.jsonl", "patent classification requires a patent record, even with missing claims")
     normalized = normalize_rows(rows, schema)
     # Build mapped values from normalized.
     return "".join(json.dumps({"table": row.table, "data": row.data},

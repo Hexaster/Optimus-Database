@@ -43,6 +43,10 @@ class Settings:
     llm_effort: str = os.getenv("CART_LLM_EFFORT", "high")
     llm_daily_cap_cny: float = float(os.getenv("CART_LLM_DAILY_CAP_CNY", "800"))
 
+    # Jev document classification uses OpenRouter's Decisions API.
+    openrouter_api_key: str | None = os.getenv("OPENROUTER_API_KEY") or None
+    jev_model: str = os.getenv("CART_JEV_MODEL", "typesafe/jev-1.14")
+
     # 存储
     data_root: Path = Path(os.getenv("CART_DATA_ROOT", str(ROOT / "data")))
 

@@ -13,6 +13,12 @@ runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
 
 
+@pytest.fixture(autouse=True)
+def mock_document_classification(monkeypatch):
+    from test_document_classification import receipt
+    monkeypatch.setattr(runner, "classify_document", lambda path, **kw: receipt(path))
+
+
 def bundle(directory, source):
     """Create a valid empty scientific result and explicitly reviewed no-image inventory."""
     directory.mkdir(parents=True, exist_ok=True)

@@ -21,7 +21,8 @@ def checksum(path):
 
 # These are the only text attachments belonging to a resumable extraction bundle.
 _REQUIRED_ARTIFACTS = {"data.jsonl", "original.jsonl", "reasoning.md"}
-_OPTIONAL_ARTIFACTS = {"error_log.jsonl"}
+_OPTIONAL_ARTIFACTS = {"error_log.jsonl", "document_classification.json",
+                       "patent.jsonl", "patent.original.jsonl"}
 _LEGACY_SCHEMA_HASH = "fb64398a5ef997932fcf2a6b795040a050054f717bc0479de176cdc799656d9a"
 
 
@@ -33,6 +34,25 @@ def _artifact_names(directory, source, *, require_figures):
     for name in _OPTIONAL_ARTIFACTS:
         if (directory / name).exists() or (directory / name).is_symlink():
             names.add(name)
+    if "document_classification.json" in names:
+        from .document_classification import ROUTING_VERSION, decision
+        receipt_path = directory / "document_classification.json"
+        if receipt_path.is_symlink() or not receipt_path.is_file():
+            raise ValueError("文档分类记录不是普通文件")
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        if (not isinstance(receipt, dict) or receipt.get("routing_version") != ROUTING_VERSION
+                or receipt.get("source_sha256") != checksum(source)):
+            raise ValueError("文档分类版本或源文件校验和不匹配")
+        route = decision(receipt.get("response", {}))
+        if route not in ("patent", "literature") or receipt.get("document_type") != route:
+            raise ValueError("文档分类不确定或与 Jev 响应不一致")
+        patent_names = {"patent.jsonl", "patent.original.jsonl"}
+        if route == "patent":
+            names.update(patent_names)
+        elif names & patent_names:
+            raise ValueError("文献分类不允许专利附加产物")
+    elif names & {"patent.jsonl", "patent.original.jsonl"}:
+        raise ValueError("专利产物缺少 Jev 分类记录")
     # Figure metadata and images form one contract; a partial figure bundle is never reusable.
     if require_figures:
         names.add("figures.jsonl")
@@ -64,13 +84,18 @@ def artifact_manifest(directory, source, agent=None, model=None):
     """
     directory, source = Path(directory), Path(source)
     names = _artifact_names(directory, source, require_figures=True)
-    return dict(source_path=str(source.resolve()), source_sha256=checksum(source),
+    manifest = dict(source_path=str(source.resolve()), source_sha256=checksum(source),
                 schema_hash=contract_hash(), agent=agent, model=model,
                 figure_contract_version=1,
                 artifacts={name: checksum(directory / name) for name in sorted(names)})
+    if "document_classification.json" in names:
+        manifest["document_classification_version"] = 1
+        manifest["patent_schema_sha256"] = checksum(
+            Path(__file__).resolve().parents[2] / "docs/Schema/Schema_Patent.yaml")
+    return manifest
 
 
-def verify_artifacts(directory, source, require_figures=True):
+def verify_artifacts(directory, source, require_figures=True, *, require_classification=False):
     """Verify source/schema provenance, artifact membership, and each saved checksum.
 
     Legacy structured outputs can be read with require_figures=False for a
@@ -87,6 +112,17 @@ def verify_artifacts(directory, source, require_figures=True):
             or manifest.get("source_sha256") != checksum(source)
             or manifest.get("schema_hash") not in (contract_hash(), _LEGACY_SCHEMA_HASH)):
         raise ValueError("原文或字段定义已经变化；请用 --force 重新提取")
+    route_version = manifest.get("document_classification_version")
+    if require_classification and route_version != 1:
+        raise ValueError("已有结果缺少 Jev 文档分类；请用 --force 重新提取")
+    if route_version not in (None, 1):
+        raise ValueError("不支持的文档分类版本")
+    if route_version == 1:
+        if manifest.get("patent_schema_sha256") != checksum(
+                Path(__file__).resolve().parents[2] / "docs/Schema/Schema_Patent.yaml"):
+            raise ValueError("专利 Schema 已变化；请用 --force 重新提取")
+        if not (directory / "document_classification.json").is_file():
+            raise ValueError("缺少 Jev 文档分类记录")
     figure_version = manifest.get("figure_contract_version")
     # Old results need a figure-only upgrade; no silent reuse or implicit paid rerun is allowed.
     if require_figures and figure_version != 1:

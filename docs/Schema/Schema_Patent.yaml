@@ -1,0 +1,332 @@
+patent:
+  table: patent
+  description: >-
+    独立于 Binder、CAR 和制造工艺的专利文献记录；每条记录对应一个司法辖区内的一份具体文献及其 Claim 版本。
+    claims 保存保护范围，不要求存在对应的具体技术实体；entity_links 保存原文支持的实体关联。
+    claim_scope_assessments 单独保存后续候选范围分析，Data Agent 原文抽取阶段不得生成该分析结果。
+    公开文本、授权文本和修改后的 Claim 分别记录，不跨版本或专利家族成员合并 Claim、SEQ ID NO 或法律状态。
+    以 Claim 原文记录请求或授予保护的范围，说明书实施例不自动视为被保护对象；不据此自行判定侵权或有效性。
+    未提供的信息填 null；只有核对完整来源并确认不存在时才使用空数组。缺页、未取得序列表、引用无法解析等记录在 extraction_issues。
+    source_locations 按字段路径保存原文证据；专利号、家族、法律状态、每条 Claim、序列和结构/功能/限制条件均需可追溯。
+  fields:
+    patent_id:
+      type: uuid
+      key: primary
+      nullable: false
+      description: 平台内部唯一专利文献版本记录 ID。
+
+    publication_number:
+      type: string
+      nullable: true
+      description: 文献公开号，保留国家/地区代码、数字和文献种类代码，如 A1、B2；不与申请号或授权号混用。
+
+    application_number:
+      type: string
+      nullable: true
+      description: 原文申请号，保留司法辖区及原始格式。
+
+    grant_number:
+      type: string
+      nullable: true
+      description: 原文明确提供的授权专利号；不得由公开号推断已获授权。
+
+    jurisdiction:
+      type: string
+      nullable: true
+      description: 文献所属国家、地区或专利组织。
+
+    claim_version:
+      type: string
+      nullable: true
+      description: Claim 所属版本及日期，例如公开、授权或修改文本；照录来源标识，不把公开 Claim 当成现行授权 Claim。
+
+    patent_family:
+      type: json
+      shape: object
+      nullable: true
+      description: 来源明确报告的专利家族；不得仅凭相同标题或申请人归并。
+      item_schema:
+        family_id:
+          type: string
+          nullable: true
+          description: 来源数据库中的家族标识，必须与 family_source 联用。
+        family_source:
+          type: string
+          nullable: true
+          description: 提供家族关系的数据库或文献。
+        family_definition:
+          type: string
+          nullable: true
+          description: 来源采用的家族定义，如 simple 或 extended；未说明则留空。
+        members:
+          type: json
+          shape: array
+          item_type: string
+          nullable: true
+          description: 来源列出的成员文献公开号，包含司法辖区和文献种类代码；未取得完整名单时在 extraction_issues 标明。
+
+    legal_status:
+      type: json
+      shape: array
+      nullable: true
+      description: 每项为来源报告的一条法律状态或事件；仅适用于本记录对应的申请及司法辖区，不外推到整个家族。不根据文本年代自行推断当前状态。
+      item_schema:
+        status_text:
+          type: string
+          nullable: false
+          description: 来源中的法律状态或事件原文。
+        effective_date:
+          type: string
+          nullable: true
+          description: 状态或事件生效日期；保留来源精度。
+        as_of_date:
+          type: string
+          nullable: true
+          description: 来源明确声明的状态截至日期；不同于检索日期。
+        retrieved_on:
+          type: string
+          nullable: true
+          description: 实际查询该状态的日期，YYYY-MM-DD；历史文献中的状态不等同于查询当日状态。
+
+    claims:
+      type: json
+      shape: array
+      nullable: true
+      description: 每项为本版本的一条 Claim，保留原始编号和完整文字；独立与从属 Claim 分别记录，不用摘要替代正文。
+      item_schema:
+        claim_number:
+          type: string
+          nullable: false
+          description: 原文 Claim 编号，在本专利文献版本内唯一。
+        claim_type:
+          type: string
+          allowed_values: [independent, dependent]
+          nullable: true
+          description: 独立或从属 Claim；不能确定时留空并记录原因。
+        text:
+          type: string
+          nullable: false
+          description: Claim 完整原文，保留限定词、逻辑连接、数值、单位和引用；缺失片段不得补写。
+        depends_on:
+          type: json
+          shape: array
+          item_type: string
+          nullable: true
+          description: 直接引用的 Claim 编号；范围可展开为编号列表，独立 Claim 为 []。保留缺失父 Claim 的编号并记录异常。
+        dependency_text:
+          type: string
+          nullable: true
+          description: 原文引用表达，保留“任一项”等择一/合取逻辑；继承限制沿 depends_on 追溯，不混写进本条正文。
+        seq_id_nos:
+          type: json
+          shape: array
+          item_type: string
+          nullable: true
+          description: 本条直接引用的 SEQ ID NO 编号，对应本版本 sequences.seq_id_no；不得跨专利成员按相同编号关联。继承引用沿父 Claim 追溯。
+        protected_subject_matter:
+          type: json
+          shape: array
+          nullable: true
+          description: 本 Claim 请求或授予保护的对象，每项为一个对象定义，可为具体对象或一类对象；保留组成、用途和组合/备选逻辑。CAR 中的 Binder 等组成部分不自动成为独立保护对象；无需为泛化范围创建实体，已确认实体通过 entity_links 关联。
+          item_schema:
+            subject_type:
+              type: string
+              nullable: false
+              allowed_values: [binder, car, cell, nucleic_acid, vector, composition, use, manufacturing, other, unresolved]
+              description: 按 Claim 的保护对象分类；manufacturing 指制备方法或工艺，无法确定时用 unresolved 并记异常。按实际对象分类，不因包含 Binder 就标记为 binder。
+            definition_text:
+              type: string
+              nullable: false
+              description: 对象的原文定义，保留具体对象或范围、组成关系、方法步骤及用途条件；从属 Claim 的对象定义结合 depends_on 解释，不补写继承正文。
+            name:
+              type: string
+              nullable: true
+              description: Claim 中的对象名称或代号；泛指一类对象时照录，不杜撰实例名。
+            structure_text:
+              type: string
+              nullable: true
+              description: Claim 明确限定的结构或组成原文，如分子格式、链配对、结构域、CDR、CAR 模块、载体元件或细胞组成；不适用时留空。
+            function_text:
+              type: string
+              nullable: true
+              description: Claim 明确限定的靶标、结合、阻断、细胞功能或用途原文；不作为已获实验验证的功能证据。
+        limitations:
+          type: json
+          shape: array
+          nullable: true
+          description: 本 Claim 直接写出的限制，每项为一个保留上下文的限制条款；继承限制沿依赖关系追溯。保留 AND/OR、排除项及对象对应关系，不将可选条件误作同时必需。
+          item_schema:
+            category:
+              type: string
+              allowed_values: [sequence_identity, sequence_similarity, cdr, epitope, structure, function, composition, use, process, other]
+              nullable: false
+              description: 区分序列同一性与相似度；CDR、表位、组成、用途及制备步骤等条件按原文分类。
+            text:
+              type: string
+              nullable: false
+              description: 限制完整原文，包括阈值、比较符、范围、单位、允许替换和例外；不得只摘录百分数。
+            applies_to:
+              type: string
+              nullable: true
+              description: 限制适用的对象、组成部分、步骤或序列范围，如 VH、CDR、CAR 模块、细胞类型或给药用途；不得将部分限制默认作用于整个对象。
+            reference_seq_id_nos:
+              type: json
+              shape: array
+              item_type: string
+              nullable: true
+              description: 本限制引用的参考 SEQ ID NO 编号。
+            definition_text:
+              type: string
+              nullable: true
+              description: 原文明示的同一性/相似度计算方法、比对范围、CDR 编号体系或表位定义；来自说明书时须单独定位，不自行补默认方法。
+
+    entity_links:
+      type: json
+      shape: array
+      nullable: true
+      description: 原文支持的文献/Claim 与已确认技术实体的关联，每项只关联一个实体；同一文献或 Claim 可关联多个实体，同一实体可关联多份专利。无已确认实体时不创建关联，更不为泛化保护范围杜撰实体；候选是否符合范围另存 claim_scope_assessments。
+      item_schema:
+        relation_type:
+          type: string
+          nullable: false
+          allowed_values: [disclosed_in_description, explicitly_defined_in_claim]
+          description: 分别表示说明书披露或 Claim 明确限定；说明书中的实验使用不自动升级为 Claim 明确限定。仅作为竞争对照等被引用的实体不属于 Claim 明确限定的保护对象。
+        entity_type:
+          type: string
+          nullable: false
+          allowed_values: [binder, car, manufacturing]
+          description: 已有技术实体表类型；尚无对应实体表的细胞、核酸、载体、组合物和用途保留在 protected_subject_matter，不借用其他实体类型。
+        entity_id:
+          type: uuid
+          nullable: false
+          description: 指向 entity_type 对应表的主键；由身份确认后的关联步骤填写，不由抽取模型编造 UUID。
+        claim_number:
+          type: string
+          nullable: true
+          description: explicitly_defined_in_claim 时必填，且必须对应本版本 claims.claim_number；disclosed_in_description 时为 null。
+        subject_index:
+          type: integer
+          nullable: true
+          description: explicitly_defined_in_claim 时必填，指向上述 Claim 的 protected_subject_matter 数组下标，从0开始；说明书披露时为 null。
+        basis_text:
+          type: string
+          nullable: false
+          description: 原文支持的实体身份与关系依据；在 source_locations 中定位本项。仅有序列相似或功能相似，不足以建立 Claim 明确限定关系。
+
+    claim_scope_assessments:
+      type: json
+      shape: array
+      nullable: true
+      description: 后续分析阶段形成的候选与具体 Claim 的范围匹配记录，原文抽取阶段为 null；每项评估一个已有候选实体与本版本一条完整 Claim，包含继承条件和备选逻辑。结论仅表示技术条件匹配，不等于侵权或法律有效性判断；不覆盖原文事实和 entity_links。
+      item_schema:
+        claim_number:
+          type: string
+          nullable: false
+          description: 被评估的本版本 Claim 编号，必须对应 claims.claim_number；文献版本由所属 patent 记录确定，不跨版本复用结果。
+        entity_type:
+          type: string
+          nullable: false
+          allowed_values: [binder, car, manufacturing]
+          description: 被评估的已有候选实体类型，必须与 Claim 对象层级相符；仅有 Binder 不能直接视为完整 CAR 或细胞产品。
+        entity_id:
+          type: uuid
+          nullable: false
+          description: 对应实体表的候选主键，由关联步骤提供。
+        candidate_snapshot:
+          type: string
+          nullable: false
+          description: 被评估候选及其用途/构型的不可变快照标识或内容哈希；候选改变后不得沿用旧结论。
+        result:
+          type: string
+          nullable: false
+          allowed_values: [matches, does_not_match, unresolved]
+          description: 对完整技术条件的判断；存在未解决且影响结论的条件时用 unresolved。不能仅因序列距离较大而排除表位、功能或用途条件。
+        condition_results:
+          type: json
+          shape: array
+          nullable: false
+          description: 按原文条件和必要继承条件逐项记录，必须非空；保留 AND/OR 与对象关系，不用简单命中计数代替完整 Claim 判断。
+          item_schema:
+            condition_path:
+              type: string
+              nullable: false
+              description: 本版本内条件的字段路径，可指向父 Claim 的 limitations 或 protected_subject_matter；未结构化的条件指向相应 Claim 正文。
+            result:
+              type: string
+              nullable: false
+              allowed_values: [matches, does_not_match, unresolved]
+            basis:
+              type: string
+              nullable: false
+              description: 判断理由、候选证据及其文件/记录定位；注明预测、实测或人工解释。缺失证据时明确写明缺口，不把候选证据当成专利原文。
+        rationale:
+          type: string
+          nullable: false
+          description: 综合结论的推导，说明父 Claim、备选分支、对象身份和未知条件如何影响 result。
+        analysis_method:
+          type: string
+          nullable: false
+          description: 实际使用的方法及版本；模型分析记录模型/提示词版本，人工分析记录采用的规则或依据。
+        assessed_by:
+          type: string
+          nullable: false
+          description: 分析执行者标识，区分人工人员与自动系统，不冒充人工复核。
+        assessed_on:
+          type: string
+          nullable: false
+          description: 实际评估日期，YYYY-MM-DD。
+
+    sequences:
+      type: json
+      shape: array
+      nullable: true
+      description: Claim 直接或通过父 Claim 引用的序列表条目；每项对应本版本内一个 SEQ ID NO。即使未取得序列也保留编号，sequence 填 null 并记录原因。
+      item_schema:
+        seq_id_no:
+          type: string
+          nullable: false
+          description: 原始 SEQ ID NO 编号，在本版本内唯一。
+        molecule_type:
+          type: string
+          allowed_values: [protein, DNA, RNA, other]
+          nullable: true
+          description: 以来源声明为准，不擅自翻译核酸为蛋白质。
+        sequence:
+          type: string
+          nullable: true
+          description: 来源提供的完整序列；只去除排版空白和位置编号，保留模糊符号。不推断缺失残基，不生成 Claim 中未列出的变体。
+        role:
+          type: string
+          nullable: true
+          description: 来源明确说明的序列用途或区域，如 VH、VL、HCDR3、完整链、linker 或靶抗原；不因被引用就认定为 Binder 序列。
+
+    source_locations:
+      type: json
+      shape: array
+      nullable: true
+      description: 每项定位一个抽取事实或 entity_links 关联依据的一处原文证据；同一字段可有多处来源，Claim 引用位置与序列正文位置分别记录。候选分析证据保存在 claim_scope_assessments，不伪装成专利原文。
+      item_schema:
+        field_path:
+          type: string
+          nullable: false
+          description: 本记录内的字段路径，数组下标从 0 开始，例如 claims[0].text、claims[0].limitations[0].text、sequences[0].sequence、legal_status[0].status_text。
+        source_document:
+          type: string
+          nullable: false
+          description: 可复核的来源 URL、文件路径或文献标识；序列表注明附件文件名及对应专利版本，法律状态注明查询来源。
+        locator:
+          type: string
+          nullable: false
+          description: 可复定位的 Claim 编号、段落号、页码/栏/行、表格行或序列表条目/XML 路径；页码须区分 PDF 页序与印刷页码。
+        quote:
+          type: string
+          nullable: true
+          description: 对应原文片段，保留上下文以便人工核对；不得用改写摘要充当原文。
+
+    extraction_issues:
+      type: json
+      shape: array
+      item_type: string
+      nullable: true
+      description: 缺失来源、版本不明、部分 Claim、未解析引用、序列不完整及冲突等，注明受影响字段或编号；不得以猜测填补。
+

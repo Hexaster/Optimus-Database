@@ -165,3 +165,24 @@ CAR 是不含 Binder 的骨架，按有序模块类型和组件名称匹配；�
 # CART_TEST_DSN 指向可创建临时数据库的隔离 PostgreSQL 实例。
 PYTHONPATH=src python -m pytest tests/test_pipeline.py tests/test_ingest.py -q
 ```
+
+## Jev 文档分类与专利附加抽取
+
+正常抽取先通过 OpenRouter 的 Jev Decisions API 判断整份文件是 `literature`、`patent` 或 `unknown`。
+所有 OpenRouter 请求统一读取 `OPENROUTER_API_KEY`。Jev 模型由 `CART_JEV_MODEL` 配置，默认 `typesafe/jev-1.14`。
+当 Codex 的 `OPENAI_BASE_URL=https://openrouter.ai/api/v1` 时，runner 也将这个共享 key 传给其 OpenAI 兼容接口；无需在 `OPENAI_API_KEY` 重复填写。
+其他服务商继续使用原有凭据。
+
+分类使用文本全文（最多 24,000 字符），超限时取开头与结尾各 12,000 字符；PDF 保留页码标签，XML 保留原始元数据。
+无文本的扫描 PDF 需要先 OCR。无法分类或调用失败时保留诊断并停止该文件，不猜测文件类型。
+分类请求、响应、源文件校验和及返回费用保存在 `document_classification.json`；此文件不含认证 key。
+接口定义见 https://openrouter.ai/docs/guides/community/jev 。
+
+两类文件均执行现有 Binder、CAR、制造工艺、组合及证据抽取。仅专利额外按 `docs/Schema/Schema_Patent.yaml` 抽取：
+
+- `data.jsonl` / `original.jsonl`：常规科学数据及原始记录。
+- `patent.jsonl` / `patent.original.jsonl`：专利附加信息及原始记录；实体关联使用同一次抽取的科学实体 ID。
+
+专利文件作为附属上下文保留，暂不写入新的关系数据库表。抽取阶段不生成 `claim_scope_assessments`。
+校验修正复用已有分类；仅补图不调用 Jev。正常 resume 要求存在有效分类记录，旧结果需重新抽取才能符合新流程。
+Jev 返回的费用和 token 计入文档总消耗；未返回费用且设置了预算时，停止后续抽取。

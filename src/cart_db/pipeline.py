@@ -74,7 +74,7 @@ def run_document(path, *, extract, out_dir, force=False, on_status=None, **kwarg
         output = final_dir / "data.jsonl"
         # Reuse extraction only when the source, schema, and all required artifacts can be verified.
         if output.exists() and not force:
-            verify_artifacts(final_dir, path)
+            verify_artifacts(final_dir, path, require_classification=True)
             result["extraction_reused"] = True
             notify("原文和提取结果一致，复用已有 JSONL，继续数据库处理")
         # A missing or changed extraction artifact requires a fresh extraction before import.
@@ -95,11 +95,12 @@ def run_document(path, *, extract, out_dir, force=False, on_status=None, **kwarg
                 raise ValueError("提取期间原始文档发生变化，本次结果不入库；请核对后重新提取")
             # The runner already wrote the source manifest; verify it without replacing its
             # provenance fields (including an explicitly supported historical schema hash).
-            verify_artifacts(final_dir, path)
+            verify_artifacts(final_dir, path, require_classification=True)
         phase = "database"
         # Collect items from ('source_manifest.json', 'original.jsonl', 'reasoning.md',
         # 'error_log.jsonl', 'figures.jsonl') only where (final_dir / name).is_file().
-        contexts = [final_dir / name for name in ("source_manifest.json", "original.jsonl", "reasoning.md", "error_log.jsonl", "figures.jsonl")
+        contexts = [final_dir / name for name in ("source_manifest.json", "original.jsonl", "reasoning.md", "error_log.jsonl", "figures.jsonl",
+                                                      "document_classification.json", "patent.jsonl", "patent.original.jsonl")
                     if (final_dir / name).is_file()]
         # Stage and publish using the configured database; disk reports are not proof of a commit.
         with ingest.connect() as conn:

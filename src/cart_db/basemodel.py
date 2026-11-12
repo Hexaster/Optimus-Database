@@ -7,6 +7,7 @@ class NormalizedData(BaseModel):
     """入库前的交接格式：一行一条记录。"""
 
     table: Literal[
+        "patent",
         "binder",
         "car",
         "manufacturing",
